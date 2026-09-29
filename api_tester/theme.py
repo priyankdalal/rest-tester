@@ -74,6 +74,46 @@ METHOD_COLORS = {
     "OPTIONS": "#5b6775",
 }
 
+_METHOD_PILL_PALETTES = {
+    "GET": (
+        ("#f0fdf4", "#16a34a", "#86efac"),
+        ("#173b2b", "#4ade80", "#286344"),
+    ),
+    "HEAD": (
+        ("#f8fafc", "#5b6775", "#cbd5e1"),
+        ("#25364a", "#cbd5e1", "#465a72"),
+    ),
+    "OPTIONS": (
+        ("#f8fafc", "#5b6775", "#cbd5e1"),
+        ("#25364a", "#cbd5e1", "#465a72"),
+    ),
+    "POST": (
+        ("#eff6ff", "#0878f9", "#60a5fa"),
+        ("#17365b", "#60a5fa", "#28548a"),
+    ),
+    "PUT": (
+        ("#fffbeb", "#b45309", "#fbbf24"),
+        ("#42351a", "#fbbf24", "#70551e"),
+    ),
+    "PATCH": (
+        ("#faf5ff", "#8b5cf6", "#c084fc"),
+        ("#35264f", "#c4b5fd", "#5c4386"),
+    ),
+    "DELETE": (
+        ("#fff1f2", "#ef3340", "#fb7185"),
+        ("#45232a", "#fda4af", "#743943"),
+    ),
+}
+
+
+def _method_pill_tokens(*, dark: bool) -> dict[str, str]:
+    palette_index = 1 if dark else 0
+    return {
+        f"METHOD_{method}_{part}": color
+        for method, palettes in _METHOD_PILL_PALETTES.items()
+        for part, color in zip(("BG", "TEXT", "BORDER"), palettes[palette_index])
+    }
+
 # JSON syntax highlighting
 JSON_KEY = "#1d4ed8"
 JSON_STRING = "#0f7b3f"
@@ -154,21 +194,6 @@ QLabel#appTitle {{
     font-size: 11pt;
     font-weight: 600;
 }}
-QWidget#environmentToolbar {{
-    background-color: {SURFACE};
-    border-bottom: 1px solid {BORDER};
-}}
-QWidget#environmentToolbar[shellRegion="environment"] {{
-    background-color: {SURFACE_ALT};
-}}
-QLabel#environmentBaseUrl {{
-    background: transparent;
-    color: {TEXT_MUTED};
-    padding: 0 8px;
-}}
-QPushButton#editEnvironmentButton {{
-    min-width: 112px;
-}}
 QTableWidget#environmentTable QPushButton {{
     background-color: transparent;
     border: 1px solid transparent;
@@ -198,17 +223,6 @@ QLabel[fieldCaption="true"] {{
     font-size: 8pt;
     font-weight: 600;
 }}
-QLabel#connectionBadge {{
-    background-color: {DANGER_SOFT};
-    color: {FAIL};
-    border-radius: 12px;
-    padding: 6px 10px;
-    font-weight: 600;
-}}
-QLabel#connectionBadge[connected="true"] {{
-    background-color: {SUCCESS_SOFT};
-    color: {PASS};
-}}
 QListWidget#navigationRail {{
     background-color: {NAVIGATION};
     color: {NAV_TEXT};
@@ -220,15 +234,56 @@ QListWidget#navigationRail {{
 QWidget#navigationPanel {{
     background-color: {NAVIGATION};
 }}
+QWidget#navigationFooter,
+QWidget#navigationVersionRow {{
+    background-color: {NAVIGATION};
+}}
 QLabel#navigationStats, QLabel#navigationVersion {{
     background: transparent;
     color: {NAV_MUTED};
     padding: 8px;
 }}
+QWidget#navigationFooter {{
+    background: transparent;
+}}
+QToolButton#navigationFooterButton {{
+    background-color: transparent;
+    color: {NAV_MUTED};
+    border: 1px solid transparent;
+    border-radius: 12px;
+    padding: 2px;
+}}
+QToolButton#navigationInfoButton::menu-indicator {{
+    image: none;
+    width: 0;
+}}
+QToolButton#navigationInfoButton {{
+    background-color: transparent;
+    color: {NAV_MUTED};
+    border: 1px solid transparent;
+    border-radius: 12px;
+    padding: 2px;
+}}
+QToolButton#navigationInfoButton:hover {{
+    background-color: {NAV_HOVER};
+    border-color: {BORDER_STRONG};
+}}
+QToolButton#navigationInfoButton:pressed,
+QToolButton#navigationInfoButton:open {{
+    background-color: {NAV_HOVER};
+}}
+QToolButton#navigationFooterButton:hover {{
+    background-color: {NAV_HOVER};
+    border-color: {BORDER_STRONG};
+}}
+QToolButton#navigationFooterButton:pressed,
+QToolButton#navigationFooterButton:open {{
+    background-color: {NAV_HOVER};
+}}
 QListWidget#navigationRail::item {{
-    border-radius: 6px;
-    padding: 12px 9px;
-    margin-bottom: 3px;
+    border-radius: 4px;
+    padding: 2px 9px;
+    margin-bottom: 2px;
 }}
 QListWidget#navigationRail::item:hover {{ background-color: {NAV_HOVER}; }}
 QListWidget#navigationRail[dialogRail="true"] {{
@@ -312,11 +367,6 @@ QLabel#endpointBreadcrumb {{
     font-weight: 700;
     padding: 2px 0;
 }}
-QLabel#endpointSource {{
-    color: {TEXT_MUTED};
-    background: transparent;
-    padding: 0 2px 3px 2px;
-}}
 QFrame#endpointIdentity {{
     background-color: {SURFACE_ALT};
     border: 1px solid {BORDER};
@@ -344,6 +394,26 @@ QLabel#endpointRoute {{
 QFrame#parametersCard {{
     background-color: {SURFACE};
     border: none;
+}}
+QFrame#connectionIndicator {{
+    border-radius: 11px;
+    border: 1px solid {DISCONNECTED_BORDER};
+    background-color: {DISCONNECTED_BG};
+}}
+QFrame#connectionIndicator[state="connected"] {{
+    border: 1px solid {CONNECTED_BORDER};
+    background-color: {CONNECTED_BG};
+}}
+QLabel#connectionIndicatorLabel {{
+    background: transparent;
+    border: none;
+    color: {DISCONNECTED_TEXT};
+    font-size: 8.5pt;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+}}
+QFrame#connectionIndicator[state="connected"] QLabel#connectionIndicatorLabel {{
+    color: {CONNECTED_TEXT};
 }}
 QWidget#responseViewer {{
     background-color: {SURFACE};
@@ -436,13 +506,13 @@ QCheckBox, QRadioButton {{
 }}
 QCheckBox::indicator, QRadioButton::indicator,
 QTableWidget::indicator, QTreeWidget::indicator, QListWidget::indicator {{
-    width: 15px;
-    height: 15px;
+    width: 16px;
+    height: 16px;
     background-color: {SURFACE};
     border: 1px solid {BORDER_STRONG};
-    border-radius: 4px;
+    border-radius: 5px;
 }}
-QRadioButton::indicator {{ border-radius: 8px; }}
+QRadioButton::indicator {{ border-radius: 9px; }}
 QCheckBox::indicator:hover, QRadioButton::indicator:hover,
 QTableWidget::indicator:hover, QTreeWidget::indicator:hover,
 QListWidget::indicator:hover {{
@@ -453,18 +523,37 @@ QCheckBox::indicator:checked, QRadioButton::indicator:checked,
 QTableWidget::indicator:checked, QTreeWidget::indicator:checked,
 QListWidget::indicator:checked {{
     background-color: {PRIMARY};
+    border: 1px solid {PRIMARY};
+    image: url("{CHECK_MARK}");
+}}
+QRadioButton::indicator:checked {{
+    image: none;
     border: 2px solid {SURFACE};
+}}
+QCheckBox::indicator:checked:hover,
+QTableWidget::indicator:checked:hover, QTreeWidget::indicator:checked:hover,
+QListWidget::indicator:checked:hover {{
+    background-color: {PRIMARY_HOVER};
+    border: 1px solid {PRIMARY_HOVER};
 }}
 QCheckBox::indicator:indeterminate, QTableWidget::indicator:indeterminate,
 QTreeWidget::indicator:indeterminate, QListWidget::indicator:indeterminate {{
-    background-color: {PRIMARY_HOVER};
-    border: 2px solid {SURFACE};
+    background-color: {PRIMARY};
+    border: 1px solid {PRIMARY};
+    image: url("{CHECK_DASH}");
 }}
 QCheckBox::indicator:disabled, QRadioButton::indicator:disabled,
 QTableWidget::indicator:disabled, QTreeWidget::indicator:disabled,
 QListWidget::indicator:disabled {{
     background-color: {SURFACE_ALT};
     border: 1px solid {BORDER};
+}}
+QCheckBox::indicator:checked:disabled,
+QCheckBox::indicator:indeterminate:disabled,
+QTableWidget::indicator:checked:disabled,
+QTreeWidget::indicator:checked:disabled,
+QListWidget::indicator:checked:disabled {{
+    image: url("{CHECK_MARK_MUTED}");
 }}
 QCheckBox:disabled, QRadioButton:disabled {{ color: {TEXT_MUTED}; }}
 
@@ -597,6 +686,47 @@ QPushButton[accent="true"]:disabled {{
     border-color: {SKIP};
     color: {TEXT_INVERSE};
 }}
+QToolButton#endpointSendButton[accent="true"] {{
+    background-color: {PRIMARY};
+    border: 1px solid {PRIMARY_PRESSED};
+    border-radius: 6px;
+    color: {TEXT_INVERSE};
+    padding: 5px 36px 5px 13px;
+    min-height: 22px;
+    max-height: 22px;
+    font-weight: 600;
+}}
+QToolButton#endpointSendButton[accent="true"]:hover {{
+    background-color: {PRIMARY_HOVER};
+}}
+QToolButton#endpointSendButton[accent="true"]:pressed,
+QToolButton#endpointSendButton[accent="true"]:open {{
+    background-color: {PRIMARY_PRESSED};
+}}
+QToolButton#endpointSendButton[accent="true"]:disabled {{
+    background-color: {SKIP};
+    border-color: {SKIP};
+    color: {TEXT_INVERSE};
+}}
+QToolButton#endpointSendButton::menu-button {{
+    subcontrol-origin: padding;
+    subcontrol-position: right center;
+    width: 30px;
+    border-left: 1px solid {PRIMARY_HOVER};
+    border-top-right-radius: 5px;
+    border-bottom-right-radius: 5px;
+}}
+QToolButton#endpointSendButton::menu-button:hover {{
+    background-color: {PRIMARY_HOVER};
+}}
+QToolButton#endpointSendButton::menu-indicator {{
+    image: url({COMBO_ARROW});
+    subcontrol-origin: padding;
+    subcontrol-position: right center;
+    width: 10px;
+    height: 7px;
+    right: 10px;
+}}
 QToolButton#endpointMenuButton {{
     background-color: {SURFACE};
     color: {TEXT};
@@ -638,6 +768,25 @@ QPushButton#iconButton {{
     background: transparent;
 }}
 QPushButton#iconButton:hover {{ background-color: {SURFACE_ALT}; }}
+QToolButton#headerIconButton {{
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 0px;
+}}
+QToolButton#headerIconButton:hover {{
+    background-color: {SURFACE_ALT};
+    border: 1px solid {BORDER};
+}}
+QToolButton#headerIconButton:pressed {{
+    background-color: {HOVER_SOFT};
+    border: 1px solid {BORDER_STRONG};
+}}
+QToolButton#headerIconButton::menu-indicator {{
+    image: none;
+    width: 0px;
+    height: 0px;
+}}
 QPushButton#rowButton {{
     padding: 2px 9px;
     min-height: 16px;
@@ -659,27 +808,36 @@ QPushButton#rowRemoveButton:hover {{
 QTabWidget::pane {{
     background-color: {SURFACE};
     border: none;
-    top: 0;
+    border-top: 1px solid {BORDER};
+    top: -1px;
+}}
+QTabBar {{
+    background-color: transparent;
+    qproperty-drawBase: 0;
 }}
 QTabBar::tab {{
-    background-color: {SURFACE_ALT};
+    background-color: transparent;
     color: {TEXT_MUTED};
-    border: 1px solid {BORDER};
-    border-radius: 7px;
-    padding: 8px 16px;
-    margin-right: 5px;
-    margin-bottom: 6px;
+    border: none;
+    /* Reserves the underline on every tab so selecting one cannot shift the
+       row, and lets the selected rule simply recolour it. */
+    border-bottom: 2px solid transparent;
+    padding: 8px 14px;
+    margin: 0 2px;
+    font-weight: 600;
 }}
 QTabBar::tab:hover {{
-    background-color: {HOVER_SOFT};
-    border-color: {BORDER_STRONG};
     color: {TEXT};
+    border-bottom-color: {BORDER_STRONG};
 }}
 QTabBar::tab:selected {{
-    background-color: {SELECT_SOFT};
-    border: 1px solid {PRIMARY};
-    color: {SELECT_SOFT_TEXT};
-    font-weight: 600;
+    background-color: transparent;
+    color: {PRIMARY};
+    border-bottom: 2px solid {PRIMARY};
+    font-weight: 700;
+}}
+QTabBar::tab:disabled {{
+    color: {SKIP};
 }}
 QTabBar::scroller {{
     width: 60px;
@@ -710,10 +868,12 @@ QTabBar::right-arrow {{
 }}
 QTabWidget#endpointTabs::pane {{
     border: none;
+    border-top: 1px solid {BORDER};
     background: {SURFACE};
 }}
 QTabWidget#requestBuilderTabs::pane {{
     border: none;
+    border-top: 1px solid {BORDER};
     background: {SURFACE};
 }}
 
@@ -829,8 +989,80 @@ QTreeWidget#endpointTree {{
     border-radius: 0;
 }}
 QTreeWidget#endpointTree::item {{
-    min-height: 28px;
-    padding: 5px 4px;
+    min-height: 46px;
+    padding: 0;
+}}
+QWidget#endpointTreeRow {{
+    background-color: transparent;
+    border-radius: 4px;
+}}
+QWidget#endpointActionCell {{
+    background-color: transparent;
+}}
+QWidget#endpointTreeRow[selected="true"] {{
+    background-color: {SELECT_SOFT};
+}}
+QLabel#endpointMethodPill {{
+    background-color: {METHOD_GET_BG};
+    color: {METHOD_GET_TEXT};
+    border: 1px solid {METHOD_GET_BORDER};
+    border-radius: 6px;
+    font-weight: 700;
+}}
+QLabel#endpointMethodPill[method="HEAD"],
+QLabel#endpointMethodPill[method="OPTIONS"] {{
+    background-color: {METHOD_HEAD_BG};
+    color: {METHOD_HEAD_TEXT};
+    border-color: {METHOD_HEAD_BORDER};
+}}
+QLabel#endpointMethodPill[method="POST"] {{
+    background-color: {METHOD_POST_BG};
+    color: {METHOD_POST_TEXT};
+    border-color: {METHOD_POST_BORDER};
+}}
+QLabel#endpointMethodPill[method="PUT"] {{
+    background-color: {METHOD_PUT_BG};
+    color: {METHOD_PUT_TEXT};
+    border-color: {METHOD_PUT_BORDER};
+}}
+QLabel#endpointMethodPill[method="PATCH"] {{
+    background-color: {METHOD_PATCH_BG};
+    color: {METHOD_PATCH_TEXT};
+    border-color: {METHOD_PATCH_BORDER};
+}}
+QLabel#endpointMethodPill[method="DELETE"] {{
+    background-color: {METHOD_DELETE_BG};
+    color: {METHOD_DELETE_TEXT};
+    border-color: {METHOD_DELETE_BORDER};
+}}
+QLabel#endpointTreeAction {{
+    background: transparent;
+    color: {TEXT};
+    font-weight: 600;
+}}
+QWidget#endpointTreeRow[selected="true"] QLabel#endpointTreeAction {{
+    color: {PRIMARY};
+}}
+QLabel#endpointTreePath {{
+    background: transparent;
+    color: {TEXT_MUTED};
+}}
+QToolButton#endpointActionMenu {{
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 2px;
+}}
+QToolButton#endpointActionMenu:hover {{
+    background-color: {SURFACE_ALT};
+    border-color: {BORDER};
+}}
+QToolButton#endpointActionMenu:pressed {{
+    background-color: {BORDER};
+}}
+QToolButton#endpointActionMenu::menu-indicator {{
+    image: none;
+    width: 0;
 }}
 QTableWidget#parametersTable {{
     border: none;
@@ -941,8 +1173,45 @@ QMenu {{
     background-color: {SURFACE};
     color: {TEXT};
     border: 1px solid {BORDER};
+    border-radius: 8px;
+    padding: 5px;
+    font-size: 9pt;
+    font-weight: 500;
 }}
-QMenu::item:selected {{ background-color: {PRIMARY}; color: {TEXT_INVERSE}; }}
+QMenu::item {{
+    min-height: 20px;
+    padding: 7px 34px 7px 12px;
+    margin: 2px 3px;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    color: {TEXT};
+    spacing: 8px;
+}}
+QMenu::item:selected {{
+    background-color: {HOVER_SOFT};
+    color: {PRIMARY};
+    border-color: {BORDER};
+    font-weight: 600;
+}}
+QMenu::item:disabled {{
+    color: {TEXT_MUTED};
+}}
+QMenu::separator {{
+    height: 1px;
+    margin: 5px 10px;
+    background-color: {BORDER};
+}}
+QMenu::icon {{
+    margin-left: 5px;
+}}
+QMenu::right-arrow {{
+    image: url({MENU_ARROW});
+    width: 8px;
+    height: 12px;
+    subcontrol-origin: padding;
+    subcontrol-position: right center;
+    right: 12px;
+}}
 QToolTip {{
     background-color: {TEXT};
     color: {BACKGROUND};
@@ -1110,6 +1379,7 @@ QProgressBar#loadTestingStageProgress::chunk {{
 QTabWidget#loadTestingResultsTabs::pane {{
     border: none;
     border-top: 1px solid {BORDER};
+    top: -1px;
 }}
 """
 
@@ -1126,6 +1396,7 @@ _SHARED_TOKENS = {
 
 LIGHT_TOKENS = {
     **_SHARED_TOKENS,
+    **_method_pill_tokens(dark=False),
     "BACKGROUND": BACKGROUND,
     "SURFACE": SURFACE,
     "SURFACE_ALT": SURFACE_ALT,
@@ -1148,6 +1419,14 @@ LIGHT_TOKENS = {
     "SELECT_SOFT_TEXT": SELECT_SOFT_TEXT,
     "DANGER_SOFT": DANGER_SOFT,
     "SUCCESS_SOFT": SUCCESS_SOFT,
+    "CONNECTED_BG": SUCCESS_SOFT,
+    "CONNECTED_BORDER": "#5fc98a",
+    "CONNECTED_TEXT": "#15803d",
+    "CONNECTED_DOT": "#22c55e",
+    "DISCONNECTED_BG": DANGER_SOFT,
+    "DISCONNECTED_BORDER": "#f0a3a3",
+    "DISCONNECTED_TEXT": "#b91c1c",
+    "DISCONNECTED_DOT": "#ef4444",
     "CODE_BACKGROUND": CODE_BACKGROUND,
     "CODE_TEXT": CODE_TEXT,
     "CODE_BORDER": CODE_BORDER,
@@ -1162,12 +1441,17 @@ LIGHT_TOKENS = {
     "SPIN_UP_ARROW": (ASSET_DIR / "chevron-up-light.svg").as_posix(),
     "TAB_LEFT_ARROW": (ASSET_DIR / "chevron-left-light.svg").as_posix(),
     "TAB_RIGHT_ARROW": (ASSET_DIR / "chevron-right-light.svg").as_posix(),
+    "MENU_ARROW": (ASSET_DIR / "chevron-right-light.svg").as_posix(),
+    "CHECK_MARK": (ASSET_DIR / "check.svg").as_posix(),
+    "CHECK_DASH": (ASSET_DIR / "check-dash.svg").as_posix(),
+    "CHECK_MARK_MUTED": (ASSET_DIR / "check-muted.svg").as_posix(),
     "SHADOW_EDGE": "rgba(23, 48, 82, 48)",
     "SHADOW_MID": "rgba(23, 48, 82, 18)",
 }
 
 DARK_TOKENS = {
     **_SHARED_TOKENS,
+    **_method_pill_tokens(dark=True),
     "BACKGROUND": "#0b1728",
     "SURFACE": "#132539",
     "SURFACE_ALT": "#1b3049",
@@ -1190,6 +1474,14 @@ DARK_TOKENS = {
     "SELECT_SOFT_TEXT": "#eaf1fb",
     "DANGER_SOFT": "#5a2027",
     "SUCCESS_SOFT": "#14432a",
+    "CONNECTED_BG": "#14432a",
+    "CONNECTED_BORDER": "#3f9c68",
+    "CONNECTED_TEXT": "#7ee2a8",
+    "CONNECTED_DOT": "#4ade80",
+    "DISCONNECTED_BG": "#4d1f25",
+    "DISCONNECTED_BORDER": "#a7444c",
+    "DISCONNECTED_TEXT": "#ff9f9f",
+    "DISCONNECTED_DOT": "#f87171",
     "CODE_BACKGROUND": "#0a1a2c",
     "CODE_TEXT": "#dbe8f8",
     "CODE_BORDER": "#274259",
@@ -1204,6 +1496,10 @@ DARK_TOKENS = {
     "SPIN_UP_ARROW": (ASSET_DIR / "chevron-up-dark.svg").as_posix(),
     "TAB_LEFT_ARROW": (ASSET_DIR / "chevron-left-dark.svg").as_posix(),
     "TAB_RIGHT_ARROW": (ASSET_DIR / "chevron-right-dark.svg").as_posix(),
+    "MENU_ARROW": (ASSET_DIR / "chevron-right-dark.svg").as_posix(),
+    "CHECK_MARK": (ASSET_DIR / "check.svg").as_posix(),
+    "CHECK_DASH": (ASSET_DIR / "check-dash.svg").as_posix(),
+    "CHECK_MARK_MUTED": (ASSET_DIR / "check-muted.svg").as_posix(),
     "SHADOW_EDGE": "rgba(0, 0, 0, 88)",
     "SHADOW_MID": "rgba(0, 0, 0, 34)",
 }

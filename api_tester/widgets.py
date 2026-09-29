@@ -4,19 +4,34 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from PyQt6.QtCore import QEvent, QPointF, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QFontMetrics
+from PyQt6.QtCore import (
+    QAbstractAnimation,
+    QEasingCurve,
+    QEvent,
+    QPointF,
+    QSize,
+    Qt,
+    QVariantAnimation,
+    pyqtSignal,
+)
+from PyQt6.QtGui import QColor, QFont, QFontMetrics, QIcon, QPainter
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QFrame,
     QGraphicsDropShadowEffect,
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QListWidgetItem,
+    QListWidget,
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QStyle,
+    QStyleOptionViewItem,
+    QStyledItemDelegate,
     QTableWidget,
     QTableWidgetItem,
     QToolButton,
@@ -26,6 +41,130 @@ from PyQt6.QtWidgets import (
 
 from . import theme
 from .icons import icon
+
+
+_ICON_SIZE_ROLE = int(Qt.ItemDataRole.UserRole) + 1
+_TEXT_SIZE_ROLE = int(Qt.ItemDataRole.UserRole) + 2
+_TEXT_COLOR_ROLE = int(Qt.ItemDataRole.UserRole) + 3
+_TEXT_PADDING_ROLE = int(Qt.ItemDataRole.UserRole) + 4
+_HIDE_TEXT_ROLE = int(Qt.ItemDataRole.UserRole) + 5
+_HIDE_ICON_ROLE = int(Qt.ItemDataRole.UserRole) + 6
+
+
+class IconTextItemDelegate(QStyledItemDelegate):
+    """Paints list item icons and labels with per-item sizing and spacing."""
+
+    def sizeHint(self, option, index) -> QSize:  # noqa: N802 - Qt signature
+        size = super().sizeHint(option, index)
+        icon_size = index.data(_ICON_SIZE_ROLE)
+        if icon_size is not None:
+            size.setHeight(max(size.height(), int(icon_size) + 4))
+        return size
+
+    def paint(self, painter, option, index) -> None:
+        styled = QStyleOptionViewItem(option)
+        self.initStyleOption(styled, index)
+        styled.text = ""
+        styled.icon = QIcon()
+        style = (
+            styled.widget.style()
+            if styled.widget is not None
+            else QApplication.style()
+        )
+        style.drawControl(
+            QStyle.ControlElement.CE_ItemViewItem, styled, painter, styled.widget
+        )
+
+        rect = option.rect
+        icon_size = index.data(_ICON_SIZE_ROLE)
+        icon_size = int(icon_size) if icon_size is not None else 18
+        text_padding = index.data(_TEXT_PADDING_ROLE)
+        text_padding = int(text_padding) if text_padding is not None else 8
+        item_icon = index.data(Qt.ItemDataRole.DecorationRole)
+        text = str(index.data(Qt.ItemDataRole.DisplayRole) or "")
+        hide_icon = bool(index.data(_HIDE_ICON_ROLE))
+        hide_text = bool(index.data(_HIDE_TEXT_ROLE))
+        selected = bool(option.state & QStyle.StateFlag.State_Selected)
+
+        icon_x = rect.left() + 9
+        if hide_text and not hide_icon:
+            icon_x = rect.center().x() - icon_size // 2
+        icon_y = rect.center().y() - icon_size // 2
+        text_x = (
+            icon_x
+            if hide_icon
+            else icon_x + icon_size + text_padding
+        )
+        text_rect = rect.adjusted(text_x - rect.left(), 0, -8, 0)
+
+        painter.save()
+        if not hide_icon and isinstance(item_icon, QIcon):
+            painter.drawPixmap(
+                icon_x,
+                icon_y,
+                item_icon.pixmap(icon_size, icon_size),
+            )
+
+        if not hide_text:
+            font = QFont(option.font)
+            text_size = index.data(_TEXT_SIZE_ROLE)
+            if text_size is not None:
+                font.setPointSizeF(float(text_size))
+            painter.setFont(font)
+            color = (
+                QColor(theme.TEXT_INVERSE)
+                if selected
+                else QColor(index.data(_TEXT_COLOR_ROLE) or theme.NAV_TEXT)
+            )
+            painter.setPen(color)
+            painter.drawText(
+                text_rect,
+                Qt.AlignmentFlag.AlignVCenter
+                | Qt.AlignmentFlag.AlignLeft
+                | Qt.TextFlag.TextSingleLine,
+                QFontMetrics(font).elidedText(
+                    text, Qt.TextElideMode.ElideRight, text_rect.width()
+                ),
+            )
+        painter.restore()
+
+
+def make_icon_text_item(
+    text: str,
+    icon_name: str,
+    *,
+    icon_size: int = 18,
+    text_size: float | None = None,
+    icon_color: str = "#DCE9F8",
+    text_color: str = theme.NAV_TEXT,
+    text_padding: int = 8,
+    hide_text: bool = False,
+    hide_icon: bool = False,
+) -> QListWidgetItem:
+    """Creates a list item with independently configurable icon and label.
+
+    ``text_padding`` is the gap, in pixels, between the icon and its text.
+    ``hide_text`` and ``hide_icon`` independently hide either visual element.
+    Existing standalone icons continue to use :func:`icons.icon` unchanged.
+    """
+    item = QListWidgetItem(icon(icon_name, icon_color, icon_size), text)
+    item.setData(_ICON_SIZE_ROLE, icon_size)
+    item.setData(_TEXT_SIZE_ROLE, text_size)
+    item.setData(_TEXT_COLOR_ROLE, text_color)
+    item.setData(_TEXT_PADDING_ROLE, text_padding)
+    item.setData(_HIDE_TEXT_ROLE, hide_text)
+    item.setData(_HIDE_ICON_ROLE, hide_icon)
+    return item
+
+
+def set_icon_text_items_collapsed(
+    widget: QListWidget, collapsed: bool
+) -> None:
+    """Shows list items as icons only or as icon-and-text rows."""
+    for row in range(widget.count()):
+        item = widget.item(row)
+        item.setData(_HIDE_TEXT_ROLE, collapsed)
+    widget.viewport().update()
 
 
 class EmptyStateWidget(QWidget):
@@ -501,6 +640,128 @@ class ElidingLabel(QLabel):
         super().setText(
             metrics.elidedText(self._full_text, Qt.TextElideMode.ElideRight, available)
         )
+
+
+class _PulseDot(QWidget):
+    """A small status dot whose opacity can breathe in and out.
+
+    The animation loops seamlessly because the key values start and end at the
+    same opacity, so the dot never snaps back at the loop boundary.
+    """
+
+    _DIAMETER = 8
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._color = QColor(theme.PASS)
+        self._opacity = 1.0
+        self.setFixedSize(self._DIAMETER, self._DIAMETER)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self._animation = QVariantAnimation(self)
+        self._animation.setDuration(2200)
+        self._animation.setLoopCount(-1)
+        self._animation.setKeyValueAt(0.0, 1.0)
+        self._animation.setKeyValueAt(0.5, 0.25)
+        self._animation.setKeyValueAt(1.0, 1.0)
+        self._animation.setEasingCurve(QEasingCurve.Type.InOutSine)
+        self._animation.valueChanged.connect(self._set_opacity)
+
+    def set_color(self, color: str) -> None:
+        self._color = QColor(color)
+        self.update()
+
+    def set_breathing(self, breathing: bool) -> None:
+        if breathing:
+            if self._animation.state() != QAbstractAnimation.State.Running:
+                self._animation.start()
+            return
+        self._animation.stop()
+        self._set_opacity(1.0)
+
+    def _set_opacity(self, value) -> None:
+        try:
+            opacity = float(value)
+        except (TypeError, ValueError):
+            opacity = 1.0
+        self._opacity = max(0.0, min(1.0, opacity))
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        color = QColor(self._color)
+        color.setAlphaF(self._opacity)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(color)
+        painter.drawEllipse(self.rect())
+        painter.end()
+
+
+class ConnectionIndicator(QFrame):
+    """A Connected/Disconnected pill with a leading status dot.
+
+    The dot breathes only while connected, so a live credential is
+    distinguishable from a stale one at a glance without reading the text.
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("connectionIndicator")
+        self.setProperty("state", "disconnected")
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(11, 0, 13, 0)
+        layout.setSpacing(6)
+        self._dot = _PulseDot(self)
+        self._label = QLabel("Disconnected", self)
+        self._label.setObjectName("connectionIndicatorLabel")
+        layout.addWidget(self._dot)
+        layout.addWidget(self._label)
+        self._connected = False
+        self._radius = 11
+        self.refresh_theme()
+
+    def match_height(self, *widgets: QWidget) -> None:
+        """Sizes the pill to its row neighbours so the line reads as one band.
+
+        The radius follows the height, keeping the shape a true pill rather
+        than a rounded rectangle once it grows to control height.
+        """
+        heights = [
+            widget.sizeHint().height() for widget in widgets if widget is not None
+        ]
+        if not heights:
+            return
+        height = max(heights)
+        self.setFixedHeight(height)
+        self._radius = height // 2
+        self.refresh_theme()
+
+    def is_connected(self) -> bool:
+        return self._connected
+
+    def set_state(self, connected: bool, text: str = "", tooltip: str = "") -> None:
+        self._connected = bool(connected)
+        self.setProperty("state", "connected" if connected else "disconnected")
+        self._label.setText(text or ("Connected" if connected else "Disconnected"))
+        self.setToolTip(tooltip)
+        self._label.setToolTip(tooltip)
+        self._dot.set_breathing(self._connected)
+        self.refresh_theme()
+
+    def refresh_theme(self) -> None:
+        key = "CONNECTED_DOT" if self._connected else "DISCONNECTED_DOT"
+        fallback = theme.PASS if self._connected else theme.FAIL
+        self._dot.set_color(theme.ACTIVE_TOKENS.get(key, fallback))
+        # Only the radius is set per-widget; colours stay in the global sheet
+        # so the pill keeps following the active palette.
+        self.setStyleSheet(
+            f"QFrame#connectionIndicator {{ border-radius: {self._radius}px; }}"
+        )
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self._label.style().unpolish(self._label)
+        self._label.style().polish(self._label)
 
 
 class KeyValueTable(QWidget):

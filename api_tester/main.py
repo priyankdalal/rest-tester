@@ -7,8 +7,20 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from PyQt6.QtCore import QElapsedTimer, QObject, Qt, QThread, QTimer, QUrl, pyqtSignal
-from PyQt6.QtGui import QColor, QDesktopServices, QKeySequence, QShortcut
+from PyQt6.QtCore import (
+    QEasingCurve,
+    QElapsedTimer,
+    QItemSelectionModel,
+    QObject,
+    QPropertyAnimation,
+    QSize,
+    Qt,
+    QThread,
+    QTimer,
+    QUrl,
+    pyqtSignal,
+)
+from PyQt6.QtGui import QColor, QDesktopServices, QKeySequence, QMouseEvent, QShortcut
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -24,7 +36,6 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
-    QListWidgetItem,
     QMainWindow,
     QMenu,
     QMessageBox,
@@ -33,6 +44,9 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
     QSplitter,
     QSpinBox,
+    QStyledItemDelegate,
+    QStyle,
+    QStyleOptionViewItem,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -41,6 +55,7 @@ from PyQt6.QtWidgets import (
     QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
+    QWidgetAction,
 )
 
 from . import theme
@@ -58,18 +73,24 @@ from .client import (
     prepare_endpoint_request,
     redact_headers,
 )
-from .environment import AppSettings, validate_base_url
+from .environment import AppSettings
 from .authentication import AuthError
-from .request_auth import AuthenticationContext, populate_auth_choices
+from .request_auth import (
+    AuthenticationContext,
+    ConnectionState,
+    populate_auth_choices,
+)
 from .data_runner.ui import DataRunnerTab
 from .load_testing.ui import LoadTestingTab
 from .environment_ui import EnvironmentEditor, EnvironmentManagerPage
 from .execution.models import ExecutionEnvironmentSnapshot
-from .icons import app_icon, app_pixmap, icon
+from .auth_log import activity_log
+from .icons import app_icon, app_pixmap, badged_icon, icon
 from .documentation import endpoint_documentation
 from .seeding import refresh_payload, seed_parameter
 from .saved_requests import (
     CollectionsPage,
+    RequestCollection,
     SavedRequest,
     SavedRequestStore,
     SavedRequestsPage,
@@ -81,10 +102,14 @@ from .viewers import FilePicker, JsonTextEdit, RequestBodyEditor, ResponseViewer
 from .widgets import (
     AccordionSection,
     AccordionScrollArea,
+    ConnectionIndicator,
     ElidingLabel,
+    IconTextItemDelegate,
     OverlayEmptyState,
     attach_table_empty_state,
     inset_shadow_detail_pane,
+    make_icon_text_item,
+    set_icon_text_items_collapsed,
 )
 from .workspace_store import WorkspaceStore, migrate_legacy_files
 
@@ -123,6 +148,63 @@ EMPTY_CATALOG = Catalog(
 )
 
 
+class EndpointTreeRow(QWidget):
+    clicked = pyqtSignal()
+
+    def __init__(self, endpoint: Endpoint, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("endpointTreeRow")
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 4, 6, 4)
+        layout.setSpacing(10)
+
+        self.method = QLabel(endpoint.method)
+        self.method.setObjectName("endpointMethodPill")
+        self.method.setProperty("method", endpoint.method.upper())
+        self.method.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.method.setFixedSize(66, 32)
+        self.method.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        layout.addWidget(self.method)
+
+        text_layout = QVBoxLayout()
+        text_layout.setContentsMargins(0, 0, 0, 0)
+        text_layout.setSpacing(0)
+        self.action = ElidingLabel(endpoint.action)
+        self.action.setObjectName("endpointTreeAction")
+        self.action.setMinimumWidth(0)
+        self.action.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
+        )
+        self.action.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.path = ElidingLabel(endpoint.path)
+        self.path.setObjectName("endpointTreePath")
+        self.path.setMinimumWidth(0)
+        self.path.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
+        )
+        self.path.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        text_layout.addWidget(self.action)
+        text_layout.addWidget(self.path)
+        layout.addLayout(text_layout, 1)
+
+    def set_selected(self, selected: bool) -> None:
+        self.setProperty("selected", selected)
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt signature
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(event)
+
+
+class EndpointTreeDelegate(QStyledItemDelegate):
+    def paint(self, painter, option, index) -> None:
+        styled_option = QStyleOptionViewItem(option)
+        styled_option.state &= ~QStyle.StateFlag.State_HasFocus
+        super().paint(painter, styled_option, index)
+
+
 class RequestWorker(QObject):
     completed = pyqtSignal(object)
     failed = pyqtSignal(str)
@@ -145,6 +227,41 @@ class RequestWorker(QObject):
             self.failed.emit(str(exc))
 
 
+class ConnectionProbe(QThread):
+    """Resolves a service's authentication readiness off the GUI thread.
+
+    ``AuthenticationContext.connection_state`` can block — a token method may
+    consult its cached session — so the indicator is never computed inline.
+    """
+
+    resolved = pyqtSignal(int, object)
+
+    def __init__(
+        self,
+        token: int,
+        context: AuthenticationContext,
+        service: str,
+        mode: str,
+        manual_headers: dict[str, str],
+        parent: QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._token = token
+        self._context = context
+        self._service = service
+        self._mode = mode
+        self._manual_headers = dict(manual_headers)
+
+    def run(self) -> None:
+        try:
+            state = self._context.connection_state(
+                self._service, self._mode, self._manual_headers
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            state = ConnectionState(False, "Unavailable", str(exc))
+        self.resolved.emit(self._token, state)
+
+
 class MainWindow(QMainWindow):
     def __init__(
         self,
@@ -162,9 +279,13 @@ class MainWindow(QMainWindow):
         self._request_drafts: dict[str, tuple[dict[str, str], str]] = {}
         self._request_auth_modes: dict[str, str] = {}
         self.endpoint_items: dict[str, QTreeWidgetItem] = {}
+        self.endpoint_rows: dict[str, EndpointTreeRow] = {}
         self.base_url_inputs: dict[str, QLineEdit] = {}
         self._request_thread: QThread | None = None
         self._request_worker: RequestWorker | None = None
+        self._connection_probes: set[ConnectionProbe] = set()
+        self._notifications_seen = 0
+        self._connection_token = 0
         self.app_settings = AppSettings.from_dict(
             raw_settings,
             {service.name: service.default_base_url for service in self.services},
@@ -187,6 +308,7 @@ class MainWindow(QMainWindow):
         self._restore_shell_state()
         report_progress(90, "Applying interface theme")
         theme.apply_theme(QApplication.instance(), self.app_settings.theme)
+        self._refresh_header_buttons()
         self.suite_tab.refresh_theme()
         self.response.refresh_theme()
         self.parameters_seed_button.setIcon(icon("seed", theme.TEXT, 18))
@@ -198,6 +320,11 @@ class MainWindow(QMainWindow):
             button.setIcon(icon(icon_name, theme.TEXT, 18))
         self.query_builder.refresh_theme()
         self.sort_builder.refresh_theme()
+        self.connection_indicator.match_height(
+            self.request_authentication, self.edit_environment_button
+        )
+        self.edit_environment_button.setIcon(icon("globe", theme.TEXT_MUTED))
+        self._refresh_connection_state()
         report_progress(96, "Finalizing workspace")
 
     def _build_ui(self) -> None:
@@ -221,74 +348,34 @@ class MainWindow(QMainWindow):
         header_layout.addWidget(self.app_title)
         self._refresh_app_title()
         header_layout.addStretch()
-        self.environment_banner = QLabel()
-        self.environment_banner.setObjectName("connectionBadge")
-        self.environment_banner.setProperty("shellRegion", "environmentStatus")
-        self.environment_banner.setToolTip(
-            "Active environment. Change it in Settings > Environments."
+        self.notifications_button = QToolButton()
+        self.notifications_button.setObjectName("headerIconButton")
+        self.notifications_button.setIconSize(QSize(18, 18))
+        self.notifications_button.setFixedSize(32, 32)
+        self.notifications_button.setToolTip("Recent authentication activity")
+        self.notifications_button.setAccessibleName("Notifications")
+        self.notifications_button.setPopupMode(
+            QToolButton.ToolButtonPopupMode.InstantPopup
         )
-        self.theme_combo = QComboBox()
-        self.theme_combo.addItems(["Light", "Dark", "System"])
-        self.theme_combo.setCurrentText(self.app_settings.theme)
-        self.theme_combo.setToolTip("Application theme")
-        self.theme_combo.currentTextChanged.connect(self._theme_changed)
-        header_layout.addWidget(self.theme_combo)
+        self.notifications_menu = QMenu(self.notifications_button)
+        self.notifications_menu.aboutToShow.connect(
+            self._populate_notifications_menu
+        )
+        self.notifications_button.setMenu(self.notifications_menu)
+        header_layout.addWidget(self.notifications_button)
+        self.theme_toggle_button = QToolButton()
+        self.theme_toggle_button.setObjectName("headerIconButton")
+        self.theme_toggle_button.setIconSize(QSize(18, 18))
+        self.theme_toggle_button.setFixedSize(32, 32)
+        self.theme_toggle_button.clicked.connect(self._toggle_theme)
+        header_layout.addWidget(self.theme_toggle_button)
+        self._refresh_header_buttons()
         help_button = QPushButton("?")
         help_button.setObjectName("iconButton")
         help_button.setToolTip("Help and keyboard shortcuts")
         help_button.clicked.connect(self._show_help)
         header_layout.addWidget(help_button)
         layout.addWidget(header)
-
-        self.environment_toolbar = QFrame()
-        self.environment_toolbar.setObjectName("environmentToolbar")
-        self.environment_toolbar.setProperty("shellRegion", "environment")
-        environment_toolbar_layout = QHBoxLayout(self.environment_toolbar)
-        environment_toolbar_layout.setContentsMargins(12, 6, 12, 6)
-        environment_toolbar_layout.setSpacing(8)
-
-        environment_caption = QLabel("Target")
-        environment_caption.setObjectName("environmentToolbarCaption")
-        environment_caption.setProperty("fieldCaption", True)
-        environment_toolbar_layout.addWidget(environment_caption)
-        self.environment_selector = QComboBox()
-        self.environment_selector.setObjectName("activeEnvironmentSelector")
-        self.environment_selector.setMinimumWidth(150)
-        self.environment_selector.setAccessibleName("Active environment")
-        self.environment_selector.addItems(list(self.app_settings.environments))
-        self.environment_selector.setCurrentText(self.app_settings.active_environment)
-        self.environment_selector.currentTextChanged.connect(self._activate_environment)
-        environment_toolbar_layout.addWidget(self.environment_selector)
-
-        service_caption = QLabel("Service")
-        service_caption.setObjectName("serviceToolbarCaption")
-        service_caption.setProperty("fieldCaption", True)
-        environment_toolbar_layout.addWidget(service_caption)
-        self.service_selector = QComboBox()
-        self.service_selector.setObjectName("activeServiceSelector")
-        self.service_selector.setMinimumWidth(150)
-        self.service_selector.setAccessibleName("Active service")
-        self.service_selector.addItems([service.name for service in self.services])
-        self.service_selector.setCurrentText(self.app_settings.active_service)
-        self.service_selector.currentTextChanged.connect(self._active_service_changed)
-        environment_toolbar_layout.addWidget(self.service_selector)
-
-        self.base_url_label = ElidingLabel()
-        self.base_url_label.setObjectName("environmentBaseUrl")
-        self.base_url_label.setProperty("shellRegion", "environment")
-        self.base_url_label.setProperty("monospace", True)
-        self.base_url_label.setSizePolicy(
-            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
-        )
-        self.base_url_label.setToolTip("Base URL for the active service")
-        environment_toolbar_layout.addWidget(self.base_url_label, 1)
-        environment_toolbar_layout.addWidget(self.environment_banner)
-        self.edit_environment_button = QPushButton("Edit environment")
-        self.edit_environment_button.setObjectName("editEnvironmentButton")
-        self.edit_environment_button.setProperty("ghost", True)
-        self.edit_environment_button.clicked.connect(self._edit_environment)
-        environment_toolbar_layout.addWidget(self.edit_environment_button)
-        layout.addWidget(self.environment_toolbar)
 
         self.base_url_inputs = {
             service.name: QLineEdit(self.app_settings.active.base_urls.get(service.name, ""))
@@ -323,14 +410,13 @@ class MainWindow(QMainWindow):
         explorer_header.addWidget(explorer_title)
         explorer_header.addStretch()
         explorer_layout.addLayout(explorer_header)
-        explorer_description = QLabel(
+        explorer_description = ElidingLabel(
             "Browse services, controllers, and endpoints from the active API catalog."
         )
         explorer_description.setObjectName("apiExplorerPageDescription")
         explorer_description.setProperty("pageDescription", True)
-        explorer_description.setWordWrap(True)
+        explorer_description.setWordWrap(False)
         explorer_layout.addWidget(explorer_description)
-        search_row = QHBoxLayout()
         self.endpoint_search = QLineEdit()
         self.endpoint_search.setAccessibleName("Search endpoints")
         self.endpoint_search.setPlaceholderText("Search endpoints...")
@@ -338,42 +424,40 @@ class MainWindow(QMainWindow):
             icon("search"), QLineEdit.ActionPosition.LeadingPosition
         )
         self.endpoint_search.textChanged.connect(self._filter_endpoints)
-        search_row.addWidget(self.endpoint_search)
+        explorer_layout.addWidget(self.endpoint_search)
+        filter_row = QHBoxLayout()
+        filter_row.setSpacing(8)
         self.method_filter = QComboBox()
         self.method_filter.setAccessibleName("Filter endpoints by HTTP method")
         self.method_filter.addItem("All methods", "")
         for method in ("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"):
             self.method_filter.addItem(method, method)
         self.method_filter.currentIndexChanged.connect(self._filter_endpoints)
-        search_row.addWidget(self.method_filter)
+        filter_row.addWidget(self.method_filter, 1)
         self.scope_filter = QComboBox()
         self.scope_filter.setAccessibleName("Filter favorite or recent endpoints")
         self.scope_filter.addItem("All endpoints", "")
         self.scope_filter.addItem("Favorites", "favorites")
         self.scope_filter.addItem("Recent", "recent")
         self.scope_filter.currentIndexChanged.connect(self._filter_endpoints)
-        search_row.addWidget(self.scope_filter)
-        explorer_layout.addLayout(search_row)
+        filter_row.addWidget(self.scope_filter, 1)
+        explorer_layout.addLayout(filter_row)
         self.endpoint_tree = QTreeWidget()
         self.endpoint_tree.setObjectName("endpointTree")
         self.endpoint_tree.setProperty("shellRegion", "explorer")
         self.endpoint_tree.setAccessibleName("Rest Tester endpoint catalog")
+        self.endpoint_tree.setItemDelegate(EndpointTreeDelegate(self.endpoint_tree))
         self.endpoint_tree.setHeaderLabels(["Action / path", "Method / count"])
+        self.endpoint_tree.setHeaderHidden(True)
         self.endpoint_tree.setRootIsDecorated(True)
         self.endpoint_tree.setAnimated(False)
         self.endpoint_tree.itemSelectionChanged.connect(self._endpoint_selected)
         endpoint_header_view = self.endpoint_tree.header()
         endpoint_header_view.setStretchLastSection(False)
         endpoint_header_view.setMinimumSectionSize(40)
-        endpoint_header_view.setSectionResizeMode(
-            0, QHeaderView.ResizeMode.Interactive
-        )
-        endpoint_header_view.setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Interactive
-        )
-        widths = self.app_settings.endpoint_column_widths
-        self.endpoint_tree.setColumnWidth(0, widths[0] if widths else 255)
-        self.endpoint_tree.setColumnWidth(1, widths[1] if len(widths) > 1 else 65)
+        endpoint_header_view.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        endpoint_header_view.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        self.endpoint_tree.setColumnWidth(1, 52)
         explorer_layout.addWidget(self.endpoint_tree)
         self.endpoint_tree_empty_state = attach_table_empty_state(
             self.endpoint_tree,
@@ -389,18 +473,19 @@ class MainWindow(QMainWindow):
         details_layout = QVBoxLayout(details)
         details_layout.setContentsMargins(12, 10, 12, 10)
         details_layout.setSpacing(8)
+        endpoint_workspace = QWidget(details)
+        endpoint_workspace_layout = QVBoxLayout(endpoint_workspace)
+        endpoint_workspace_layout.setContentsMargins(0, 0, 0, 0)
+        endpoint_workspace_layout.setSpacing(8)
+        self.endpoint_workspace = endpoint_workspace
         self.endpoint_title = QLabel("Select an endpoint")
         self.endpoint_title.setObjectName("endpointBreadcrumb")
         self.endpoint_title.setSizePolicy(
             QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
         )
-        details_layout.addWidget(self.endpoint_title)
-        self.endpoint_source = QLabel("")
-        self.endpoint_source.setObjectName("endpointSource")
-        self.endpoint_source.setSizePolicy(
-            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
-        )
-        endpoint_header = QHBoxLayout()
+        endpoint_workspace_layout.addWidget(self.endpoint_title)
+        endpoint_header_widget = QWidget(endpoint_workspace)
+        endpoint_header = QHBoxLayout(endpoint_header_widget)
         endpoint_header.setSpacing(8)
         endpoint_identity = QFrame()
         endpoint_identity.setObjectName("endpointIdentity")
@@ -424,20 +509,27 @@ class MainWindow(QMainWindow):
         endpoint_identity_layout.addWidget(self.endpoint_method)
         endpoint_identity_layout.addWidget(self.endpoint_route, 1)
         endpoint_header.addWidget(endpoint_identity, 1)
-        self.send_button = QPushButton("Send")
+        self.send_button = QToolButton()
         self.send_button.setObjectName("endpointSendButton")
+        self.send_button.setText("Send")
         self.send_button.setAccessibleName("Send request without verification")
         self.send_button.setIcon(icon("send", "#ffffff"))
+        self.send_button.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+        )
         self.send_button.setProperty("accent", True)
         self.send_button.clicked.connect(self._send_without_verification)
-        endpoint_header.addWidget(self.send_button)
-        self.send_and_verify_button = QPushButton("Send and Verify")
-        self.send_and_verify_button.setAccessibleName(
-            "Send request and verify expected result"
+        self.send_button.setPopupMode(
+            QToolButton.ToolButtonPopupMode.MenuButtonPopup
         )
-        self.send_and_verify_button.setIcon(icon("verify", theme.PRIMARY))
-        self.send_and_verify_button.clicked.connect(self._send_request)
-        endpoint_header.addWidget(self.send_and_verify_button)
+        send_menu = QMenu(self.send_button)
+        send_menu.addAction(
+            icon("verify", theme.PRIMARY),
+            "Send and Verify",
+            self._send_request,
+        )
+        self.send_button.setMenu(send_menu)
+        endpoint_header.addWidget(self.send_button)
         self.save_request_button = QPushButton("Save Request")
         self.save_request_button.setIcon(icon("save"))
         self.save_request_button.clicked.connect(self._save_current_request)
@@ -463,7 +555,9 @@ class MainWindow(QMainWindow):
             Qt.ToolButtonStyle.ToolButtonTextBesideIcon
         )
         self.endpoint_more_actions.setMinimumWidth(76)
-        self.endpoint_more_actions.setFixedHeight(self.send_button.sizeHint().height())
+        self.endpoint_more_actions.setFixedHeight(
+            self.send_button.sizeHint().height()
+        )
         self.endpoint_more_actions.setToolTip("More request actions")
         self.endpoint_more_actions.setPopupMode(
             QToolButton.ToolButtonPopupMode.InstantPopup
@@ -475,19 +569,52 @@ class MainWindow(QMainWindow):
         request_menu.addAction("Open Source File", self._open_source)
         self.endpoint_more_actions.setMenu(request_menu)
         endpoint_header.addWidget(self.endpoint_more_actions)
+        self.endpoint_action_buttons = (
+            self.send_button,
+            self.save_request_button,
+            self.add_to_suite_button,
+            self.favorite_button,
+            self.endpoint_more_actions,
+        )
+        self._set_endpoint_actions_enabled(False)
         self.endpoint_header_layout = endpoint_header
-        details_layout.addLayout(endpoint_header)
-        details_layout.addWidget(self.endpoint_source)
+        endpoint_workspace_layout.addWidget(endpoint_header_widget)
         authentication_row = QHBoxLayout()
-        authentication_row.addWidget(QLabel("Authentication"))
+        authentication_row.setSpacing(8)
+        authentication_label = QLabel("Authentication")
+        authentication_label.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred
+        )
+        authentication_row.addWidget(authentication_label)
         self.request_authentication = QComboBox()
         populate_auth_choices(self.request_authentication, self.app_settings.active.auth_profiles)
         self.request_authentication.setToolTip(
             "Configure sign-in under Settings > Environments > Authentication. "
             "No authentication omits known credential headers; Manual never renews."
         )
+        self.request_authentication.currentIndexChanged.connect(
+            self._authentication_mode_changed
+        )
         authentication_row.addWidget(self.request_authentication, 1)
-        details_layout.addLayout(authentication_row)
+        self.connection_indicator = ConnectionIndicator()
+        authentication_row.addWidget(self.connection_indicator)
+        self.edit_environment_button = QPushButton("Edit Environment")
+        self.edit_environment_button.setObjectName("editEnvironmentButton")
+        self.edit_environment_button.setIcon(icon("globe", theme.TEXT_MUTED))
+        self.edit_environment_button.setToolTip(
+            "Edit base URLs, headers, and authentication for the active environment"
+        )
+        self.edit_environment_button.clicked.connect(self._edit_environment)
+        self.edit_environment_button.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
+        )
+        authentication_row.addWidget(self.edit_environment_button)
+        self.connection_indicator.match_height(
+            self.request_authentication, self.edit_environment_button
+        )
+        authentication_widget = QWidget(endpoint_workspace)
+        authentication_widget.setLayout(authentication_row)
+        endpoint_workspace_layout.addWidget(authentication_widget)
 
         self.endpoint_content_tabs = QTabWidget()
         self.endpoint_content_tabs.setObjectName("endpointTabs")
@@ -664,7 +791,8 @@ class MainWindow(QMainWindow):
                 "endpoint_response", True
             ),
         )
-        details_layout.addWidget(self.request_response_accordion, 1)
+        endpoint_workspace_layout.addWidget(self.request_response_accordion, 1)
+        details_layout.addWidget(endpoint_workspace, 1)
         details_shell, left_shadow, top_shadow = inset_shadow_detail_pane(
             details,
             shell_name="requestWorkspaceShell",
@@ -789,11 +917,15 @@ class MainWindow(QMainWindow):
         body_layout.setSpacing(0)
         navigation_panel = QWidget()
         navigation_panel.setObjectName("navigationPanel")
-        navigation_panel.setFixedWidth(145)
+        navigation_panel.setFixedWidth(180)
+        self.navigation_panel = navigation_panel
+        self._navigation_collapsed = False
+        self._navigation_width_animation: QPropertyAnimation | None = None
         navigation_layout = QVBoxLayout(navigation_panel)
         navigation_layout.setContentsMargins(0, 0, 0, 8)
         self.navigation = QListWidget()
         self.navigation.setObjectName("navigationRail")
+        self.navigation.setItemDelegate(IconTextItemDelegate(self.navigation))
         self.navigation.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
@@ -808,36 +940,65 @@ class MainWindow(QMainWindow):
             ("Environments", "globe"),
             ("Settings", "settings"),
         ):
-            item = QListWidgetItem(icon(icon_name, "#DCE9F8"), name)
+            item = make_icon_text_item(name, icon_name)
             item.setToolTip(name)
             self.navigation.addItem(item)
         self.navigation.currentRowChanged.connect(self.workspace_tabs.setCurrentIndex)
         self.workspace_tabs.currentChanged.connect(self._workspace_tab_changed)
         self.navigation.setCurrentRow(0)
         navigation_layout.addWidget(self.navigation, 1)
-        method_counts: dict[str, int] = {}
-        total = 0
-        for service in self.services:
-            for endpoint in service.endpoints:
-                total += 1
-                method_counts[endpoint.method] = method_counts.get(endpoint.method, 0) + 1
-        stats = QLabel(
-            "Total Endpoints\n"
-            f"<b>{total}</b><br><br>"
-            + "<br>".join(
-                f"<span style='color:{theme.method_color(method)}'><b>{method}</b></span>"
-                f" &nbsp; {count}"
-                for method, count in sorted(method_counts.items())
-            )
+        self.navigation_stats = QLabel()
+        self.navigation_stats.setObjectName("navigationStats")
+        self.navigation_stats.setTextFormat(Qt.TextFormat.RichText)
+        self.navigation_stats.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._refresh_navigation_stats()
+        navigation_layout.addWidget(self.navigation_stats)
+        footer = QWidget()
+        footer.setObjectName("navigationFooter")
+        footer_layout = QVBoxLayout(footer)
+        footer_layout.setContentsMargins(4, 4, 4, 4)
+        footer_layout.setSpacing(2)
+        self.endpoint_info_button = QToolButton()
+        self.endpoint_info_button.setObjectName("navigationInfoButton")
+        self.endpoint_info_button.setIcon(icon("info-circle", theme.NAV_MUTED, 17))
+        self.endpoint_info_button.setIconSize(QSize(17, 17))
+        self.endpoint_info_button.setFixedSize(24, 24)
+        self.endpoint_info_button.setToolTip("Show API endpoint counts")
+        self.endpoint_info_button.setAccessibleName("Show API endpoint counts")
+        self.endpoint_info_menu = QMenu(self.endpoint_info_button)
+        self.endpoint_info_menu.aboutToShow.connect(self._populate_endpoint_counts_menu)
+        self.endpoint_info_button.setPopupMode(
+            QToolButton.ToolButtonPopupMode.InstantPopup
         )
-        stats.setObjectName("navigationStats")
-        stats.setTextFormat(Qt.TextFormat.RichText)
-        stats.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        navigation_layout.addWidget(stats)
-        version = QLabel("v2.1.0")
-        version.setObjectName("navigationVersion")
-        version.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        navigation_layout.addWidget(version)
+        self.endpoint_info_button.setMenu(self.endpoint_info_menu)
+        footer_layout.addWidget(
+            self.endpoint_info_button, 0, Qt.AlignmentFlag.AlignHCenter
+        )
+        self.navigation_version_row = QWidget()
+        self.navigation_version_row.setObjectName("navigationVersionRow")
+        version_row_layout = QHBoxLayout(self.navigation_version_row)
+        version_row_layout.setContentsMargins(0, 0, 0, 0)
+        version_row_layout.setSpacing(4)
+        version_row_layout.addStretch()
+        self.navigation_version = QLabel("v2.1.0")
+        self.navigation_version.setObjectName("navigationVersion")
+        self.navigation_version.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        version_row_layout.addWidget(self.navigation_version)
+        self.navigation_collapse_button = QToolButton()
+        self.navigation_collapse_button.setObjectName("navigationFooterButton")
+        self.navigation_collapse_button.setIcon(icon("chevron-left", theme.NAV_MUTED, 16))
+        self.navigation_collapse_button.setIconSize(QSize(16, 16))
+        self.navigation_collapse_button.setFixedSize(24, 24)
+        self.navigation_collapse_button.setToolTip("Collapse navigation rail")
+        self.navigation_collapse_button.setAccessibleName("Collapse navigation rail")
+        self.navigation_collapse_button.clicked.connect(
+            self._toggle_navigation_collapsed
+        )
+        version_row_layout.addWidget(self.navigation_collapse_button)
+        version_row_layout.addStretch()
+        footer_layout.addWidget(self.navigation_version_row)
+        navigation_layout.addWidget(footer)
+        self.endpoint_info_button.hide()
         body_layout.addWidget(navigation_panel)
         body_layout.addWidget(self.workspace_tabs, 1)
         layout.addWidget(body, 1)
@@ -858,6 +1019,121 @@ class MainWindow(QMainWindow):
                 pane.setSizePolicy(policy)
                 if pane.property("preserveMinimumWidth") is not True:
                     pane.setMinimumWidth(0)
+
+    def _toggle_navigation_collapsed(self) -> None:
+        if (
+            self._navigation_width_animation is not None
+            and self._navigation_width_animation.state()
+            == QPropertyAnimation.State.Running
+        ):
+            return
+        collapsed = not self._navigation_collapsed
+        self._navigation_collapsed = collapsed
+        current_width = self.navigation_panel.width()
+        target_width = 68 if collapsed else 180
+        self.navigation_panel.setMinimumWidth(68)
+        self.navigation_panel.setMaximumWidth(current_width)
+        animation = QPropertyAnimation(
+            self.navigation_panel, b"maximumWidth", self
+        )
+        animation.setDuration(240)
+        animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        animation.setStartValue(current_width)
+        animation.setEndValue(target_width)
+        self._navigation_width_animation = animation
+        self.navigation_collapse_button.setEnabled(False)
+        animation.finished.connect(
+            lambda: self._finish_navigation_width_animation(
+                animation, target_width
+            )
+        )
+        animation.start()
+
+        if self._navigation_collapsed:
+            set_icon_text_items_collapsed(self.navigation, True)
+            self.navigation_stats.hide()
+            self.endpoint_info_button.show()
+            self.navigation_version.hide()
+            self.navigation_collapse_button.setIcon(
+                icon("chevron-right", theme.NAV_MUTED, 16)
+            )
+            self.navigation_collapse_button.setToolTip("Expand navigation rail")
+            self.navigation_collapse_button.setAccessibleName(
+                "Expand navigation rail"
+            )
+        else:
+            set_icon_text_items_collapsed(self.navigation, False)
+            self.navigation_stats.show()
+            self.endpoint_info_button.hide()
+            self.navigation_version.show()
+            self.navigation_collapse_button.setIcon(
+                icon("chevron-left", theme.NAV_MUTED, 16)
+            )
+            self.navigation_collapse_button.setToolTip("Collapse navigation rail")
+            self.navigation_collapse_button.setAccessibleName(
+                "Collapse navigation rail"
+            )
+
+    def _finish_navigation_width_animation(
+        self, animation: QPropertyAnimation, width: int
+    ) -> None:
+        if animation is not self._navigation_width_animation:
+            return
+        self.navigation_panel.setFixedWidth(width)
+        self.navigation_collapse_button.setEnabled(True)
+        self._navigation_width_animation = None
+        animation.deleteLater()
+
+    def _populate_endpoint_counts_menu(self) -> None:
+        self.endpoint_info_menu.clear()
+        self.endpoint_info_menu.addSection("API endpoint counts")
+        method_counts: dict[str, int] = {}
+        total = 0
+        for service in self.services:
+            for endpoint in service.endpoints:
+                total += 1
+                method_counts[endpoint.method] = (
+                    method_counts.get(endpoint.method, 0) + 1
+                )
+        total_label = QLabel(f"Total endpoints: {total:,}")
+        total_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        total_label.setMinimumWidth(170)
+        total_action = QWidgetAction(self.endpoint_info_menu)
+        total_action.setDefaultWidget(total_label)
+        self.endpoint_info_menu.addAction(total_action)
+        rows = QWidget()
+        rows_layout = QVBoxLayout(rows)
+        rows_layout.setContentsMargins(10, 4, 10, 6)
+        rows_layout.setSpacing(3)
+        for method, count in sorted(method_counts.items()):
+            row = QLabel(
+                f"<span style='color:{theme.method_color(method)}'><b>{method}</b></span>"
+                f" &nbsp; {count:,}"
+            )
+            row.setTextFormat(Qt.TextFormat.RichText)
+            rows_layout.addWidget(row)
+        action = QWidgetAction(self.endpoint_info_menu)
+        action.setDefaultWidget(rows)
+        self.endpoint_info_menu.addAction(action)
+
+    def _refresh_navigation_stats(self) -> None:
+        method_counts: dict[str, int] = {}
+        total = 0
+        for service in self.services:
+            for endpoint in service.endpoints:
+                total += 1
+                method_counts[endpoint.method] = (
+                    method_counts.get(endpoint.method, 0) + 1
+                )
+        self.navigation_stats.setText(
+            "Total Endpoints<br>"
+            f"<b>{total:,}</b><br><br>"
+            + "<br>".join(
+                f"<span style='color:{theme.method_color(method)}'><b>{method}</b></span>"
+                f" &nbsp; {count:,}"
+                for method, count in sorted(method_counts.items())
+            )
+        )
 
     def showEvent(self, event) -> None:  # noqa: N802 - Qt signature
         super().showEvent(event)
@@ -1148,6 +1424,8 @@ class MainWindow(QMainWindow):
     def _populate_services(self) -> None:
         self.endpoint_tree.clear()
         self.endpoint_items.clear()
+        self.endpoint_rows.clear()
+        self._refresh_navigation_stats()
         self.endpoints_by_id = {
             endpoint.id: endpoint
             for service in self.services
@@ -1191,9 +1469,7 @@ class MainWindow(QMainWindow):
                     )
                     service_item.addChild(controller_item)
                     controllers[endpoint.controller] = controller_item
-                item = QTreeWidgetItem(
-                    [f"{endpoint.action}\n{endpoint.path}", endpoint.method]
-                )
+                item = QTreeWidgetItem(["", ""])
                 item.setData(0, 256, endpoint.id)
                 item.setData(
                     0,
@@ -1209,32 +1485,72 @@ class MainWindow(QMainWindow):
                     ).lower(),
                 )
                 item.setData(0, 258, endpoint.method)
-                item.setData(1, 258, endpoint.method)
                 item.setData(0, 259, "endpoint")
-                item.setData(1, 259, endpoint.method)
                 item.setToolTip(
                     0, f"{endpoint.action}\n{endpoint.method} {endpoint.path}"
                 )
-                item.setToolTip(1, f"HTTP method: {endpoint.method}")
-                item.setTextAlignment(1, Qt.AlignmentFlag.AlignCenter)
-                item.setForeground(1, QColor(theme.method_color(endpoint.method)))
                 controller_item.addChild(item)
                 self.endpoint_items[endpoint.id] = item
+                row = EndpointTreeRow(endpoint, self.endpoint_tree)
+                row.clicked.connect(
+                    lambda tree_item=item: self._select_endpoint_item(tree_item)
+                )
+                menu_container = QWidget(self.endpoint_tree)
+                menu_container.setObjectName("endpointActionCell")
+                menu_container.setAttribute(
+                    Qt.WidgetAttribute.WA_TranslucentBackground
+                )
+                menu_container.setAutoFillBackground(False)
+                menu_layout = QHBoxLayout(menu_container)
+                menu_layout.setContentsMargins(0, 0, 4, 0)
+                menu_layout.setAlignment(
+                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                )
+                menu_button = QToolButton(menu_container)
+                menu_button.setObjectName("endpointActionMenu")
+                menu_button.setIcon(icon("more-vertical", theme.TEXT_MUTED, 18))
+                menu_button.setIconSize(QSize(18, 18))
+                menu_button.setFixedSize(28, 30)
+                menu_button.setToolTip("Endpoint actions")
+                menu_button.setAccessibleName(f"Actions for {endpoint.action}")
+                menu_layout.addWidget(menu_button)
+                menu = QMenu(menu_button)
+                menu.aboutToShow.connect(
+                    lambda endpoint_id=endpoint.id, endpoint_menu=menu:
+                    self._populate_endpoint_actions_menu(
+                        endpoint_menu, endpoint_id
+                    )
+                )
+                menu_button.setMenu(menu)
+                menu_button.setPopupMode(
+                    QToolButton.ToolButtonPopupMode.InstantPopup
+                )
+                self.endpoint_tree.setItemWidget(item, 0, row)
+                self.endpoint_tree.setItemWidget(item, 1, menu_container)
+                self.endpoint_rows[endpoint.id] = row
                 self._set_endpoint_favorite_state(item, endpoint.id)
-        service_selector = getattr(self, "service_selector", None)
-        if service_selector is not None:
-            blocked = service_selector.blockSignals(True)
-            service_selector.clear()
-            service_selector.addItems([service.name for service in self.services])
-            service_selector.setCurrentText(self.app_settings.active_service)
-            service_selector.blockSignals(blocked)
 
     def _endpoint_selected(self) -> None:
         selected = self.endpoint_tree.selectedItems()
-        if not selected:
-            return
-        endpoint_id = selected[0].data(0, 256)
+        selected_endpoint_id = (
+            str(selected[0].data(0, 256) or "") if selected else ""
+        )
+        for endpoint_id, row in self.endpoint_rows.items():
+            row.set_selected(endpoint_id == selected_endpoint_id)
+        endpoint_id = selected_endpoint_id
         if not endpoint_id:
+            if self.current_endpoint is not None:
+                current_id = self.current_endpoint.id
+                self._request_auth_modes[current_id] = (
+                    self.request_authentication.currentData() or "inherit"
+                )
+                self._request_drafts[current_id] = (
+                    self._current_values(),
+                    self.payload.toPlainText(),
+                )
+                self.current_endpoint = None
+            self._set_endpoint_actions_enabled(False)
+            self._refresh_connection_state()
             return
         if self.current_endpoint is not None and self.current_endpoint.id != endpoint_id:
             self._request_auth_modes[self.current_endpoint.id] = self.request_authentication.currentData() or "inherit"
@@ -1246,8 +1562,8 @@ class MainWindow(QMainWindow):
         draft = self._request_drafts.get(endpoint.id)
         draft_values = draft[0] if draft else {}
         self.current_endpoint = endpoint
+        self._set_endpoint_actions_enabled(True)
         self.app_settings.active_service = endpoint.service
-        self._refresh_environment_banner()
         self._remember_recent_endpoint(endpoint.id)
         self.endpoint_title.setText(
             f"{endpoint.service}  >  {endpoint.controller}  >  {endpoint.action}"
@@ -1258,10 +1574,6 @@ class MainWindow(QMainWindow):
         self.endpoint_method.style().polish(self.endpoint_method)
         self.endpoint_route.setText(endpoint.path)
         self.endpoint_route.setToolTip(endpoint.path)
-        self.endpoint_source.setText(
-            f"{endpoint.action} · {endpoint.source_file}:{endpoint.source_line}"
-        )
-        self.endpoint_source.setToolTip(self.endpoint_source.text())
         self.endpoint_title.setToolTip(self.endpoint_title.text())
         self._refresh_favorite_button()
 
@@ -1383,6 +1695,20 @@ class MainWindow(QMainWindow):
         self._show_endpoint_examples(endpoint)
         self._load_endpoint_history(endpoint.id)
         self.response.clear()
+        self._refresh_connection_state()
+
+    def _select_endpoint_item(self, item: QTreeWidgetItem) -> None:
+        self.endpoint_tree.setCurrentItem(
+            item,
+            0,
+            QItemSelectionModel.SelectionFlag.ClearAndSelect,
+        )
+        if self.current_endpoint is None or self.current_endpoint.id != item.data(0, 256):
+            self._endpoint_selected()
+
+    def _set_endpoint_actions_enabled(self, enabled: bool) -> None:
+        for button in getattr(self, "endpoint_action_buttons", ()):
+            button.setEnabled(enabled)
 
     def _prepared_request(self):
         endpoint = self.current_endpoint
@@ -1496,8 +1822,7 @@ class MainWindow(QMainWindow):
             "" if request.payload is None else json.dumps(request.payload, indent=2),
         )
         self.current_endpoint = None
-        self.endpoint_tree.clearSelection()
-        self.endpoint_tree.setCurrentItem(endpoint_item)
+        self._select_endpoint_item(endpoint_item)
         self.expected_status.setCurrentText(request.expected_status)
         populate_auth_choices(
             self.request_authentication, self.app_settings.active.auth_profiles, request.authentication,
@@ -1576,7 +1901,11 @@ class MainWindow(QMainWindow):
     def _toggle_favorite(self) -> None:
         if self.current_endpoint is None:
             return
-        endpoint_id = self.current_endpoint.id
+        self._toggle_endpoint_favorite(self.current_endpoint.id)
+
+    def _toggle_endpoint_favorite(self, endpoint_id: str) -> None:
+        if endpoint_id not in self.endpoints_by_id:
+            return
         if endpoint_id in self.app_settings.favorites:
             self.app_settings.favorites.remove(endpoint_id)
         else:
@@ -1600,6 +1929,111 @@ class MainWindow(QMainWindow):
             ("Favorite endpoint\n" if favorite else "")
             + str(item.data(0, 257) or "").title(),
         )
+
+    def _populate_endpoint_actions_menu(
+        self, menu: QMenu, endpoint_id: str
+    ) -> None:
+        menu.clear()
+        suite_action = menu.addAction("Add to Test Suite")
+        suite_action.triggered.connect(
+            lambda _checked=False, item_id=endpoint_id:
+            self._add_endpoint_to_suite(item_id)
+        )
+
+        collection_menu = menu.addMenu("Add to Collection")
+        collections = sorted(
+            self.saved_request_store.collections.values(),
+            key=lambda collection: collection.name.lower(),
+        )
+        if collections:
+            for collection in collections:
+                action = collection_menu.addAction(collection.name)
+                action.triggered.connect(
+                    lambda _checked=False, item_id=endpoint_id,
+                    collection_id=collection.id:
+                    self._add_endpoint_to_collection(item_id, collection_id)
+                )
+        else:
+            collection_menu.addAction("No collections available").setEnabled(False)
+        collection_menu.addSeparator()
+        create_action = collection_menu.addAction("New Collection...")
+        create_action.triggered.connect(
+            lambda _checked=False, item_id=endpoint_id:
+            self._create_collection_for_endpoint(item_id)
+        )
+
+        menu.addSeparator()
+        favorite_action = menu.addAction(
+            "Remove from Favorites"
+            if endpoint_id in self.app_settings.favorites
+            else "Add to Favorites"
+        )
+        favorite_action.triggered.connect(
+            lambda _checked=False, item_id=endpoint_id:
+            self._toggle_endpoint_favorite(item_id)
+        )
+
+    def _activate_endpoint(self, endpoint_id: str) -> bool:
+        item = self.endpoint_items.get(endpoint_id)
+        if item is None:
+            return False
+        self._select_endpoint_item(item)
+        return self.current_endpoint is not None and self.current_endpoint.id == endpoint_id
+
+    def _add_endpoint_to_suite(self, endpoint_id: str) -> None:
+        if self._activate_endpoint(endpoint_id):
+            self._add_to_suite()
+
+    def _add_endpoint_to_collection(
+        self, endpoint_id: str, collection_id: str
+    ) -> None:
+        if not self._activate_endpoint(endpoint_id):
+            return
+        collection = self.saved_request_store.collections.get(collection_id)
+        endpoint = self.current_endpoint
+        if collection is None or endpoint is None:
+            QMessageBox.warning(
+                self,
+                "Collection unavailable",
+                "The selected collection or endpoint is no longer available.",
+            )
+            return
+        try:
+            payload = (
+                json.loads(self.payload.toPlainText())
+                if self.payload.toPlainText().strip()
+                else None
+            )
+        except json.JSONDecodeError as exc:
+            QMessageBox.warning(
+                self, "Invalid payload", f"Payload is not valid JSON: {exc}"
+            )
+            return
+        request = SavedRequest(
+            endpoint_id=endpoint.id,
+            name=f"{endpoint.method} {endpoint.action}",
+            values=self._current_values(),
+            payload=payload,
+            expected_status=self.expected_status.currentText(),
+            authentication=self.request_authentication.currentData() or "inherit",
+        )
+        self.saved_request_store.upsert_request(request)
+        self.saved_request_store.add_to_collection(collection_id, request.id)
+        self.saved_requests_page.refresh()
+        self.collections_page.refresh()
+        self.statusBar().showMessage(
+            f"Added {endpoint.action} to {collection.name}", 5000
+        )
+
+    def _create_collection_for_endpoint(self, endpoint_id: str) -> None:
+        name, accepted = QInputDialog.getText(
+            self, "New collection", "Name"
+        )
+        if not accepted or not name.strip():
+            return
+        collection = RequestCollection(name=name.strip())
+        self.saved_request_store.upsert_collection(collection)
+        self._add_endpoint_to_collection(endpoint_id, collection.id)
 
     def _refresh_favorite_button(self) -> None:
         button = getattr(self, "favorite_button", None)
@@ -1718,7 +2152,6 @@ class MainWindow(QMainWindow):
 
         self._save_settings()
         self.send_button.setEnabled(False)
-        self.send_and_verify_button.setEnabled(False)
         self.response.status_label.setText("Running...")
         arguments = (
             endpoint,
@@ -1771,8 +2204,7 @@ class MainWindow(QMainWindow):
         self.response.show_error(message)
 
     def _request_finished(self) -> None:
-        self.send_button.setEnabled(True)
-        self.send_and_verify_button.setEnabled(True)
+        self._set_endpoint_actions_enabled(self.current_endpoint is not None)
         if self._request_worker is not None:
             self._request_worker.deleteLater()
         if self._request_thread is not None:
@@ -1830,42 +2262,76 @@ class MainWindow(QMainWindow):
             self.request_authentication.currentData() or "inherit",
         )
         self.suite_tab.refresh_authentication_choices()
-        self._refresh_environment_banner()
+        self._refresh_connection_state()
 
-    def _refresh_environment_banner(self) -> None:
-        banner = getattr(self, "environment_banner", None)
-        if banner is None:
+    def _authentication_mode_changed(self) -> None:
+        """Keeps the draft mode and the connection pill in step with the combo."""
+        if self.current_endpoint is not None:
+            self._request_auth_modes[self.current_endpoint.id] = (
+                self.request_authentication.currentData() or "inherit"
+            )
+        self._refresh_connection_state()
+
+    def _edit_environment(self) -> None:
+        dialog = EnvironmentEditor(
+            self.app_settings.active, [service.name for service in self.services], self
+        )
+        if dialog.exec() != dialog.DialogCode.Accepted:
             return
-        profile = self.app_settings.active
-        service = self.app_settings.active_service or (
-            self.services[0].name if self.services else ""
-        )
-        url = profile.base_urls.get(service, "")
-        valid, status = validate_base_url(url)
-        environment_selector = getattr(self, "environment_selector", None)
-        if environment_selector is not None:
-            blocked = environment_selector.blockSignals(True)
-            environment_selector.setCurrentText(profile.name)
-            environment_selector.blockSignals(blocked)
-        service_selector = getattr(self, "service_selector", None)
-        if service_selector is not None:
-            blocked = service_selector.blockSignals(True)
-            service_selector.setCurrentText(service)
-            service_selector.blockSignals(blocked)
-        base_url_label = getattr(self, "base_url_label", None)
-        if base_url_label is not None:
-            base_url_label.setText(url or "No base URL configured")
-            base_url_label.setToolTip(url or "No base URL configured")
-        banner.setText(
-            f"{status}"
-        )
-        banner.setProperty("connected", valid)
-        banner.style().unpolish(banner)
-        banner.style().polish(banner)
-
-    def _environment_changed(self) -> None:
+        dialog.apply()
         self._sync_compatibility_controls()
         self._save_settings()
+
+    def _refresh_connection_state(self) -> None:
+        """Re-resolves the Connected/Disconnected pill for the active service.
+
+        A probe already in flight is superseded rather than awaited, and a
+        stale reply is dropped by token, so rapid endpoint switching cannot
+        leave the pill showing another endpoint's service.
+        """
+        indicator = getattr(self, "connection_indicator", None)
+        if indicator is None:
+            return
+        service = (
+            self.current_endpoint.service
+            if self.current_endpoint is not None
+            else self.app_settings.active_service
+        )
+        if not service:
+            indicator.set_state(
+                False, "No service", "Select an endpoint to check its authentication."
+            )
+            return
+        mode = self.request_authentication.currentData() or "inherit"
+        context = AuthenticationContext.from_environment(self.app_settings.active)
+        self._connection_token += 1
+        token = self._connection_token
+        indicator.set_state(
+            indicator.is_connected(),
+            "Checking…",
+            f"Checking authentication for {service}…",
+        )
+        probe = ConnectionProbe(
+            token, context, service, str(mode),
+            dict(self.app_settings.active.custom_headers), self,
+        )
+        probe.resolved.connect(self._connection_resolved)
+        probe.finished.connect(lambda probe=probe: self._connection_probe_finished(probe))
+        self._connection_probes.add(probe)
+        probe.start()
+
+    def _connection_probe_finished(self, probe: ConnectionProbe) -> None:
+        """Releases a finished probe so no reference outlives its C++ object."""
+        self._connection_probes.discard(probe)
+        probe.deleteLater()
+
+    def _connection_resolved(self, token: int, state: object) -> None:
+        if token != self._connection_token or not isinstance(state, ConnectionState):
+            return
+        detail = state.detail or state.summary
+        if state.summary and state.detail:
+            detail = f"{state.summary}\n{state.detail}"
+        self.connection_indicator.set_state(state.connected, state.label, detail)
 
     def _refresh_environment_ui(self) -> None:
         self.environment_page.refresh()
@@ -1877,29 +2343,6 @@ class MainWindow(QMainWindow):
             return
         self.app_settings.active_environment = name
         self._refresh_environment_ui()
-
-    def _edit_environment(self) -> None:
-        profile = self.app_settings.active
-        dialog = EnvironmentEditor(
-            profile, [service.name for service in self.services], self
-        )
-        if dialog.exec() != dialog.DialogCode.Accepted:
-            return
-        dialog.apply()
-        self._sync_compatibility_controls()
-        self._save_settings()
-
-    def _active_service_changed(self, service_name: str) -> None:
-        if service_name not in {service.name for service in self.services}:
-            return
-        self.app_settings.active_service = service_name
-        for index in range(self.endpoint_tree.topLevelItemCount()):
-            item = self.endpoint_tree.topLevelItem(index)
-            if item.text(0) == service_name:
-                item.setExpanded(True)
-                self.endpoint_tree.scrollToItem(item)
-                break
-        self._save_settings()
 
     def _filter_endpoints(self) -> None:
         query = self.endpoint_search.text().strip().lower()
@@ -1997,9 +2440,72 @@ class MainWindow(QMainWindow):
         ]
         self.app_settings.recent_endpoints = [endpoint_id, *recent][:20]
 
+    def _current_theme_is_dark(self) -> bool:
+        """The palette actually on screen, resolving a stored ``System``."""
+        return theme.is_dark_mode(QApplication.instance(), self.app_settings.theme)
+
+    def _toggle_theme(self) -> None:
+        self._theme_changed("Light" if self._current_theme_is_dark() else "Dark")
+
+    def _refresh_header_buttons(self) -> None:
+        """Repaints the header icons for the active palette and unread count."""
+        dark = self._current_theme_is_dark()
+        self.theme_toggle_button.setIcon(
+            icon("sun" if dark else "moon", theme.TEXT_MUTED, 18)
+        )
+        target = "light" if dark else "dark"
+        self.theme_toggle_button.setToolTip(f"Turn the lights {'on' if dark else 'off'}")
+        self.theme_toggle_button.setAccessibleName(f"Switch to {target} theme")
+        unread = max(0, len(activity_log) - self._notifications_seen)
+        if unread:
+            self.notifications_button.setIcon(
+                badged_icon("bell", theme.TEXT_MUTED, theme.PRIMARY, 18)
+            )
+            self.notifications_button.setToolTip(
+                f"{unread} new authentication event{'s' if unread != 1 else ''}"
+            )
+        else:
+            self.notifications_button.setIcon(icon("bell", theme.TEXT_MUTED, 18))
+            self.notifications_button.setToolTip("Recent authentication activity")
+
+    def _populate_notifications_menu(self) -> None:
+        """Fills the bell menu from the shared authentication activity log."""
+        menu = self.notifications_menu
+        menu.clear()
+        entries = activity_log.entries()[:12]
+        if not entries:
+            empty = menu.addAction("No activity yet")
+            empty.setEnabled(False)
+        else:
+            for entry in entries:
+                action = menu.addAction(f"{entry.when}   {entry.event} · {entry.profile}")
+                action.setToolTip(entry.summary() or entry.method)
+                action.setEnabled(False)
+            menu.addSeparator()
+            menu.addAction("Clear activity", self._clear_notifications)
+        self._notifications_seen = len(activity_log)
+        self._refresh_header_buttons()
+
+    def _clear_notifications(self) -> None:
+        activity_log.clear()
+        self._notifications_seen = 0
+        self._refresh_header_buttons()
+
     def _theme_changed(self, name: str) -> None:
         theme.apply_theme(QApplication.instance(), name)
         self.app_settings.theme = name
+        self._refresh_header_buttons()
+        self._refresh_navigation_stats()
+        self.endpoint_info_button.setIcon(
+            icon("info-circle", theme.NAV_MUTED, 17)
+        )
+        self.navigation_collapse_button.setIcon(
+            icon(
+                "chevron-right" if self._navigation_collapsed else "chevron-left",
+                theme.NAV_MUTED,
+                16,
+            )
+        )
         self.suite_tab.refresh_theme()
         self.data_runner_tab.refresh_theme()
         self.load_testing_tab.refresh_theme()
@@ -2014,6 +2520,10 @@ class MainWindow(QMainWindow):
             button.setIcon(icon(icon_name, theme.TEXT, 18))
         self.query_builder.refresh_theme()
         self.sort_builder.refresh_theme()
+        self.connection_indicator.match_height(
+            self.request_authentication, self.edit_environment_button
+        )
+        self.edit_environment_button.setIcon(icon("globe", theme.TEXT_MUTED))
         self.endpoint_tree.viewport().update()
         self._refresh_highlighters()
         self._save_settings()
@@ -2036,6 +2546,11 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt signature
         self._save_settings()
+        # A token method may still be consulting its session; let each probe
+        # end so Qt never destroys a running QThread.
+        for probe in list(self._connection_probes):
+            if probe.isRunning():
+                probe.wait(2000)
         super().closeEvent(event)
 
 

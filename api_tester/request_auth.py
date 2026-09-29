@@ -21,6 +21,37 @@ AUTH_CHOICES = (
     ("Manual headers only (no renewal)", "manual"),
 )
 
+#: Manager status prefixes that mean a method's own requirements are satisfied:
+#: a stored key for API-key methods, a live session for token methods, and
+#: every required secret for the signing methods.
+_READY_PREFIXES = ("configured", "signed in", "ready")
+#: Substrings that disqualify an otherwise-ready status, because the credential
+#: exists but can no longer be produced without interaction.
+_STALE_MARKERS = ("expired", "renewal needed")
+
+
+def status_is_ready(status: str) -> bool:
+    """Whether an :meth:`AuthenticationManager.status` string means "usable now"."""
+    text = status.strip().lower()
+    if not text.startswith(_READY_PREFIXES):
+        return False
+    return not any(marker in text for marker in _STALE_MARKERS)
+
+
+@dataclass(frozen=True)
+class ConnectionState:
+    """Whether a service can produce a credential for the next request."""
+
+    connected: bool
+    #: Short reason, shown when the pill itself cannot carry the nuance.
+    summary: str = ""
+    #: Per-profile status lines, suitable for a tooltip.
+    detail: str = ""
+
+    @property
+    def label(self) -> str:
+        return "Connected" if self.connected else "Disconnected"
+
 
 @dataclass
 class AppliedAuthentication:
@@ -115,6 +146,79 @@ class AuthenticationContext:
             for profile in self._selected(service, mode)
             for name in get_strategy(profile.method).query_names(profile)
         )
+
+    def connection_state(
+        self,
+        service: str,
+        mode: str = "inherit",
+        manual_headers: dict[str, str] | None = None,
+    ) -> ConnectionState:
+        """Whether ``service`` can produce a credential right now under ``mode``.
+
+        Readiness is decided by the selected method's own schema rather than by
+        a generic reachability probe: an API-key method needs its key stored, a
+        token method needs a live session, and a signing method needs every
+        required secret. ``AuthenticationManager.status`` is the single source
+        of truth for that per-method rule, so this never re-implements it.
+
+        This can block (a token method may check its session), so callers on a
+        GUI thread should run it in a worker.
+        """
+        if mode == "none":
+            return ConnectionState(
+                False,
+                "Authentication off",
+                "This request is sent without credentials (negative test).",
+            )
+        if self.is_disabled(service, mode):
+            return ConnectionState(
+                False,
+                "Disabled for this service",
+                f"Authentication is switched off for {service} in this environment.",
+            )
+        if mode == "manual":
+            present = sorted(
+                name
+                for name, value in (manual_headers or {}).items()
+                if value.strip() and name.lower() in SECRET_HEADER_NAMES
+            )
+            if present:
+                return ConnectionState(
+                    True,
+                    "Manual headers",
+                    "Manual credential headers are set and sent as-is (never renewed): "
+                    + ", ".join(present),
+                )
+            return ConnectionState(
+                False,
+                "No manual credential",
+                "Manual headers only is selected, but this environment has no "
+                "credential header such as Authorization or x-api-key.",
+            )
+        try:
+            profiles = self._selected(service, mode)
+        except AuthError as exc:
+            return ConnectionState(False, "Configuration error", str(exc))
+        if not profiles:
+            return ConnectionState(
+                False,
+                "No authentication bound",
+                f"No authentication profile is bound to {service}. "
+                "Bind one under Environments > Authentication.",
+            )
+        lines: list[str] = []
+        connected = True
+        for profile in profiles:
+            label = get_strategy(profile.method).label
+            try:
+                status = self.manager.status(self.environment_id, profile)
+            except AuthError as exc:
+                status = str(exc)
+            except Exception as exc:  # pragma: no cover - status is best effort
+                status = f"unknown ({exc})"
+            connected = connected and status_is_ready(status)
+            lines.append(f"{label} — {profile.name}: {status}")
+        return ConnectionState(connected, "", "\n".join(lines))
 
     def apply(self, service: str, url: str, headers: dict[str, str], mode: str = "inherit",
               *, preview: bool = False, force_refresh: bool = False,

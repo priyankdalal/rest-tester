@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import math
+
 from PyQt6.QtCore import QPointF, QRectF, Qt
 from PyQt6.QtGui import (
     QBrush,
     QColor,
+    QGuiApplication,
     QIcon,
     QLinearGradient,
     QPainter,
+    QPainterPath,
     QPen,
     QPixmap,
     QPolygonF,
@@ -72,17 +76,123 @@ def app_icon() -> QIcon:
     return result
 
 
-def icon(name: str, color: str = "#65758B", size: int = 18) -> QIcon:
-    # Glyph paths use an 18x18 design grid. Draw them on a 20x20 logical
-    # canvas with a one-pixel inset before scaling to the requested size.
-    # Drawing directly into 15/16px pixmaps clips paths that reach x/y=18,
-    # making toolbar and tab icons appear shifted toward the right/bottom.
-    logical_size = 20
-    pixmap = QPixmap(logical_size, logical_size)
-    pixmap.fill(Qt.GlobalColor.transparent)
+def _cog_polygon(
+    teeth: int = 8, outer: float = 8.2, inner: float = 6.3
+) -> QPolygonF:
+    """A gear outline on the 18x18 grid, centred on (9, 9).
+
+    Alternating outer/inner vertices are emitted for each tooth so a single
+    stroked polygon reads as a cog without needing a filled path.
+    """
+    step = 2.0 * math.pi / teeth
+    tooth = step * 0.26
+    points: list[QPointF] = []
+    for index in range(teeth):
+        base = index * step - math.pi / 2.0
+        for angle, radius in (
+            (base - tooth, outer),
+            (base + tooth, outer),
+            (base + step / 2.0 - tooth, inner),
+            (base + step / 2.0 + tooth, inner),
+        ):
+            points.append(
+                QPointF(9.0 + math.cos(angle) * radius, 9.0 + math.sin(angle) * radius)
+            )
+    return QPolygonF(points)
+
+
+def _bell_path() -> QPainterPath:
+    """A notification bell: dome, flared rim and clapper."""
+    path = QPainterPath()
+    path.moveTo(2.9, 13.1)
+    path.cubicTo(4.8, 11.6, 4.9, 9.9, 4.9, 7.9)
+    path.cubicTo(4.9, 5.6, 6.7, 3.5, 9.0, 3.5)
+    path.cubicTo(11.3, 3.5, 13.1, 5.6, 13.1, 7.9)
+    path.cubicTo(13.1, 9.9, 13.2, 11.6, 15.1, 13.1)
+    path.closeSubpath()
+    path.moveTo(7.4, 14.8)
+    path.cubicTo(7.8, 16.2, 10.2, 16.2, 10.6, 14.8)
+    return path
+
+
+def _crescent_path() -> QPainterPath:
+    """A moon: a disc with an offset disc removed, stroked as one outline."""
+    disc = QPainterPath()
+    disc.addEllipse(QPointF(9.0, 9.2), 6.6, 6.6)
+    bite = QPainterPath()
+    bite.addEllipse(QPointF(12.9, 5.4), 6.4, 6.4)
+    return disc.subtracted(bite)
+
+
+def badged_icon(
+    name: str, color: str, dot_color: str, size: int = 18
+) -> QIcon:
+    """``name`` with a small filled dot in the upper-right corner.
+
+    The dot carries its own colour so an unread badge can use an accent while
+    the glyph stays in the surrounding text colour. Compositing happens on the
+    supersampled pixmap so the dot stays as crisp as the glyph.
+    """
+    supersample = max(1, int(math.ceil(_device_pixel_ratio())))
+    pixmap = icon(name, color, size).pixmap(size * supersample, size * supersample)
+    pixmap.setDevicePixelRatio(float(supersample))
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QBrush(QColor(dot_color)))
+    radius = max(1.8, size * 0.135)
+    painter.drawEllipse(
+        QPointF(size - radius - size * 0.03, radius + size * 0.03), radius, radius
+    )
+    painter.end()
+    return QIcon(pixmap)
+
+
+def _device_pixel_ratio() -> float:
+    """The scale factor of the screen the UI is on, defaulting to 1.0.
+
+    Icons are rasterised at this ratio so Qt never has to stretch them; on a
+    125%/150% display an unscaled pixmap would otherwise be upsampled and look
+    soft.
+    """
+    app = QGuiApplication.instance()
+    if app is None:
+        return 1.0
+    screen = app.primaryScreen()
+    if screen is None:
+        return 1.0
+    return max(1.0, float(screen.devicePixelRatio()))
+
+
+def icon(name: str, color: str = "#65758B", size: int = 18) -> QIcon:
+    # Glyph paths use an 18x18 design grid drawn inside a 20x20 logical box
+    # with a one-pixel inset, so paths reaching x/y=18 are not clipped.
+    #
+    # The painter is scaled straight from that logical box to the target
+    # device resolution, so the vector paths are rasterised once at their
+    # final size. Drawing at a fixed 20px and then bitmap-scaling resampled
+    # an already-antialiased image and produced visibly soft edges.
+    logical_size = 20
+    # Rasterise at an integer multiple of the requested size. An integer
+    # factor keeps the icon's logical size exactly ``size`` (so layout never
+    # drifts) while giving Qt a high-resolution source to sample from on
+    # fractional-scale displays such as 125% or 150%.
+    supersample = max(1, int(math.ceil(_device_pixel_ratio())))
+    target = max(1, size * supersample)
+    pixmap = QPixmap(target, target)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    pixmap.setDevicePixelRatio(float(supersample))
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+    # The painter already works in device-independent units (the pixmap's
+    # devicePixelRatio handles the supersampling), so map the 20-unit design
+    # grid onto the icon's logical size rather than its device size.
+    scale = size / logical_size
+    painter.scale(scale, scale)
     painter.translate(1.0, 1.0)
+    # The pen is expressed in logical grid units, so the stroke keeps the same
+    # proportional weight at every size and device pixel ratio.
     pen = QPen(QColor(color), 1.7)
     pen.setCapStyle(Qt.PenCapStyle.RoundCap)
     pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
@@ -91,6 +201,10 @@ def icon(name: str, color: str = "#65758B", size: int = 18) -> QIcon:
     if name == "search":
         painter.drawEllipse(QRectF(2.5, 2.5, 9.5, 9.5))
         painter.drawLine(QPointF(11, 11), QPointF(16, 16))
+    elif name == "info-circle":
+        painter.drawEllipse(QRectF(2.5, 2.5, 13, 13))
+        painter.drawPoint(QPointF(9, 6))
+        painter.drawLine(QPointF(9, 9), QPointF(9, 13))
     elif name == "status-dot":
         painter.setBrush(QBrush(QColor(color)))
         painter.setPen(Qt.PenStyle.NoPen)
@@ -181,13 +295,28 @@ def icon(name: str, color: str = "#65758B", size: int = 18) -> QIcon:
         painter.drawEllipse(QRectF(2, 7, 3, 3))
         painter.drawEllipse(QRectF(7.5, 7, 3, 3))
         painter.drawEllipse(QRectF(13, 7, 3, 3))
+    elif name == "more-vertical":
+        painter.setBrush(QBrush(QColor(color)))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(QRectF(7, 2, 3, 3))
+        painter.drawEllipse(QRectF(7, 7.5, 3, 3))
+        painter.drawEllipse(QRectF(7, 13, 3, 3))
     elif name == "settings":
-        painter.drawEllipse(QRectF(6, 6, 6, 6))
-        painter.drawEllipse(QRectF(2, 2, 14, 14))
-        painter.drawLine(9, 0, 9, 3)
-        painter.drawLine(9, 15, 9, 18)
-        painter.drawLine(0, 9, 3, 9)
-        painter.drawLine(15, 9, 18, 9)
+        painter.drawPolygon(_cog_polygon())
+        painter.drawEllipse(QPointF(9.0, 9.0), 2.5, 2.5)
+    elif name == "bell":
+        painter.drawPath(_bell_path())
+    elif name == "moon":
+        painter.drawPath(_crescent_path())
+    elif name == "sun":
+        painter.drawEllipse(QPointF(9.0, 9.0), 3.6, 3.6)
+        for index in range(8):
+            angle = math.radians(index * 45.0)
+            dx, dy = math.cos(angle), math.sin(angle)
+            painter.drawLine(
+                QPointF(9.0 + dx * 5.9, 9.0 + dy * 5.9),
+                QPointF(9.0 + dx * 7.8, 9.0 + dy * 7.8),
+            )
     elif name == "copy":
         painter.drawRect(QRectF(5, 2, 10, 11))
         painter.drawRect(QRectF(2, 5, 10, 11))
@@ -386,13 +515,7 @@ def icon(name: str, color: str = "#65758B", size: int = 18) -> QIcon:
         painter.drawLine(5, 9, 13, 9)
         painter.drawLine(5, 12, 10, 12)
     painter.end()
-    scaled = pixmap.scaled(
-        size,
-        size,
-        Qt.AspectRatioMode.IgnoreAspectRatio,
-        Qt.TransformationMode.SmoothTransformation,
-    )
-    return QIcon(scaled)
+    return QIcon(pixmap)
 
 
 def solid_icon(name: str, color: str, size: int = 18) -> QIcon:
@@ -402,7 +525,9 @@ def solid_icon(name: str, color: str, size: int = 18) -> QIcon:
     filled accent button whose label stays white while disabled.
     """
     source = icon(name, color, size)
-    pixmap = source.pixmap(size, size)
+    supersample = max(1, int(math.ceil(_device_pixel_ratio())))
+    pixmap = source.pixmap(size * supersample, size * supersample)
+    pixmap.setDevicePixelRatio(float(supersample))
     result = QIcon()
     for mode in (QIcon.Mode.Normal, QIcon.Mode.Active,
                  QIcon.Mode.Selected, QIcon.Mode.Disabled):
