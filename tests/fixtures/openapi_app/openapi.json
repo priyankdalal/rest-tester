@@ -1,0 +1,110 @@
+{
+  "openapi": "3.0.1",
+  "info": { "title": "Sample Service", "version": "1.0.0" },
+  "paths": {
+    "/varieties": {
+      "get": {
+        "tags": ["Varieties"],
+        "operationId": "listVarieties",
+        "parameters": [
+          {
+            "name": "Filter",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "PageSize",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/VarietyResponse" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Varieties"],
+        "operationId": "createVariety",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/VarietyRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/VarietyResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/varieties/{varietyId}": {
+      "get": {
+        "tags": ["Varieties"],
+        "operationId": "getVariety",
+        "parameters": [
+          {
+            "name": "varietyId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/VarietyResponse" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "VarietyRequest": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "description": "Display name" },
+          "maturityDays": { "type": "integer" },
+          "status": { "$ref": "#/components/schemas/VarietyStatus" }
+        }
+      },
+      "VarietyStatus": {
+        "type": "string",
+        "enum": ["Draft", "Active", "Retired"]
+      },
+      "VarietyResponse": {
+        "type": "object",
+        "required": ["id", "name"],
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "status": { "$ref": "#/components/schemas/VarietyStatus" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,20 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.db
+data/settings.json
+data/workspace.db
+data/workspace.db-journal
+data/workspace.db-wal
+data/workspace.db-shm
+# Legacy files kept as a rollback copy after the SQLite migration.
+data/*.migrated
+data/run_history.jsonl
+data/suite_history.jsonl
+data/saved_requests.json
+suites/*
+dist/*
+data/*
+build/*
+*.md
