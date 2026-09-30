@@ -301,6 +301,15 @@ def icon(name: str, color: str = "#65758B", size: int = 18) -> QIcon:
         painter.drawEllipse(QRectF(7, 2, 3, 3))
         painter.drawEllipse(QRectF(7, 7.5, 3, 3))
         painter.drawEllipse(QRectF(7, 13, 3, 3))
+    elif name == "sliders-v":
+        # Vertical stems deliberately: the horizontal slider variant shares a
+        # stacked-horizontal-lines silhouette with "filter" at 16px.
+        painter.drawLine(QPointF(6, 2.5), QPointF(6, 15.5))
+        painter.drawLine(QPointF(12, 2.5), QPointF(12, 15.5))
+        painter.setBrush(QBrush(QColor(color)))
+        painter.drawEllipse(QPointF(6.0, 11.5), 2.3, 2.3)
+        painter.drawEllipse(QPointF(12.0, 6.5), 2.3, 2.3)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
     elif name == "settings":
         painter.drawPolygon(_cog_polygon())
         painter.drawEllipse(QPointF(9.0, 9.0), 2.5, 2.5)

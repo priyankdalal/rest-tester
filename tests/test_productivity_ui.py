@@ -510,20 +510,24 @@ def test_payload_field_page_actions_preserve_policy_and_placement(window) -> Non
     window._theme_changed("Light")
 
 
-def test_theme_selector_applies_theme_immediately(window) -> None:
+def test_theme_toggle_applies_theme_immediately(window) -> None:
     from api_tester import theme
     from PyQt6.QtWidgets import QApplication
 
     app = QApplication.instance()
-    window.theme_combo.setCurrentText("Light")
+    window._theme_changed("Light")
     assert theme.ACTIVE_TOKENS["BACKGROUND"] == theme.LIGHT_TOKENS["BACKGROUND"]
     assert theme.LIGHT_TOKENS["BACKGROUND"] in app.styleSheet()
 
-    window.theme_combo.setCurrentText("Dark")
+    # The toggle flips to the opposite palette rather than offering a list.
+    window.theme_toggle_button.click()
+    assert window.app_settings.theme == "Dark"
     assert theme.ACTIVE_TOKENS["BACKGROUND"] == theme.DARK_TOKENS["BACKGROUND"]
     assert theme.DARK_TOKENS["BACKGROUND"] in app.styleSheet()
 
-    window.theme_combo.setCurrentText("Light")
+    window.theme_toggle_button.click()
+    assert window.app_settings.theme == "Light"
+    assert theme.ACTIVE_TOKENS["BACKGROUND"] == theme.LIGHT_TOKENS["BACKGROUND"]
 
 
 def test_endpoint_actions_use_header_hierarchy(window) -> None:
@@ -554,7 +558,6 @@ def test_endpoint_actions_use_header_hierarchy(window) -> None:
     ]
     ordered_controls = [
         window.send_button,
-        window.send_and_verify_button,
         window.save_request_button,
         window.add_to_suite_button,
         window.favorite_button,

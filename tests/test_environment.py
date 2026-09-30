@@ -126,22 +126,24 @@ def test_api_explorer_columns_are_resizable_and_persisted(
     window = main_module.MainWindow()
     try:
         header = window.endpoint_tree.header()
-        assert header.sectionResizeMode(0) == QHeaderView.ResizeMode.Interactive
-        assert header.sectionResizeMode(1) == QHeaderView.ResizeMode.Interactive
+        # The explorer header is hidden: the action/path column absorbs every
+        # spare pixel and the method/count column stays a fixed narrow gutter,
+        # so neither is dragged by the user.
+        assert window.endpoint_tree.isHeaderHidden()
+        assert header.sectionResizeMode(0) == QHeaderView.ResizeMode.Stretch
+        assert header.sectionResizeMode(1) == QHeaderView.ResizeMode.Fixed
         assert not header.stretchLastSection()
-        window.endpoint_tree.setColumnWidth(0, 310)
-        window.endpoint_tree.setColumnWidth(1, 92)
+        assert window.endpoint_tree.columnWidth(1) == 52
         window._save_settings()
     finally:
         window.close()
 
     document = json.loads(settings_path.read_text(encoding="utf-8"))
-    assert document["endpoint_column_widths"] == [310, 92]
+    assert document["endpoint_column_widths"][1] == 52
 
     restored = main_module.MainWindow()
     try:
-        assert restored.endpoint_tree.columnWidth(0) == 310
-        assert restored.endpoint_tree.columnWidth(1) == 92
+        assert restored.endpoint_tree.columnWidth(1) == 52
     finally:
         restored.close()
 

@@ -395,25 +395,42 @@ QFrame#parametersCard {{
     background-color: {SURFACE};
     border: none;
 }}
-QFrame#connectionIndicator {{
-    border-radius: 11px;
+QFrame#headerStatusPill {{
+    border-radius: 16px;
     border: 1px solid {DISCONNECTED_BORDER};
     background-color: {DISCONNECTED_BG};
 }}
-QFrame#connectionIndicator[state="connected"] {{
+QFrame#headerStatusPill[state="connected"] {{
     border: 1px solid {CONNECTED_BORDER};
     background-color: {CONNECTED_BG};
 }}
-QLabel#connectionIndicatorLabel {{
+QWidget#headerStatusDotHost {{
     background: transparent;
     border: none;
-    color: {DISCONNECTED_TEXT};
-    font-size: 8.5pt;
-    font-weight: 700;
-    letter-spacing: 0.2px;
 }}
-QFrame#connectionIndicator[state="connected"] QLabel#connectionIndicatorLabel {{
-    color: {CONNECTED_TEXT};
+QToolButton#headerStatusEdit {{
+    background-color: {SURFACE};
+    border: none;
+    border-left: 1px solid {BORDER};
+    border-top-left-radius: 0px;
+    border-bottom-left-radius: 0px;
+    border-top-right-radius: 15px;
+    border-bottom-right-radius: 15px;
+    padding: 0px;
+}}
+QToolButton#headerStatusEdit:hover {{
+    background-color: {SURFACE_ALT};
+    border-left: 1px solid {BORDER_STRONG};
+}}
+QToolButton#headerStatusEdit:pressed {{
+    background-color: {HOVER_SOFT};
+    border-left: 1px solid {BORDER_STRONG};
+    padding-top: 2px;
+}}
+QToolButton#headerStatusEdit::menu-indicator {{
+    image: none;
+    width: 0px;
+    height: 0px;
 }}
 QWidget#responseViewer {{
     background-color: {SURFACE};

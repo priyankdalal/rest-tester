@@ -102,8 +102,8 @@ from .viewers import FilePicker, JsonTextEdit, RequestBodyEditor, ResponseViewer
 from .widgets import (
     AccordionSection,
     AccordionScrollArea,
-    ConnectionIndicator,
     ElidingLabel,
+    HeaderConnectionPill,
     IconTextItemDelegate,
     OverlayEmptyState,
     attach_table_empty_state,
@@ -320,10 +320,7 @@ class MainWindow(QMainWindow):
             button.setIcon(icon(icon_name, theme.TEXT, 18))
         self.query_builder.refresh_theme()
         self.sort_builder.refresh_theme()
-        self.connection_indicator.match_height(
-            self.request_authentication, self.edit_environment_button
-        )
-        self.edit_environment_button.setIcon(icon("globe", theme.TEXT_MUTED))
+        self.connection_pill.refresh_theme()
         self._refresh_connection_state()
         report_progress(96, "Finalizing workspace")
 
@@ -348,6 +345,15 @@ class MainWindow(QMainWindow):
         header_layout.addWidget(self.app_title)
         self._refresh_app_title()
         header_layout.addStretch()
+        self.connection_pill = HeaderConnectionPill()
+        self.connection_pill.edit_requested.connect(self._edit_environment)
+        header_layout.addWidget(self.connection_pill)
+        header_layout.addSpacing(8)
+        # The connection state and its environment-edit action now live in the
+        # header. These aliases keep the request-workspace call sites and
+        # integrations working against the relocated controls.
+        self.connection_indicator = self.connection_pill
+        self.edit_environment_button = self.connection_pill.edit_button
         self.notifications_button = QToolButton()
         self.notifications_button.setObjectName("headerIconButton")
         self.notifications_button.setIconSize(QSize(18, 18))
@@ -486,6 +492,7 @@ class MainWindow(QMainWindow):
         endpoint_workspace_layout.addWidget(self.endpoint_title)
         endpoint_header_widget = QWidget(endpoint_workspace)
         endpoint_header = QHBoxLayout(endpoint_header_widget)
+        endpoint_header.setContentsMargins(0, 0, 0, 0)
         endpoint_header.setSpacing(8)
         endpoint_identity = QFrame()
         endpoint_identity.setObjectName("endpointIdentity")
@@ -596,22 +603,6 @@ class MainWindow(QMainWindow):
             self._authentication_mode_changed
         )
         authentication_row.addWidget(self.request_authentication, 1)
-        self.connection_indicator = ConnectionIndicator()
-        authentication_row.addWidget(self.connection_indicator)
-        self.edit_environment_button = QPushButton("Edit Environment")
-        self.edit_environment_button.setObjectName("editEnvironmentButton")
-        self.edit_environment_button.setIcon(icon("globe", theme.TEXT_MUTED))
-        self.edit_environment_button.setToolTip(
-            "Edit base URLs, headers, and authentication for the active environment"
-        )
-        self.edit_environment_button.clicked.connect(self._edit_environment)
-        self.edit_environment_button.setSizePolicy(
-            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
-        )
-        authentication_row.addWidget(self.edit_environment_button)
-        self.connection_indicator.match_height(
-            self.request_authentication, self.edit_environment_button
-        )
         authentication_widget = QWidget(endpoint_workspace)
         authentication_widget.setLayout(authentication_row)
         endpoint_workspace_layout.addWidget(authentication_widget)
@@ -774,6 +765,9 @@ class MainWindow(QMainWindow):
         self.endpoint_content_tabs.setMinimumHeight(430)
         self.response = ResponseViewer()
         self.response.setMinimumHeight(360)
+        # The identity frame draws a 1px border, so its inner content starts one
+        # pixel in. Match that here to keep the accordion sections aligned with
+        # the endpoint method/route row above them.
         self.request_response_accordion = AccordionScrollArea(
             content_margins=(1, 12, 0, 12)
         )
@@ -1486,6 +1480,9 @@ class MainWindow(QMainWindow):
                 )
                 item.setData(0, 258, endpoint.method)
                 item.setData(0, 259, "endpoint")
+                item.setData(
+                    0, 261, f"{endpoint.action}\n{endpoint.method} {endpoint.path}"
+                )
                 item.setToolTip(
                     0, f"{endpoint.action}\n{endpoint.method} {endpoint.path}"
                 )
@@ -1924,10 +1921,9 @@ class MainWindow(QMainWindow):
             return
         favorite = endpoint_id in self.app_settings.favorites
         item.setData(0, 260, favorite)
+        description = str(item.data(0, 261) or item.text(0))
         item.setToolTip(
-            0,
-            ("Favorite endpoint\n" if favorite else "")
-            + str(item.data(0, 257) or "").title(),
+            0, ("Favorite endpoint\n" if favorite else "") + description
         )
 
     def _populate_endpoint_actions_menu(
@@ -2520,10 +2516,7 @@ class MainWindow(QMainWindow):
             button.setIcon(icon(icon_name, theme.TEXT, 18))
         self.query_builder.refresh_theme()
         self.sort_builder.refresh_theme()
-        self.connection_indicator.match_height(
-            self.request_authentication, self.edit_environment_button
-        )
-        self.edit_environment_button.setIcon(icon("globe", theme.TEXT_MUTED))
+        self.connection_pill.refresh_theme()
         self.endpoint_tree.viewport().update()
         self._refresh_highlighters()
         self._save_settings()

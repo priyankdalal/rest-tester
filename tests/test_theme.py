@@ -149,3 +149,58 @@ def test_standard_form_controls_share_a_consistent_height_without_clipping_icons
     assert max(heights) - min(heights) <= 2
     assert button.height() >= button.iconSize().height() + 10
     host.close()
+
+
+def test_checkbox_indicator_draws_a_glyph_in_every_marked_state() -> None:
+    """A filled box with no ``image:`` renders as a plain blue square.
+
+    The checked/indeterminate rules must therefore ship a glyph asset, and the
+    disabled variants must swap to the muted one.
+    """
+    for tokens in (theme.LIGHT_TOKENS, theme.DARK_TOKENS):
+        stylesheet = theme.build_stylesheet(tokens)
+        checked = stylesheet.split("QListWidget::indicator:checked {", 1)[1].split(
+            "}", 1
+        )[0]
+        assert 'image: url("' in checked
+        assert "check.svg" in checked
+        assert tokens["PRIMARY"] in checked
+
+        indeterminate = stylesheet.split(
+            "QListWidget::indicator:indeterminate {", 1
+        )[1].split("}", 1)[0]
+        assert "check-dash.svg" in indeterminate
+
+        muted = stylesheet.split("QListWidget::indicator:checked:disabled {", 1)[
+            1
+        ].split("}", 1)[0]
+        assert "check-muted.svg" in muted
+
+
+def test_radio_indicator_stays_a_dot_and_never_borrows_the_check_glyph() -> None:
+    stylesheet = theme.build_stylesheet(theme.LIGHT_TOKENS)
+    radio_checked = stylesheet.split("QRadioButton::indicator:checked {", 1)[1].split(
+        "}", 1
+    )[0]
+
+    assert "image: none" in radio_checked
+    assert "border: 2px solid" in radio_checked
+    assert "QRadioButton::indicator { border-radius: 9px; }" in stylesheet
+
+
+def test_header_icon_buttons_hide_their_menu_arrow() -> None:
+    for tokens in (theme.LIGHT_TOKENS, theme.DARK_TOKENS):
+        stylesheet = theme.build_stylesheet(tokens)
+        assert "QToolButton#headerIconButton" in stylesheet
+        indicator = stylesheet.split(
+            "QToolButton#headerIconButton::menu-indicator {", 1
+        )[1].split("}", 1)[0]
+        assert "width: 0" in indicator
+
+
+def test_check_glyph_assets_exist_on_disk() -> None:
+    from pathlib import Path
+
+    for tokens in (theme.LIGHT_TOKENS, theme.DARK_TOKENS):
+        for key in ("CHECK_MARK", "CHECK_DASH", "CHECK_MARK_MUTED"):
+            assert Path(tokens[key]).exists(), f"missing asset for {key}"

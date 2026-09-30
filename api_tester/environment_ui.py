@@ -453,7 +453,9 @@ class EnvironmentManagerPage(QWidget):
         for button in self._clone_buttons.values():
             button.setIcon(icon("duplicate", theme.TEXT, 16))
         for button in self._edit_buttons.values():
-            button.setIcon(icon("edit", theme.TEXT, 16))
+            # Same glyph as the header pill's environment key: both open the
+            # environment editor, so they must not read as different actions.
+            button.setIcon(icon("sliders-v", theme.TEXT, 16))
         for button in self._delete_buttons.values():
             button.setIcon(icon("trash", theme.FAIL, 16))
 

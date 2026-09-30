@@ -647,15 +647,24 @@ class _PulseDot(QWidget):
 
     The animation loops seamlessly because the key values start and end at the
     same opacity, so the dot never snaps back at the loop boundary.
+
+    In ``halo`` mode the dot is wrapped in a soft ring of the same colour. The
+    ring holds a steady alpha while the core breathes, which keeps the control
+    legible at the 32px header size where a bare 8px dot is easy to miss.
     """
 
     _DIAMETER = 8
+    _HALO_DIAMETER = 18
+    _HALO_ALPHA = 0.22
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, *, halo: bool = False) -> None:
         super().__init__(parent)
         self._color = QColor(theme.PASS)
         self._opacity = 1.0
-        self.setFixedSize(self._DIAMETER, self._DIAMETER)
+        self._halo = halo
+        self._halo_visible = False
+        size = self._HALO_DIAMETER if halo else self._DIAMETER
+        self.setFixedSize(size, size)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self._animation = QVariantAnimation(self)
         self._animation.setDuration(2200)
@@ -671,6 +680,9 @@ class _PulseDot(QWidget):
         self.update()
 
     def set_breathing(self, breathing: bool) -> None:
+        # The ring is the resting state's cue, so it follows the animation:
+        # present while live, absent once the dot is static.
+        self._halo_visible = bool(breathing)
         if breathing:
             if self._animation.state() != QAbstractAnimation.State.Running:
                 self._animation.start()
@@ -689,63 +701,106 @@ class _PulseDot(QWidget):
     def paintEvent(self, event) -> None:  # noqa: N802 - Qt naming
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(Qt.PenStyle.NoPen)
+        core = self.rect()
+        if self._halo:
+            if self._halo_visible:
+                ring = QColor(self._color)
+                ring.setAlphaF(self._HALO_ALPHA)
+                painter.setBrush(ring)
+                painter.drawEllipse(self.rect())
+            inset = (self._HALO_DIAMETER - self._DIAMETER) // 2
+            core = self.rect().adjusted(inset, inset, -inset, -inset)
         color = QColor(self._color)
         color.setAlphaF(self._opacity)
-        painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(color)
-        painter.drawEllipse(self.rect())
+        painter.drawEllipse(core)
         painter.end()
 
 
-class ConnectionIndicator(QFrame):
-    """A Connected/Disconnected pill with a leading status dot.
+class HeaderConnectionPill(QFrame):
+    """A header capsule pairing a connection status dot with an edit button.
 
-    The dot breathes only while connected, so a live credential is
-    distinguishable from a stale one at a glance without reading the text.
+    The pill lives in the application header rather than the request workspace,
+    so it carries no label: the state is read from the dot colour and the
+    surrounding tint, and the full explanation is in the tooltip. The dot
+    breathes and wears a soft halo only while connected, which distinguishes a
+    live credential from a stale one without relying on the red/green hue pair
+    alone.
+
+    The edit control is the capsule's right half: square on the left where it
+    meets the dot area, and rounded on the right to follow the capsule. It
+    fills the border box exactly rather than overflowing it -- a child sized to
+    the full capsule height would paint its hover state across the 1px border
+    and square off the rounded edge.
     """
+
+    edit_requested = pyqtSignal()
+
+    _HEIGHT = 32
+    _BORDER = 1
+    _KEY_WIDTH = 36
+    _KEY_HEIGHT = _HEIGHT - (_BORDER * 2)
+    _KEY_RADIUS = _KEY_HEIGHT // 2
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setObjectName("connectionIndicator")
+        self.setObjectName("headerStatusPill")
         self.setProperty("state", "disconnected")
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.setFixedHeight(self._HEIGHT)
+
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(11, 0, 13, 0)
-        layout.setSpacing(6)
-        self._dot = _PulseDot(self)
-        self._label = QLabel("Disconnected", self)
-        self._label.setObjectName("connectionIndicatorLabel")
-        layout.addWidget(self._dot)
-        layout.addWidget(self._label)
+        # Zero margins: the stylesheet border is excluded from the contents
+        # rect, so the key lands flush against the inside of the capsule edge.
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self._dot_host = QWidget(self)
+        self._dot_host.setObjectName("headerStatusDotHost")
+        dot_layout = QHBoxLayout(self._dot_host)
+        dot_layout.setContentsMargins(10, 0, 6, 0)
+        dot_layout.setSpacing(0)
+        self._dot = _PulseDot(self._dot_host, halo=True)
+        dot_layout.addWidget(self._dot)
+        layout.addWidget(self._dot_host)
+
+        self.edit_button = QToolButton(self)
+        self.edit_button.setObjectName("headerStatusEdit")
+        self.edit_button.setIconSize(QSize(16, 16))
+        self.edit_button.setFixedSize(self._KEY_WIDTH, self._KEY_HEIGHT)
+        self.edit_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.edit_button.setToolTip(
+            "Edit base URLs, headers, and authentication for the active environment"
+        )
+        self.edit_button.setAccessibleName("Edit environment")
+        self.edit_button.clicked.connect(self.edit_requested.emit)
+        # No drop shadow here. The key now sits flush against the capsule
+        # border, so an outward shadow would blur straight past the rounded
+        # edge. The raise is carried by the fill contrast and the left border.
+        layout.addWidget(self.edit_button)
+
         self._connected = False
-        self._radius = 11
-        self.refresh_theme()
-
-    def match_height(self, *widgets: QWidget) -> None:
-        """Sizes the pill to its row neighbours so the line reads as one band.
-
-        The radius follows the height, keeping the shape a true pill rather
-        than a rounded rectangle once it grows to control height.
-        """
-        heights = [
-            widget.sizeHint().height() for widget in widgets if widget is not None
-        ]
-        if not heights:
-            return
-        height = max(heights)
-        self.setFixedHeight(height)
-        self._radius = height // 2
+        self._status_text = "Disconnected"
+        self._detail = ""
         self.refresh_theme()
 
     def is_connected(self) -> bool:
         return self._connected
 
+    def status_text(self) -> str:
+        """The state wording that the pill no longer renders as a label."""
+        return self._status_text
+
     def set_state(self, connected: bool, text: str = "", tooltip: str = "") -> None:
         self._connected = bool(connected)
+        self._status_text = text or ("Connected" if connected else "Disconnected")
+        self._detail = tooltip
         self.setProperty("state", "connected" if connected else "disconnected")
-        self._label.setText(text or ("Connected" if connected else "Disconnected"))
-        self.setToolTip(tooltip)
-        self._label.setToolTip(tooltip)
+        # Without a label the tooltip is the only place the wording survives,
+        # so the status leads it and the detail explains it.
+        summary = self._status_text
+        self._dot_host.setToolTip(f"{summary}\n{tooltip}" if tooltip else summary)
         self._dot.set_breathing(self._connected)
         self.refresh_theme()
 
@@ -753,15 +808,16 @@ class ConnectionIndicator(QFrame):
         key = "CONNECTED_DOT" if self._connected else "DISCONNECTED_DOT"
         fallback = theme.PASS if self._connected else theme.FAIL
         self._dot.set_color(theme.ACTIVE_TOKENS.get(key, fallback))
-        # Only the radius is set per-widget; colours stay in the global sheet
-        # so the pill keeps following the active palette.
-        self.setStyleSheet(
-            f"QFrame#connectionIndicator {{ border-radius: {self._radius}px; }}"
-        )
-        self.style().unpolish(self)
-        self.style().polish(self)
-        self._label.style().unpolish(self._label)
-        self._label.style().polish(self._label)
+        # "sliders-v", not "settings": the cog is the nav rail's Settings icon,
+        # and reusing it here would imply application preferences rather than
+        # the active environment's URLs, headers and auth.
+        self.edit_button.setIcon(icon("sliders-v", theme.TEXT_MUTED))
+        # Every rule lives in the global sheet. Splitting the button's geometry
+        # across a per-widget sheet and the global one let the native style win
+        # the hover paint, which came back square-cornered.
+        for widget in (self, self._dot_host, self.edit_button):
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
 
 
 class KeyValueTable(QWidget):
