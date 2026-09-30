@@ -87,7 +87,7 @@ class Service:
     repository: str
     default_base_url: str
     endpoints: tuple[Endpoint, ...]
-    # The Filter/Sort builders speak the TrialWyze grammar (Name__op:=value),
+    # The Filter/Sort builders speak the structured filter grammar (Name__op:=value),
     # so they are opt-in per service rather than offered for every API.
     filter_sort_builders: bool = False
 

@@ -735,7 +735,7 @@ class CatalogBuilderWindow(QMainWindow):
         form.addRow("Scanned as", self.service_framework)
         self.service_builders = QCheckBox("Enable Filter and Sort builders")
         self.service_builders.setToolTip(
-            "Only for services that use the TrialWyze filter grammar "
+            "Only for services that use the structured filter grammar "
             "(Name__op:=value joined by ; or |, sort as Field,Other-).\n"
             "When off, the tester shows Filter and Sort as plain query values "
             "and the Data Runner offers no filter-field mappings."

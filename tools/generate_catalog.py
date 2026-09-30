@@ -940,7 +940,7 @@ def build_catalog(
                 "name": service_name,
                 "repository": repository_name,
                 "default_base_url": "",
-                # Every scanned TrialWyze service speaks the platform filter grammar.
+                # Every scanned platform service speaks the platform filter grammar.
                 "filter_sort_builders": True,
                 "endpoints": scanned["endpoints"],
             }

@@ -411,7 +411,7 @@ class ServiceDraft:
     default_base_url: str = ""
     framework: str = ""
     endpoints: list[EndpointDraft] = field(default_factory=list)
-    # Opt-in: the Filter/Sort builders assume the TrialWyze filter grammar.
+    # Opt-in: the Filter/Sort builders assume the structured filter grammar.
     filter_sort_builders: bool = False
 
     @classmethod
