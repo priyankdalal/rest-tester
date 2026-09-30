@@ -733,6 +733,14 @@ class CatalogBuilderWindow(QMainWindow):
         form.addRow("Default base URL", self.service_base_url)
         self.service_framework = QLabel()
         form.addRow("Scanned as", self.service_framework)
+        self.service_builders = QCheckBox("Enable Filter and Sort builders")
+        self.service_builders.setToolTip(
+            "Only for services that use the TrialWyze filter grammar "
+            "(Name__op:=value joined by ; or |, sort as Field,Other-).\n"
+            "When off, the tester shows Filter and Sort as plain query values "
+            "and the Data Runner offers no filter-field mappings."
+        )
+        form.addRow("Query builders", self.service_builders)
         self.service_summary = QLabel()
         form.addRow("Contents", self.service_summary)
         layout.addLayout(form)
@@ -1389,6 +1397,7 @@ class CatalogBuilderWindow(QMainWindow):
         self.service_repository.setText(service.repository)
         self.service_base_url.setText(service.default_base_url)
         self.service_framework.setText(service.framework or "manual")
+        self.service_builders.setChecked(service.filter_sort_builders)
         self.service_summary.setText(
             f"{len(service.module_names())} modules, {len(service.endpoints)} endpoints"
         )
@@ -1769,6 +1778,7 @@ class CatalogBuilderWindow(QMainWindow):
             return
         service.repository = self.service_repository.text().strip()
         service.default_base_url = self.service_base_url.text().strip()
+        service.filter_sort_builders = self.service_builders.isChecked()
         self._mark_dirty()
         self._populate()
         self._note(f"Updated service '{new_name}'.")

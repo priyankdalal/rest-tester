@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import unquote, unquote_plus
 
+from PyQt6 import sip
 from PyQt6.QtCore import QObject, QSize, Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
@@ -40,13 +41,12 @@ from PyQt6.QtWidgets import (
 )
 
 from . import theme
-from .builders import FormBuilder, PayloadForm, QueryBuilder, SortBuilder
 from .catalog import Catalog, Endpoint
-from .client import parameter_enabled_key, parameter_is_enabled
 from .comparison import ResponseComparison
 from .icons import icon
 from .runner import CaseResult, SuiteResult, append_suite_history, export_report, run_suite
 from .request_auth import populate_auth_choices
+from .request_editor import RequestEditor
 from .seeding import seed_parameter
 from .suite import (
     ASSERTION_KINDS,
@@ -61,8 +61,12 @@ from .suite import (
 )
 from .suite_timeline import SuiteTimelineTab
 from .visualizer import OUTCOME_COLORS, RunVisualizer
-from .viewers import FilePicker, RequestBodyEditor, ResponseViewer, ValuePicker
-from .widgets import AccordionScrollArea, inset_shadow_detail_pane
+from .viewers import ResponseViewer
+from .widgets import (
+    AccordionScrollArea,
+    expected_status_combo,
+    inset_shadow_detail_pane,
+)
 from .workspace_store import WorkspaceStore, as_store
 
 CAPTURE_SOURCES = ["body", "header", "status"]
@@ -285,8 +289,10 @@ class SuiteTab(QWidget):
             self.case_action_buttons[icon_name] = button
         left_layout.addLayout(buttons)
 
-        variables_box = QGroupBox("Suite variables — reference as {{name}}")
+        variables_box = QGroupBox("Suite variables")
+        variables_box.setToolTip("Reference a suite variable in any value as {{name}}")
         variables_layout = QVBoxLayout(variables_box)
+        variables_layout.setContentsMargins(0, 0, 0, 0)
         self.variables = QTableWidget(0, 2)
         self.variables.setHorizontalHeaderLabels(["Name", "Value"])
         self.variables.horizontalHeader().setSectionResizeMode(
@@ -318,6 +324,7 @@ class SuiteTab(QWidget):
             variable_buttons.addWidget(button, 1)
             self.variable_action_buttons[icon_name] = button
         variables_layout.addLayout(variable_buttons)
+        variables_layout.addStretch(1)
         left_layout.addWidget(variables_box)
         self.suite_navigator = left
         splitter.addWidget(left)
@@ -363,7 +370,10 @@ class SuiteTab(QWidget):
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([430, 1170])
         self.suite_workspace_splitter = splitter
-        layout.addWidget(splitter)
+        # Stretch 1: the workspace, not the page heading, absorbs spare height.
+        # Without it the heading grew whenever the current tab's size hint was
+        # small (e.g. Timeline).
+        layout.addWidget(splitter, 1)
         self._configure_form_layouts()
 
     def _configure_form_layouts(self) -> None:
@@ -438,95 +448,24 @@ class SuiteTab(QWidget):
         header.addRow("Authentication", self.case_authentication)
         page_layout.addLayout(header)
 
-        self.request_tabs = QTabWidget()
-
-        parameters_page = QWidget()
-        parameters_layout = QVBoxLayout(parameters_page)
-        self.parameters = QTableWidget(0, 5)
-        self.parameters.setHorizontalHeaderLabels(
-            ["Source", "Name", "Type", "Required", "Value"]
+        # Same editor as the API explorer, so a case is authored with the
+        # exact controls used to explore its endpoint.
+        self.request_editor = RequestEditor(self)
+        self.request_editor.setToolTip(
+            "{{variables}} in any value are substituted at run time"
         )
-        self.parameters.horizontalHeader().setSectionResizeMode(
-            4, QHeaderView.ResizeMode.Stretch
-        )
-        self.parameters.verticalHeader().setDefaultSectionSize(38)
-        self.parameters.itemChanged.connect(self._parameters_changed)
-        parameters_hint = QLabel(
-            "Path, query, and header values — {{variables}} are substituted at run time"
-        )
-        parameters_hint.setWordWrap(True)
-        parameters_layout.addWidget(parameters_hint)
-        parameters_layout.addWidget(self.parameters)
-        self.parameters_seed_button = QPushButton("Seed parameter values")
-        self.parameters_seed_button.clicked.connect(self._seed_parameters)
-        parameters_layout.addWidget(self.parameters_seed_button)
-        self.request_tabs.addTab(parameters_page, "Parameters")
-
-        query_page = QWidget()
-        query_layout = QVBoxLayout(query_page)
-        query_layout.setContentsMargins(0, 0, 0, 0)
-        self.query_enabled = QCheckBox("Include Filter query parameter")
-        self.query_enabled.setChecked(True)
-        query_layout.addWidget(self.query_enabled)
-        self.query_builder = QueryBuilder()
-        query_layout.addWidget(self.query_builder)
-        self.query_enabled.toggled.connect(self.query_builder.setEnabled)
-        self.query_enabled.toggled.connect(self._filter_enabled_changed)
-        self.query_builder.changed.connect(self._filter_changed)
-        self.request_tabs.addTab(query_page, "Query builder")
-
-        sort_page = QWidget()
-        sort_layout = QVBoxLayout(sort_page)
-        sort_layout.setContentsMargins(0, 0, 0, 0)
-        self.sort_enabled = QCheckBox("Include Sort query parameter")
-        self.sort_enabled.setChecked(True)
-        sort_layout.addWidget(self.sort_enabled)
-        self.sort_builder = SortBuilder()
-        sort_layout.addWidget(self.sort_builder)
-        self.sort_enabled.toggled.connect(self.sort_builder.setEnabled)
-        self.sort_enabled.toggled.connect(self._sort_enabled_changed)
-        self.sort_builder.changed.connect(self._sort_changed)
-        self.request_tabs.addTab(sort_page, "Sort")
-
-        self.form_builder = FormBuilder()
-        self.form_builder.changed.connect(self._form_changed)
-        self.form_tab_index = self.request_tabs.addTab(self.form_builder, "Form")
-
-        payload_page = QWidget()
-        payload_layout = QVBoxLayout(payload_page)
-        self.payload_form = PayloadForm()
-        payload_layout.addWidget(self.payload_form)
-        payload_buttons = QHBoxLayout()
-        self.payload_fields_buttons = {
-            "seed": QPushButton(),
-            "copy": QPushButton(),
-        }
-        self.payload_fields_buttons["seed"].setToolTip("Seed all payload fields")
-        self.payload_fields_buttons["seed"].setAccessibleName(
-            "Seed all payload fields"
-        )
-        self.payload_fields_buttons["seed"].clicked.connect(self._seed_payload_form)
-        self.payload_fields_buttons["copy"].setToolTip("Copy payload form to JSON")
-        self.payload_fields_buttons["copy"].setAccessibleName(
-            "Copy payload form to JSON"
-        )
-        self.payload_fields_buttons["copy"].clicked.connect(self._form_to_json)
-        payload_buttons.addWidget(self.payload_fields_buttons["seed"])
-        payload_buttons.addWidget(self.payload_fields_buttons["copy"])
-        payload_buttons.addStretch()
-        self.payload_fields_layout = payload_buttons
-        payload_layout.addLayout(payload_buttons)
-        self.payload_tab_index = self.request_tabs.addTab(payload_page, "Payload fields")
-
-        json_page = QWidget()
-        json_layout = QVBoxLayout(json_page)
-        json_layout.addWidget(QLabel("JSON payload sent with the request"))
-        self.payload = RequestBodyEditor()
-        self.payload.changed.connect(self._payload_changed)
-        json_layout.addWidget(self.payload)
-        self.json_tab_index = self.request_tabs.addTab(json_page, "Payload JSON")
-
-        page_layout.addWidget(self.request_tabs)
+        self.request_editor.changed.connect(self._request_changed)
+        for name in (
+            "request_tabs", "path_parameters", "query_parameters",
+            "path_seed_button", "query_seed_button", "query_builder",
+            "sort_builder", "form_builder", "payload", "payload_form",
+            "payload_fields_button", "payload_seed_button",
+            "payload_fields_buttons", "payload_fields_dialog",
+            "filter_dialog", "sort_dialog", "path_tab_index",
+            "query_tab_index", "form_tab_index", "json_tab_index",
+        ):
+            setattr(self, name, getattr(self.request_editor, name))
+        page_layout.addWidget(self.request_editor, 1)
         return page
 
     def _build_expectations_tab(self) -> QWidget:
@@ -542,11 +481,7 @@ class SuiteTab(QWidget):
         assertions_layout.setContentsMargins(0, 0, 0, 0)
         status_row = QHBoxLayout()
         status_row.addWidget(QLabel("Expected status"))
-        self.expected_status = QComboBox()
-        self.expected_status.setEditable(True)
-        self.expected_status.addItems(
-            ["200-299", "200", "201", "202", "204", "400", "401", "403", "404", "409", "500"]
-        )
+        self.expected_status = expected_status_combo()
         self.expected_status.currentTextChanged.connect(self._expected_status_changed)
         status_row.addWidget(self.expected_status)
         status_row.addStretch()
@@ -562,9 +497,17 @@ class SuiteTab(QWidget):
         self.assertions.horizontalHeader().setSectionResizeMode(
             3, QHeaderView.ResizeMode.Stretch
         )
-        self.assertions.setMinimumHeight(220)
         self.assertions.itemChanged.connect(self._assertions_changed)
-        assertions_layout.addWidget(self.assertions)
+        self.assertions_empty_state = self._empty_state(
+            "No assertions yet",
+            "Add an assertion, or suggest some from the last response. "
+            "Until then only the expected status is verified.",
+        )
+        assertions_layout.addWidget(
+            self._table_or_empty_state(
+                self.assertions, self.assertions_empty_state, 220
+            )
+        )
         assertion_buttons = QHBoxLayout()
         add_assertion = QPushButton("Add assertion")
         add_assertion.clicked.connect(self.add_assertion)
@@ -644,9 +587,17 @@ class SuiteTab(QWidget):
         self.captures.horizontalHeader().setSectionResizeMode(
             2, QHeaderView.ResizeMode.Stretch
         )
-        self.captures.setMinimumHeight(180)
         self.captures.itemChanged.connect(self._captures_changed)
-        captures_layout.addWidget(self.captures)
+        self.captures_empty_state = self._empty_state(
+            "No captured variables",
+            "Add a capture to save a response value as a {{variable}} "
+            "for the cases that run after this one.",
+        )
+        captures_layout.addWidget(
+            self._table_or_empty_state(
+                self.captures, self.captures_empty_state, 180
+            )
+        )
         capture_buttons = QHBoxLayout()
         add_capture = QPushButton("Add capture")
         add_capture.clicked.connect(self.add_capture)
@@ -776,6 +727,44 @@ class SuiteTab(QWidget):
         )
         page_layout.addWidget(self.case_result_accordion, 1)
         return page
+
+    @staticmethod
+    def _table_or_empty_state(
+        table: QTableWidget, empty_state: QWidget, minimum_height: int
+    ) -> QWidget:
+        """Swaps ``table`` for a headerless empty card whenever it has no rows,
+        matching the Case result tables."""
+        stack = QStackedLayout()
+        stack.addWidget(table)
+        stack.addWidget(empty_state)
+        container = QWidget()
+        container.setObjectName("caseResultStack")
+        container.setMinimumHeight(minimum_height)
+        container.setLayout(stack)
+
+        model = table.model()
+        signals = (model.rowsInserted, model.rowsRemoved, model.modelReset)
+
+        def sync(*_args) -> None:
+            # QTableWidget's destructor clears its model, which emits
+            # rowsRemoved after the table (and possibly the stack) is gone.
+            if sip.isdeleted(table) or sip.isdeleted(empty_state) or sip.isdeleted(stack):
+                return
+            stack.setCurrentWidget(table if table.rowCount() else empty_state)
+
+        def disconnect(*_args) -> None:
+            for signal in signals:
+                try:
+                    signal.disconnect(sync)
+                except (TypeError, RuntimeError):
+                    pass
+
+        for signal in signals:
+            signal.connect(sync)
+        table.destroyed.connect(disconnect)
+        container.destroyed.connect(disconnect)
+        sync()
+        return container
 
     @staticmethod
     def _empty_state(title: str, description: str) -> QWidget:
@@ -1053,93 +1042,11 @@ class SuiteTab(QWidget):
         self.expected_status.setCurrentText(case.expected_status)
         self.refresh_authentication_choices()
 
-        filter_schema = (
-            self.catalog.filter_schema(endpoint.filter_entity) if endpoint else None
-        )
-        self.query_builder.set_schema(filter_schema)
-        self.sort_builder.set_schema(filter_schema)
-        self.query_builder.set_filter_string(case.values.get("query:Filter", ""))
-        self.sort_builder.set_sort_string(case.values.get("query:Sort", ""))
-        self.query_enabled.setChecked(
-            parameter_is_enabled(case.values, "query", "Filter")
-        )
-        self.sort_enabled.setChecked(
-            parameter_is_enabled(case.values, "query", "Sort")
-        )
-
-        self._builder_parameters = (
-            {"Filter", "Sort"}
-            if filter_schema is not None and endpoint is not None
-            else set()
-        )
-        form_schema = self.catalog.form_schema(endpoint.form_schema) if endpoint else None
-        self.form_builder.set_schema(form_schema, case.values)
-        self._table_parameters = [
-            parameter
-            for parameter in (endpoint.parameters if endpoint else ())
-            if not (parameter.source == "query" and parameter.name in self._builder_parameters)
-            and not (form_schema is not None and parameter.source == "form")
-        ]
-        self.parameters.setRowCount(0)
-        self.parameters.setRowCount(len(self._table_parameters))
-        self._file_pickers = {}
-        for row, parameter in enumerate(self._table_parameters):
-            key = f"{parameter.source}:{parameter.name}"
-            is_file = parameter.source == "form" and "file" in parameter.type.lower()
-            cells = [
-                parameter.source,
-                parameter.name,
-                parameter.type,
-                "yes" if parameter.required or parameter.source == "path" else "no",
-                case.values.get(key, ""),
-            ]
-            for column, text in enumerate(cells):
-                cell = QTableWidgetItem(text)
-                if column < 4 or is_file:
-                    cell.setFlags(cell.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                if column == 0 and parameter.source in {"path", "query"}:
-                    cell.setFlags(
-                        cell.flags() & ~Qt.ItemFlag.ItemIsUserCheckable
-                    )
-                    cell.setCheckState(
-                        Qt.CheckState.Checked
-                        if parameter_is_enabled(
-                            case.values, parameter.source, parameter.name
-                        )
-                        else Qt.CheckState.Unchecked
-                    )
-                    if parameter.source == "query":
-                        cell.setFlags(cell.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-                self.parameters.setItem(row, column, cell)
-            if is_file:
-                picker = FilePicker()
-                picker.setText(case.values.get(key, ""))
-                picker.changed.connect(
-                    lambda text, item=self.parameters.item(row, 4): item.setText(text)
-                )
-                self.parameters.setCellWidget(row, 4, picker)
-                self._file_pickers[row] = picker
-            elif parameter.values:
-                chooser = ValuePicker(list(parameter.values))
-                chooser.setText(case.values.get(key, ""))
-                chooser.changed.connect(
-                    lambda text, item=self.parameters.item(row, 4): item.setText(text)
-                )
-                self.parameters.setCellWidget(row, 4, chooser)
-
-        self.payload_form.set_schema(
-            self.catalog.payload_schema(endpoint.payload_schema) if endpoint else None,
-            case.payload,
-        )
-        self.payload.setPlainText(
-            "" if case.payload is None else json.dumps(case.payload, indent=2)
-        )
-        has_filter = "Filter" in self._builder_parameters
-        self.request_tabs.setTabEnabled(1, has_filter)
-        self.request_tabs.setTabEnabled(2, has_filter)
-        self.request_tabs.setTabEnabled(self.form_tab_index, form_schema is not None)
-        self.request_tabs.setTabEnabled(
-            self.payload_tab_index, endpoint is not None and endpoint.payload_schema is not None
+        self.request_editor.load(
+            self.catalog,
+            endpoint,
+            dict(case.values),
+            "" if case.payload is None else json.dumps(case.payload, indent=2),
         )
 
         self.assertions.setRowCount(0)
@@ -1224,51 +1131,15 @@ class SuiteTab(QWidget):
         if not self._loading and self.current_case is not None:
             self.current_case.authentication = self.case_authentication.currentData() or "inherit"
 
-    def _parameters_changed(self, item: QTableWidgetItem) -> None:
+    def _request_changed(self) -> None:
         if self._loading or self.current_case is None:
             return
-        parameter = self._table_parameters[item.row()]
-        if item.column() == 0 and parameter.source == "query":
-            self.current_case.values[
-                parameter_enabled_key(parameter.source, parameter.name)
-            ] = "true" if item.checkState() == Qt.CheckState.Checked else "false"
-        elif item.column() == 4:
-            self.current_case.values[f"{parameter.source}:{parameter.name}"] = item.text()
-
-    def _filter_enabled_changed(self, enabled: bool) -> None:
-        if not self._loading and self.current_case is not None:
-            self.current_case.values[
-                parameter_enabled_key("query", "Filter")
-            ] = "true" if enabled else "false"
-
-    def _sort_enabled_changed(self, enabled: bool) -> None:
-        if not self._loading and self.current_case is not None:
-            self.current_case.values[
-                parameter_enabled_key("query", "Sort")
-            ] = "true" if enabled else "false"
-
-    def _filter_changed(self) -> None:
-        if self._loading or self.current_case is None:
-            return
-        self.current_case.values["query:Filter"] = self.query_builder.filter_string()
-
-    def _sort_changed(self) -> None:
-        if self._loading or self.current_case is None:
-            return
-        self.current_case.values["query:Sort"] = self.sort_builder.sort_string()
-
-    def _form_changed(self) -> None:
-        if self._loading or self.current_case is None:
-            return
+        values = self.current_case.values
         # Replace every form key so cleared fields are dropped from the case.
-        for key in [k for k in self.current_case.values if k.startswith("form:")]:
-            del self.current_case.values[key]
-        self.current_case.values.update(self.form_builder.values())
-
-    def _payload_changed(self) -> None:
-        if self._loading or self.current_case is None:
-            return
-        text = self.payload.toPlainText().strip()
+        for key in [k for k in values if k.startswith("form:")]:
+            del values[key]
+        values.update(self.request_editor.values())
+        text = self.request_editor.payload_text().strip()
         if not text:
             self.current_case.payload = None
             return
@@ -1277,29 +1148,6 @@ class SuiteTab(QWidget):
         except json.JSONDecodeError:
             # Keep the previous parsed payload; the run guard reports invalid JSON.
             pass
-
-    def _seed_parameters(self) -> None:
-        if self.current_case is None:
-            return
-        for row, parameter in enumerate(self._table_parameters):
-            if row in getattr(self, "_file_pickers", {}):
-                continue  # A file path cannot be seeded.
-            seeded = seed_parameter(parameter)
-            chooser = self.parameters.cellWidget(row, 4)
-            if isinstance(chooser, ValuePicker):
-                chooser.setText(seeded)  # The widget mirrors itself into the cell.
-            else:
-                self.parameters.item(row, 4).setText(seeded)
-
-    def _seed_payload_form(self) -> None:
-        self.payload_form.seed()
-        self._form_to_json()
-
-    def _form_to_json(self) -> None:
-        payload = self.payload_form.payload()
-        if payload is None:
-            return
-        self.payload.setPlainText(json.dumps(payload, indent=2))
 
     # --------------------------------------------------------- assertions
 
@@ -1347,14 +1195,7 @@ class SuiteTab(QWidget):
                 item.setBackground(QColor(theme.SURFACE_ALT))
 
     def refresh_theme(self) -> None:
-        self.parameters_seed_button.setIcon(icon("seed", theme.TEXT, 18))
-        self.payload.refresh_theme()
-        self.form_builder.refresh_theme()
-        self.payload_form.refresh_theme()
-        for icon_name, button in self.payload_fields_buttons.items():
-            button.setIcon(icon(icon_name, theme.TEXT, 18))
-        self.query_builder.refresh_theme()
-        self.sort_builder.refresh_theme()
+        self.request_editor.refresh_theme()
         for icon_name, button in self.suite_toolbar_buttons.items():
             color = (
                 theme.TEXT_INVERSE

@@ -187,7 +187,7 @@ def _filter_targets(schema: FilterSchema | None) -> list[MappingTarget]:
 
 def mapping_targets(endpoint: Endpoint, catalog: Catalog) -> list[MappingTarget]:
     targets = _parameter_targets(endpoint)
-    targets.extend(_filter_targets(catalog.filter_schema(endpoint.filter_entity)))
+    targets.extend(_filter_targets(catalog.endpoint_filter_schema(endpoint)))
     targets.extend(
         _payload_targets_from_node(
             catalog.payload_schema(endpoint.payload_schema),
@@ -428,7 +428,7 @@ class RowMapper:
         self.environment_variables = dict(environment_variables or {})
         self.targets = mapping_targets(endpoint, catalog)
         self.targets_by_key = {target.key: target for target in self.targets}
-        self.filter_schema = catalog.filter_schema(endpoint.filter_entity)
+        self.filter_schema = catalog.endpoint_filter_schema(endpoint)
         self.filter_fields = (
             {field.name: field for field in self.filter_schema.fields}
             if self.filter_schema is not None

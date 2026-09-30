@@ -672,6 +672,7 @@ def build_azure_functions_service(workspace_root: Path) -> dict[str, Any]:
         "name": "AzureFunctions",
         "repository": AZURE_FUNCTIONS_REPOSITORY,
         "default_base_url": "",
+        "filter_sort_builders": True,
         "endpoints": endpoints,
     }
 
@@ -939,6 +940,8 @@ def build_catalog(
                 "name": service_name,
                 "repository": repository_name,
                 "default_base_url": "",
+                # Every scanned TrialWyze service speaks the platform filter grammar.
+                "filter_sort_builders": True,
                 "endpoints": scanned["endpoints"],
             }
         )

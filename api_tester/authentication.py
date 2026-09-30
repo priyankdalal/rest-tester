@@ -437,7 +437,75 @@ def _default_persisted_cache_factory(persistence: Any) -> Any:
 def _default_lock_factory(path: Path) -> Any:
     from msal_extensions import CrossPlatLock
 
+    _break_stale_lock(path)
     return CrossPlatLock(str(path))
+
+
+#: A healthy holder keeps the lock for milliseconds, and CrossPlatLock itself
+#: gives up after 5 s, so a lock file older than this is abandoned.
+_STALE_LOCK_SECONDS = 30.0
+
+
+def _break_stale_lock(path: Path) -> None:
+    """Removes a lock file left behind by a process that died holding it.
+
+    Without ``portalocker``, msal_extensions falls back to a lock that is just
+    an exclusively-created file containing ``"<pid> <argv0>"``. A crash or a
+    forced kill between acquire and release leaves that file behind forever,
+    and every later read/write of the credential then times out with a
+    LockError, surfacing as "Unable to remember the credential securely".
+    """
+    try:
+        stat = path.stat()
+    except OSError:
+        return
+    try:
+        owner = int(path.read_text(encoding="utf-8", errors="replace").split(" ", 1)[0])
+    except (OSError, ValueError):
+        owner = 0
+    if owner == os.getpid():
+        return
+    abandoned = time.time() - stat.st_mtime > _STALE_LOCK_SECONDS
+    if not abandoned and (owner <= 0 or _process_alive(owner)):
+        return
+    try:
+        path.unlink()
+    except OSError:
+        pass
+
+
+def _process_alive(pid: int) -> bool:
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        kernel32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+        kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+        query_limited_information = 0x1000
+        still_active = 259
+        handle = kernel32.OpenProcess(query_limited_information, False, pid)
+        if not handle:
+            # Access denied means it exists but belongs to someone else.
+            return ctypes.get_last_error() == 5
+        try:
+            code = wintypes.DWORD()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return True
+            return code.value == still_active
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
 
 
 def _default_msal_app_factory(

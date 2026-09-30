@@ -310,6 +310,23 @@ def icon(name: str, color: str = "#65758B", size: int = 18) -> QIcon:
         painter.drawEllipse(QPointF(6.0, 11.5), 2.3, 2.3)
         painter.drawEllipse(QPointF(12.0, 6.5), 2.3, 2.3)
         painter.setBrush(Qt.BrushStyle.NoBrush)
+    elif name == "sort":
+        # Opposed arrows: distinct from the single-arrow move-up/move-down
+        # glyphs and from "sliders-v", which is reserved for environment edit.
+        painter.drawLine(QPointF(5.5, 15), QPointF(5.5, 3))
+        painter.drawLine(QPointF(2.5, 6), QPointF(5.5, 3))
+        painter.drawLine(QPointF(8.5, 6), QPointF(5.5, 3))
+        painter.drawLine(QPointF(12.5, 3), QPointF(12.5, 15))
+        painter.drawLine(QPointF(9.5, 12), QPointF(12.5, 15))
+        painter.drawLine(QPointF(15.5, 12), QPointF(12.5, 15))
+    elif name == "fields":
+        # Two label + input rows: the classic form silhouette. Reads as "edit
+        # as form fields", where the pencil glyph collapses into a diagonal
+        # arrow at 16px.
+        painter.drawLine(QPointF(2.5, 5.5), QPointF(4.5, 5.5))
+        painter.drawRoundedRect(QRectF(7, 3, 9, 5), 1.4, 1.4)
+        painter.drawLine(QPointF(2.5, 12.5), QPointF(4.5, 12.5))
+        painter.drawRoundedRect(QRectF(7, 10, 9, 5), 1.4, 1.4)
     elif name == "settings":
         painter.drawPolygon(_cog_polygon())
         painter.drawEllipse(QPointF(9.0, 9.0), 2.5, 2.5)

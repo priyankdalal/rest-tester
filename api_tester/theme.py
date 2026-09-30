@@ -246,6 +246,52 @@ QLabel#navigationStats, QLabel#navigationVersion {{
 QWidget#navigationFooter {{
     background: transparent;
 }}
+QLabel#navigationEnvironmentCaption {{
+    background: transparent;
+    color: {NAV_MUTED};
+    font-size: 8pt;
+    font-weight: 600;
+    padding: 0 2px;
+}}
+QComboBox#navigationEnvironment {{
+    background-color: rgba(255, 255, 255, 0.06);
+    color: {NAV_TEXT};
+    border: 1px solid rgba(184, 203, 226, 0.28);
+    border-radius: 6px;
+    padding: 5px 28px 5px 9px;
+    font-weight: 600;
+}}
+QComboBox#navigationEnvironment:hover {{
+    background-color: {NAV_HOVER};
+    border-color: rgba(184, 203, 226, 0.45);
+}}
+QComboBox#navigationEnvironment:focus,
+QComboBox#navigationEnvironment:on {{
+    border-color: rgba(184, 203, 226, 0.6);
+}}
+QComboBox#navigationEnvironment:disabled {{
+    color: {NAV_MUTED};
+}}
+QComboBox#navigationEnvironment::drop-down {{
+    width: 24px;
+    background: transparent;
+}}
+QComboBox#navigationEnvironment::drop-down:hover {{
+    background: transparent;
+}}
+QComboBox#navigationEnvironment::down-arrow {{
+    image: url("{NAV_COMBO_ARROW}");
+    width: 10px;
+    height: 7px;
+}}
+QComboBox#navigationEnvironment QAbstractItemView {{
+    background-color: {NAVIGATION};
+    color: {NAV_TEXT};
+    border: 1px solid rgba(184, 203, 226, 0.28);
+    selection-background-color: {NAV_HOVER};
+    selection-color: {NAV_TEXT};
+    outline: none;
+}}
 QToolButton#navigationFooterButton {{
     background-color: transparent;
     color: {NAV_MUTED};
@@ -442,25 +488,36 @@ QWidget#responseStatusBar {{
     border-bottom: 1px solid {BORDER};
 }}
 
+/* Group boxes read as cards with an in-card heading, not a legend cut into
+   the border: the title sits inside the padding box, above the contents. */
 QGroupBox {{
-    background-color: transparent;
+    background-color: {SURFACE};
     border: 1px solid {BORDER};
-    border-radius: 6px;
-    margin-top: 14px;
-    padding: 10px 8px 8px 8px;
-    font-weight: 600;
+    border-radius: 8px;
+    margin-top: 0;
+    padding: 40px 10px 10px 10px;
+    font-size: 10.5pt;
+    font-weight: 700;
 }}
 QGroupBox::title {{
-    subcontrol-origin: margin;
+    subcontrol-origin: padding;
     subcontrol-position: top left;
-    left: 10px;
-    padding: 0 4px;
+    left: 12px;
+    top: 12px;
+    padding: 0;
     background: transparent;
-    color: {TEXT_MUTED};
+    color: {TEXT};
 }}
 QGroupBox#summaryTile {{
     background-color: {SURFACE};
     border: 1px solid {BORDER};
+    padding-top: 32px;
+    font-size: 9pt;
+    font-weight: 600;
+}}
+QGroupBox#summaryTile::title {{
+    top: 10px;
+    color: {TEXT_MUTED};
 }}
 QFrame#accordionSection {{
     background-color: {SURFACE};
@@ -502,8 +559,9 @@ QLabel#accordionSummary {{
 QWidget#accordionBody {{
     background-color: {SURFACE};
 }}
-QWidget#accordionContent {{
-    background-color: {SURFACE_ALT};
+QWidget#accordionContent,
+QWidget#runBreakdowns {{
+    background-color: transparent;
 }}
 QLabel#summaryValue {{
     background: transparent;
@@ -676,6 +734,15 @@ QComboBox QAbstractItemView {{
     border: 1px solid {BORDER};
     selection-background-color: {PRIMARY};
     selection-color: {TEXT_INVERSE};
+}}
+/* An editable combo's inner edit field must not inherit the global QLineEdit
+   border and padding: the combo already draws both, and the extra padding
+   scrolled short values such as "200-299" out of view. */
+QComboBox QLineEdit {{
+    border: none;
+    padding: 0;
+    background: transparent;
+    min-height: 0;
 }}
 
 QPushButton {{
@@ -894,7 +961,9 @@ QTabWidget#requestBuilderTabs::pane {{
     background: {SURFACE};
 }}
 
-QHeaderView {{ background-color: {SURFACE_ALT}; }}
+/* QHeaderView defaults to no eliding, so a narrow column showed the middle of
+   its centred label; elide on the right for every header, app-wide. */
+QHeaderView {{ background-color: {SURFACE_ALT}; qproperty-textElideMode: ElideRight; }}
 QHeaderView::section {{
     background-color: {SURFACE_ALT};
     color: {TEXT_MUTED};
@@ -904,6 +973,20 @@ QHeaderView::section {{
     padding: 5px 8px;
     font-weight: 600;
 }}
+/* Keep the sort chevron beside the label; the default drew it above the
+   text, pushing the label down so it looked wrapped and clipped. */
+QHeaderView::section:horizontal {{
+    padding-right: 22px;
+}}
+QHeaderView::up-arrow, QHeaderView::down-arrow {{
+    subcontrol-origin: padding;
+    subcontrol-position: center right;
+    right: 6px;
+    width: 10px;
+    height: 7px;
+}}
+QHeaderView::up-arrow {{ image: url("{SPIN_UP_ARROW}"); }}
+QHeaderView::down-arrow {{ image: url("{COMBO_ARROW}"); }}
 QHeaderView::section:hover {{ background-color: {HOVER_SOFT}; }}
 QTableCornerButton::section {{
     background-color: {SURFACE_ALT};
@@ -1134,6 +1217,11 @@ QWidget#emptyState {{
     background-color: {SURFACE_ALT};
     border: 1px solid {BORDER};
     border-radius: 8px;
+}}
+QWidget#emptyState[tableOverlay="true"] {{
+    background-color: {SURFACE};
+    border: none;
+    border-radius: 0;
 }}
 QLabel#emptyStateIcon {{
     background: transparent;
@@ -1455,6 +1543,7 @@ LIGHT_TOKENS = {
     "JSON_PUNCTUATION": JSON_PUNCTUATION,
     "JSON_ERROR": JSON_ERROR,
     "COMBO_ARROW": (ASSET_DIR / "chevron-down-light.svg").as_posix(),
+    "NAV_COMBO_ARROW": (ASSET_DIR / "chevron-down-dark.svg").as_posix(),
     "SPIN_UP_ARROW": (ASSET_DIR / "chevron-up-light.svg").as_posix(),
     "TAB_LEFT_ARROW": (ASSET_DIR / "chevron-left-light.svg").as_posix(),
     "TAB_RIGHT_ARROW": (ASSET_DIR / "chevron-right-light.svg").as_posix(),
@@ -1510,6 +1599,7 @@ DARK_TOKENS = {
     "JSON_PUNCTUATION": "#a9bdd6",
     "JSON_ERROR": "#ff8a8a",
     "COMBO_ARROW": (ASSET_DIR / "chevron-down-dark.svg").as_posix(),
+    "NAV_COMBO_ARROW": (ASSET_DIR / "chevron-down-dark.svg").as_posix(),
     "SPIN_UP_ARROW": (ASSET_DIR / "chevron-up-dark.svg").as_posix(),
     "TAB_LEFT_ARROW": (ASSET_DIR / "chevron-left-dark.svg").as_posix(),
     "TAB_RIGHT_ARROW": (ASSET_DIR / "chevron-right-dark.svg").as_posix(),

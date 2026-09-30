@@ -60,7 +60,6 @@ from PyQt6.QtWidgets import (
 
 from . import theme
 from .branding import APP_NAME, display_name
-from .builders import FormBuilder, PayloadForm, QueryBuilder, SortBuilder
 from .catalog import Catalog, Endpoint, Service, load_catalog
 from .client import (
     ApiResult,
@@ -75,6 +74,7 @@ from .client import (
 )
 from .environment import AppSettings
 from .authentication import AuthError
+from .request_editor import RequestEditor
 from .request_auth import (
     AuthenticationContext,
     ConnectionState,
@@ -87,7 +87,7 @@ from .execution.models import ExecutionEnvironmentSnapshot
 from .auth_log import activity_log
 from .icons import app_icon, app_pixmap, badged_icon, icon
 from .documentation import endpoint_documentation
-from .seeding import refresh_payload, seed_parameter
+from .seeding import seed_parameter
 from .saved_requests import (
     CollectionsPage,
     RequestCollection,
@@ -98,10 +98,11 @@ from .saved_requests import (
 from .suite import TestCase, TestSuite, apply_variables
 from .suite_ui import SuiteTab
 from .splash import MINIMUM_VISIBLE_MS, SplashScreen
-from .viewers import FilePicker, JsonTextEdit, RequestBodyEditor, ResponseViewer, ValuePicker
+from .viewers import JsonTextEdit, ResponseViewer
 from .widgets import (
     AccordionSection,
     AccordionScrollArea,
+    expected_status_combo,
     ElidingLabel,
     HeaderConnectionPill,
     IconTextItemDelegate,
@@ -262,7 +263,20 @@ class ConnectionProbe(QThread):
         self.resolved.emit(self._token, state)
 
 
+def _request_editor_state(name: str) -> property:
+    """Read-through to per-endpoint state that is rebuilt on every load."""
+    return property(lambda self: getattr(self.request_editor, name))
+
+
 class MainWindow(QMainWindow):
+    _payload_schema = _request_editor_state("_payload_schema")
+    _builder_parameters = _request_editor_state("_builder_parameters")
+    _builder_value_edits = _request_editor_state("_builder_value_edits")
+    _builder_buttons = _request_editor_state("_builder_buttons")
+    _path_parameter_list = _request_editor_state("_path_parameter_list")
+    _query_parameter_list = _request_editor_state("_query_parameter_list")
+    _file_pickers = _request_editor_state("_file_pickers")
+
     def __init__(
         self,
         startup_progress: Callable[[int, str], None] | None = None,
@@ -300,7 +314,6 @@ class MainWindow(QMainWindow):
         # Keep the shell narrower than any common display so a maximized window
         # never pushes content outside the frame.
         self.setMinimumSize(1120, 680)
-        self._splitter_sizes_restored = False
         self._build_ui()
         report_progress(70, "Preparing service workspace")
         self._populate_services()
@@ -311,15 +324,7 @@ class MainWindow(QMainWindow):
         self._refresh_header_buttons()
         self.suite_tab.refresh_theme()
         self.response.refresh_theme()
-        self.parameters_seed_button.setIcon(icon("seed", theme.TEXT, 18))
-        self.payload_seed_button.setIcon(icon("seed", theme.TEXT, 18))
-        self.payload.refresh_theme()
-        self.form_builder.refresh_theme()
-        self.payload_form.refresh_theme()
-        for icon_name, button in self.payload_fields_buttons.items():
-            button.setIcon(icon(icon_name, theme.TEXT, 18))
-        self.query_builder.refresh_theme()
-        self.sort_builder.refresh_theme()
+        self.request_editor.refresh_theme()
         self.connection_pill.refresh_theme()
         self._refresh_connection_state()
         report_progress(96, "Finalizing workspace")
@@ -615,127 +620,16 @@ class MainWindow(QMainWindow):
         request_page_layout.setSpacing(8)
         verification_row = QHBoxLayout()
         verification_row.addWidget(QLabel("Expected status for verification"))
-        self.expected_status = QComboBox()
-        self.expected_status.setEditable(True)
-        self.expected_status.addItems(
-            ["200-299", "200", "201", "202", "204", "400", "401", "403", "404"]
-        )
+        self.expected_status = expected_status_combo()
         self.expected_status.setToolTip(
             "Used by Send and verify from the endpoint More actions menu"
         )
         verification_row.addWidget(self.expected_status)
         verification_row.addStretch()
         request_page_layout.addLayout(verification_row)
-        self.request_tabs = QTabWidget()
-        self.request_tabs.setObjectName("requestBuilderTabs")
-
-        parameters_page = QFrame()
-        parameters_page.setObjectName("parametersCard")
-        parameters_layout = QVBoxLayout(parameters_page)
-        parameters_layout.setContentsMargins(10, 10, 10, 10)
-        parameters_layout.setSpacing(8)
-        parameters_heading = QHBoxLayout()
-        parameters_title = QLabel("Parameters")
-        parameters_title.setProperty("sectionTitle", True)
-        parameters_heading.addWidget(parameters_title)
-        self.parameter_count = QLabel("0")
-        self.parameter_count.setObjectName("countBadge")
-        parameters_heading.addWidget(self.parameter_count)
-        parameters_heading.addStretch()
-        parameters_layout.addLayout(parameters_heading)
-        self.parameters = QTableWidget(0, 5)
-        self.parameters.setHorizontalHeaderLabels(["Source", "Name", "Type", "Required", "Value"])
-        self.parameters.setObjectName("parametersTable")
-        self.parameters.verticalHeader().setVisible(False)
-        self.parameters.verticalHeader().setDefaultSectionSize(38)
-        self.parameters.setShowGrid(False)
-        self.parameters.setAlternatingRowColors(False)
-        self.parameters.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
-        parameters_layout.addWidget(self.parameters)
-        self.parameters_seed_button = QPushButton("Seed parameter values")
-        self.parameters_seed_button.clicked.connect(self._seed_parameters)
-        parameters_layout.addWidget(self.parameters_seed_button)
-
-        query_page = QWidget()
-        query_layout = QVBoxLayout(query_page)
-        query_layout.setContentsMargins(0, 0, 0, 0)
-        self.query_enabled = QCheckBox("Include Filter query parameter")
-        self.query_enabled.setChecked(True)
-        query_layout.addWidget(self.query_enabled)
-        self.query_builder = QueryBuilder()
-        self.query_enabled.toggled.connect(self.query_builder.setEnabled)
-        query_layout.addWidget(self.query_builder)
-        self.query_tab_index = self.request_tabs.addTab(query_page, "Query")
-
-        sort_page = QWidget()
-        sort_layout = QVBoxLayout(sort_page)
-        sort_layout.setContentsMargins(0, 0, 0, 0)
-        self.sort_enabled = QCheckBox("Include Sort query parameter")
-        self.sort_enabled.setChecked(True)
-        sort_layout.addWidget(self.sort_enabled)
-        self.sort_builder = SortBuilder()
-        self.sort_enabled.toggled.connect(self.sort_builder.setEnabled)
-        sort_layout.addWidget(self.sort_builder)
-        self.sort_tab_index = self.request_tabs.addTab(sort_page, "Sort")
-
-        self.form_builder = FormBuilder()
-        self.form_tab_index = self.request_tabs.addTab(self.form_builder, "Form")
-
-        self.payload_form = PayloadForm()
-        payload_page = QWidget()
-        payload_page_layout = QVBoxLayout(payload_page)
-        payload_page_layout.addWidget(self.payload_form)
-        payload_buttons = QHBoxLayout()
-        self.payload_fields_buttons = {
-            "seed": QPushButton(),
-            "copy": QPushButton(),
-        }
-        self.payload_fields_buttons["seed"].setToolTip("Seed all payload fields")
-        self.payload_fields_buttons["seed"].setAccessibleName(
-            "Seed all payload fields"
-        )
-        self.payload_fields_buttons["seed"].clicked.connect(self.payload_form.seed)
-        self.payload_fields_buttons["copy"].setToolTip("Copy payload form to JSON")
-        self.payload_fields_buttons["copy"].setAccessibleName(
-            "Copy payload form to JSON"
-        )
-        self.payload_fields_buttons["copy"].clicked.connect(self._form_to_json)
-        payload_buttons.addWidget(self.payload_fields_buttons["seed"])
-        payload_buttons.addWidget(self.payload_fields_buttons["copy"])
-        payload_buttons.addStretch()
-        self.payload_fields_layout = payload_buttons
-        payload_page_layout.addLayout(payload_buttons)
-        self.payload_tab_index = self.request_tabs.addTab(payload_page, "Payload fields")
-
-        json_page = QWidget()
-        json_layout = QVBoxLayout(json_page)
-        json_row = QHBoxLayout()
-        json_row.addWidget(QLabel("JSON payload sent with the request"))
-        self.payload_seed_button = QPushButton()
-        self.payload_seed_button.setToolTip("Generate or seed request payload data")
-        self.payload_seed_button.setAccessibleName(
-            "Generate or seed request payload data"
-        )
-        self.payload_seed_button.clicked.connect(self._seed_data)
-        json_row.addStretch()
-        json_row.addWidget(self.payload_seed_button)
-        self.payload_seed_layout = json_row
-        json_layout.addLayout(json_row)
-        self.payload = RequestBodyEditor()
-        json_layout.addWidget(self.payload)
-        self.json_tab_index = self.request_tabs.addTab(json_page, "Payload JSON")
-
-        request_builder_splitter = QSplitter(Qt.Orientation.Horizontal)
-        request_builder_splitter.setObjectName("requestBuilderSplitter")
-        request_builder_splitter.setChildrenCollapsible(False)
-        request_builder_splitter.setHandleWidth(7)
-        request_builder_splitter.addWidget(parameters_page)
-        request_builder_splitter.addWidget(self.request_tabs)
-        request_builder_splitter.setStretchFactor(0, 1)
-        request_builder_splitter.setStretchFactor(1, 2)
-        request_builder_splitter.setSizes(self.app_settings.request_builder_sizes)
-        request_page_layout.addWidget(request_builder_splitter, 1)
-        self.request_builder_splitter = request_builder_splitter
+        self.request_editor = RequestEditor(self)
+        self._alias_request_editor()
+        request_page_layout.addWidget(self.request_editor, 1)
 
         self.endpoint_content_tabs.addTab(request_page, "Request")
 
@@ -968,6 +862,44 @@ class MainWindow(QMainWindow):
         footer_layout.addWidget(
             self.endpoint_info_button, 0, Qt.AlignmentFlag.AlignHCenter
         )
+        self.navigation_environment_panel = QWidget()
+        self.navigation_environment_panel.setObjectName("navigationFooter")
+        environment_layout = QVBoxLayout(self.navigation_environment_panel)
+        environment_layout.setContentsMargins(8, 4, 8, 2)
+        environment_layout.setSpacing(4)
+        environment_caption_row = QHBoxLayout()
+        environment_caption_row.setContentsMargins(0, 0, 0, 0)
+        environment_caption = QLabel("Environment")
+        environment_caption.setObjectName("navigationEnvironmentCaption")
+        environment_caption_row.addWidget(environment_caption, 1)
+        self.navigation_environment_settings = QToolButton()
+        self.navigation_environment_settings.setObjectName("navigationFooterButton")
+        self.navigation_environment_settings.setIcon(
+            icon("settings", theme.NAV_MUTED, 14)
+        )
+        self.navigation_environment_settings.setIconSize(QSize(14, 14))
+        self.navigation_environment_settings.setFixedSize(22, 22)
+        self.navigation_environment_settings.setToolTip("Manage environments")
+        self.navigation_environment_settings.setAccessibleName("Manage environments")
+        self.navigation_environment_settings.clicked.connect(
+            lambda: self.workspace_tabs.setCurrentWidget(self.environment_page)
+        )
+        environment_caption_row.addWidget(self.navigation_environment_settings)
+        environment_layout.addLayout(environment_caption_row)
+        self.navigation_environment = QComboBox()
+        self.navigation_environment.setObjectName("navigationEnvironment")
+        self.navigation_environment.setToolTip("Active environment")
+        self.navigation_environment.setAccessibleName("Active environment")
+        self.navigation_environment.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.navigation_environment.setMinimumContentsLength(8)
+        self.navigation_environment.activated.connect(
+            self._navigation_environment_activated
+        )
+        environment_layout.addWidget(self.navigation_environment)
+        footer_layout.addWidget(self.navigation_environment_panel)
+        self._refresh_navigation_environment()
         self.navigation_version_row = QWidget()
         self.navigation_version_row.setObjectName("navigationVersionRow")
         version_row_layout = QHBoxLayout(self.navigation_version_row)
@@ -1046,6 +978,7 @@ class MainWindow(QMainWindow):
         if self._navigation_collapsed:
             set_icon_text_items_collapsed(self.navigation, True)
             self.navigation_stats.hide()
+            self.navigation_environment_panel.hide()
             self.endpoint_info_button.show()
             self.navigation_version.hide()
             self.navigation_collapse_button.setIcon(
@@ -1058,6 +991,7 @@ class MainWindow(QMainWindow):
         else:
             set_icon_text_items_collapsed(self.navigation, False)
             self.navigation_stats.show()
+            self.navigation_environment_panel.show()
             self.endpoint_info_button.hide()
             self.navigation_version.show()
             self.navigation_collapse_button.setIcon(
@@ -1128,17 +1062,6 @@ class MainWindow(QMainWindow):
                 for method, count in sorted(method_counts.items())
             )
         )
-
-    def showEvent(self, event) -> None:  # noqa: N802 - Qt signature
-        super().showEvent(event)
-        if not self._splitter_sizes_restored:
-            self._splitter_sizes_restored = True
-            QTimer.singleShot(0, self._restore_splitter_sizes)
-
-    def _restore_splitter_sizes(self) -> None:
-        sizes = list(self.app_settings.request_builder_sizes)
-        if sizes and all(size > 0 for size in sizes):
-            self.request_builder_splitter.setSizes(sizes)
 
     def _workspace_tab_changed(self, index: int) -> None:
         """Keep the left navigation highlight in sync with programmatic tab changes."""
@@ -1390,30 +1313,7 @@ class MainWindow(QMainWindow):
         self.workspace_tabs.setCurrentWidget(self.suite_tab)
 
     def _current_values(self) -> dict[str, str]:
-        values = {}
-        for row in range(self.parameters.rowCount()):
-            source = self.parameters.item(row, 0).text()
-            name = self.parameters.item(row, 1).text()
-            values[f"{source}:{name}"] = self.parameters.item(row, 4).text()
-            if source == "query":
-                values[parameter_enabled_key(source, name)] = (
-                    "true"
-                    if self.parameters.item(row, 0).checkState()
-                    == Qt.CheckState.Checked
-                    else "false"
-                )
-        for name in getattr(self, "_builder_parameters", set()):
-            values[f"query:{name}"] = (
-                self.query_builder.filter_string()
-                if name == "Filter"
-                else self.sort_builder.sort_string()
-            )
-            enabled = self.query_enabled if name == "Filter" else self.sort_enabled
-            values[parameter_enabled_key("query", name)] = (
-                "true" if enabled.isChecked() else "false"
-            )
-        values.update(self.form_builder.values())
-        return values
+        return self.request_editor.values()
 
     def _populate_services(self) -> None:
         self.endpoint_tree.clear()
@@ -1574,115 +1474,12 @@ class MainWindow(QMainWindow):
         self.endpoint_title.setToolTip(self.endpoint_title.text())
         self._refresh_favorite_button()
 
-        filter_schema = self.catalog.filter_schema(endpoint.filter_entity)
-        self.query_builder.set_schema(filter_schema)
-        self.sort_builder.set_schema(filter_schema)
-        draft_payload = endpoint.payload
-        if draft and draft[1].strip():
-            try:
-                draft_payload = json.loads(draft[1])
-            except json.JSONDecodeError:
-                draft_payload = endpoint.payload
-        self.payload_form.set_schema(
-            self.catalog.payload_schema(endpoint.payload_schema), draft_payload
+        self.request_editor.load(
+            self.catalog,
+            endpoint,
+            draft_values if draft else None,
+            draft[1] if draft else None,
         )
-        form_schema = self.catalog.form_schema(endpoint.form_schema)
-        self.form_builder.set_schema(form_schema, draft_values)
-
-        self._builder_parameters = {
-            parameter.name
-            for parameter in endpoint.parameters
-            if filter_schema is not None
-            and parameter.source == "query"
-            and parameter.name in ("Filter", "Sort")
-        }
-        # Form fields are owned by the Form tab, not the parameter grid.
-        self._table_parameters = [
-            parameter
-            for parameter in endpoint.parameters
-            if parameter.name not in self._builder_parameters
-            and not (form_schema is not None and parameter.source == "form")
-        ]
-        self.parameters.setRowCount(0)
-        self.parameters.setRowCount(len(self._table_parameters))
-        self.parameter_count.setText(str(len(self._table_parameters)))
-        self._file_pickers = {}
-        for row, parameter in enumerate(self._table_parameters):
-            is_file = parameter.source == "form" and "file" in parameter.type.lower()
-            values = [
-                parameter.source,
-                parameter.name,
-                parameter.type,
-                "yes" if parameter.required or parameter.source == "path" else "no",
-                (
-                    draft_values.get(f"{parameter.source}:{parameter.name}", "")
-                    if draft
-                    else ("" if is_file else seed_parameter(parameter))
-                ),
-            ]
-            for column, value in enumerate(values):
-                cell = QTableWidgetItem(value)
-                if column < 4 or is_file:
-                    cell.setFlags(cell.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                if column == 0 and parameter.source in {"path", "query"}:
-                    cell.setFlags(
-                        cell.flags() & ~Qt.ItemFlag.ItemIsUserCheckable
-                    )
-                    cell.setCheckState(
-                        Qt.CheckState.Checked
-                        if parameter_is_enabled(
-                            draft_values, parameter.source, parameter.name
-                        )
-                        else Qt.CheckState.Unchecked
-                    )
-                    if parameter.source == "query":
-                        cell.setFlags(cell.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-                self.parameters.setItem(row, column, cell)
-            if is_file:
-                picker = FilePicker()
-                picker.setText(
-                    draft_values.get(f"{parameter.source}:{parameter.name}", "")
-                    if draft
-                    else ""
-                )
-                # Mirror the chosen path into the cell so _current_values still reads it.
-                picker.changed.connect(
-                    lambda text, item=self.parameters.item(row, 4): item.setText(text)
-                )
-                self.parameters.setCellWidget(row, 4, picker)
-                self._file_pickers[row] = picker
-            elif parameter.values:
-                chooser = ValuePicker(list(parameter.values))
-                chooser.setText(values[4])
-                chooser.changed.connect(
-                    lambda text, item=self.parameters.item(row, 4): item.setText(text)
-                )
-                self.parameters.setCellWidget(row, 4, chooser)
-
-        self.request_tabs.setTabEnabled(
-            self.query_tab_index, "Filter" in self._builder_parameters
-        )
-        self.request_tabs.setTabEnabled(
-            self.sort_tab_index, "Sort" in self._builder_parameters
-        )
-        self.query_enabled.setChecked(
-            parameter_is_enabled(draft_values, "query", "Filter")
-        )
-        self.sort_enabled.setChecked(
-            parameter_is_enabled(draft_values, "query", "Sort")
-        )
-        self.request_tabs.setTabEnabled(self.form_tab_index, form_schema is not None)
-        self.request_tabs.setTabEnabled(
-            self.payload_tab_index, endpoint.payload_schema is not None
-        )
-        if draft:
-            self.query_builder.set_filter_string(draft_values.get("query:Filter", ""))
-            self.sort_builder.set_sort_string(draft_values.get("query:Sort", ""))
-            self.payload.setPlainText(draft[1])
-        else:
-            self.payload.setPlainText(
-                "" if endpoint.payload is None else json.dumps(endpoint.payload, indent=2)
-            )
         self.expected_status.setCurrentText(endpoint.expected_status)
         populate_auth_choices(
             self.request_authentication, self.app_settings.active.auth_profiles,
@@ -1692,6 +1489,7 @@ class MainWindow(QMainWindow):
         self._show_endpoint_examples(endpoint)
         self._load_endpoint_history(endpoint.id)
         self.response.clear()
+        self.response_section.clear_outcome()
         self._refresh_connection_state()
 
     def _select_endpoint_item(self, item: QTreeWidgetItem) -> None:
@@ -2087,39 +1885,47 @@ class MainWindow(QMainWindow):
             for column, value in enumerate(values):
                 self.endpoint_history.setItem(row, column, QTableWidgetItem(str(value)))
 
-    def _form_to_json(self) -> None:
-        payload = self.payload_form.payload()
-        if payload is None:
-            return
-        self.payload.setPlainText(json.dumps(payload, indent=2))
-        self.request_tabs.setCurrentIndex(self.json_tab_index)
+    # The request tabs live in RequestEditor; these keep the window's API.
+
+    def _form_to_json(self, base: object = None) -> None:
+        self.request_editor.form_to_json(base)
+
+    def _open_payload_fields(self) -> None:
+        self.request_editor.open_payload_fields()
+
+    def _open_filter_builder(self) -> None:
+        self.request_editor.open_filter_builder()
+
+    def _open_sort_builder(self) -> None:
+        self.request_editor.open_sort_builder()
+
+    def _seed_path_parameters(self) -> None:
+        self.request_editor.seed_path_parameters()
+
+    def _seed_query_parameters(self) -> None:
+        self.request_editor.seed_query_parameters()
 
     def _seed_parameters(self) -> None:
-        for row, parameter in enumerate(getattr(self, "_table_parameters", [])):
-            if row in getattr(self, "_file_pickers", {}):
-                continue  # A file path cannot be seeded.
-            seeded = seed_parameter(parameter)
-            chooser = self.parameters.cellWidget(row, 4)
-            if isinstance(chooser, ValuePicker):
-                chooser.setText(seeded)  # The widget mirrors itself into the cell.
-            else:
-                self.parameters.item(row, 4).setText(seeded)
+        self.request_editor.seed_parameters()
 
     def _seed_data(self) -> None:
-        if self.current_endpoint is None:
-            return
-        self._seed_parameters()
-        if self.query_builder.schema is not None:
-            self.query_builder.seed_all()
-        if self.form_builder.schema is not None:
-            self.form_builder.seed()
-        if self.current_endpoint.payload_schema is not None:
-            self.payload_form.seed()
-            self._form_to_json()
-        elif self.current_endpoint.payload is not None:
-            self.payload.setPlainText(
-                json.dumps(refresh_payload(self.current_endpoint.payload), indent=2)
-            )
+        self.request_editor.seed_data()
+
+    def _refresh_request_icons(self) -> None:
+        self.request_editor.refresh_icons()
+
+    def _alias_request_editor(self) -> None:
+        editor = self.request_editor
+        for name in (
+            "request_tabs", "path_parameters", "query_parameters",
+            "path_seed_button", "query_seed_button", "query_builder",
+            "sort_builder", "filter_dialog", "sort_dialog", "form_builder",
+            "payload", "payload_fields_button", "payload_seed_button",
+            "payload_seed_layout", "payload_form", "payload_fields_buttons",
+            "payload_fields_layout", "payload_fields_dialog", "path_tab_index",
+            "query_tab_index", "form_tab_index", "json_tab_index",
+        ):
+            setattr(self, name, getattr(editor, name))
 
     def _send_request(self) -> None:
         self._start_request(self.expected_status.currentText())
@@ -2149,6 +1955,7 @@ class MainWindow(QMainWindow):
         self._save_settings()
         self.send_button.setEnabled(False)
         self.response.status_label.setText("Running...")
+        self.response_section.clear_outcome()
         arguments = (
             endpoint,
             base_url,
@@ -2193,11 +2000,23 @@ class MainWindow(QMainWindow):
             return
         self._load_endpoint_history(endpoint.id)
         self.response.show_result(result)
+        self._flag_response_outcome(result)
         item = self.endpoint_items[endpoint.id]
         item.setForeground(0, QColor(theme.PASS if result.passed else theme.FAIL))
 
+    def _flag_response_outcome(self, result: ApiResult) -> None:
+        status_code = int(getattr(result, "status_code", 0) or 0)
+        if status_code:
+            reason = (getattr(result, "reason", "") or "").strip()
+            text = f"{status_code} {reason}".strip()
+            color = theme.status_color(status_code)
+        else:
+            text, color = "No response", theme.FAIL
+        self.response_section.show_outcome(text, color)
+
     def _request_failed(self, message: str) -> None:
         self.response.show_error(message)
+        self.response_section.show_outcome("Error", theme.FAIL)
 
     def _request_finished(self) -> None:
         self._set_endpoint_actions_enabled(self.current_endpoint is not None)
@@ -2221,7 +2040,6 @@ class MainWindow(QMainWindow):
     def _save_settings(self) -> None:
         self._sync_profile_from_compatibility_controls()
         self.app_settings.splitter_sizes = self.main_splitter.sizes()
-        self.app_settings.request_builder_sizes = self.request_builder_splitter.sizes()
         self.app_settings.accordion_states.update(
             {
                 "endpoint_request": self.request_section.is_expanded(),
@@ -2329,7 +2147,28 @@ class MainWindow(QMainWindow):
             detail = f"{state.summary}\n{state.detail}"
         self.connection_indicator.set_state(state.connected, state.label, detail)
 
+    def _refresh_navigation_environment(self) -> None:
+        """Mirrors the saved environments and the active one into the rail."""
+        combo = getattr(self, "navigation_environment", None)
+        if combo is None:
+            return
+        names = list(self.app_settings.environments)
+        active = self.app_settings.active_environment
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItems(names)
+        combo.setCurrentIndex(names.index(active) if active in names else -1)
+        combo.setEnabled(bool(names))
+        combo.blockSignals(False)
+        combo.setToolTip(f"Active environment: {active}" if active else "Active environment")
+
+    def _navigation_environment_activated(self, index: int) -> None:
+        name = self.navigation_environment.itemText(index)
+        if name and name != self.app_settings.active_environment:
+            self._activate_environment(name)
+
     def _refresh_environment_ui(self) -> None:
+        self._refresh_navigation_environment()
         self.environment_page.refresh()
         self._sync_compatibility_controls()
         self._save_settings()
@@ -2495,6 +2334,9 @@ class MainWindow(QMainWindow):
         self.endpoint_info_button.setIcon(
             icon("info-circle", theme.NAV_MUTED, 17)
         )
+        self.navigation_environment_settings.setIcon(
+            icon("settings", theme.NAV_MUTED, 14)
+        )
         self.navigation_collapse_button.setIcon(
             icon(
                 "chevron-right" if self._navigation_collapsed else "chevron-left",
@@ -2507,15 +2349,7 @@ class MainWindow(QMainWindow):
         self.load_testing_tab.refresh_theme()
         self.environment_page.refresh_theme()
         self.response.refresh_theme()
-        self.parameters_seed_button.setIcon(icon("seed", theme.TEXT, 18))
-        self.payload_seed_button.setIcon(icon("seed", theme.TEXT, 18))
-        self.payload.refresh_theme()
-        self.form_builder.refresh_theme()
-        self.payload_form.refresh_theme()
-        for icon_name, button in self.payload_fields_buttons.items():
-            button.setIcon(icon(icon_name, theme.TEXT, 18))
-        self.query_builder.refresh_theme()
-        self.sort_builder.refresh_theme()
+        self.request_editor.refresh_theme()
         self.connection_pill.refresh_theme()
         self.endpoint_tree.viewport().update()
         self._refresh_highlighters()

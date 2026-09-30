@@ -27,7 +27,6 @@ from PyQt6.QtGui import (
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
-    QDialogButtonBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -48,6 +47,7 @@ from . import content as content_module
 from . import theme
 from .comparison import ResponseComparison
 from .icons import icon
+from .widgets import attach_table_empty_state
 
 _KEY_PATTERN = QRegularExpression(r'"(?:[^"\\]|\\.)*"(?=\s*:)')
 _STRING_PATTERN = QRegularExpression(r'"(?:[^"\\]|\\.)*"')
@@ -302,9 +302,21 @@ class JsonTextEdit(QPlainTextEdit):
 
 
 class HeaderTable(QTableWidget):
-    """Headers rendered as a grouped, read-only two-column table."""
+    """Headers rendered as a grouped, read-only two-column table.
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    While empty it shows an overlay: an idle prompt before anything has been
+    sent, and a "none returned" note once a result arrived without headers.
+    """
+
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        idle_title: str = "No headers yet",
+        idle_guidance: str = "Send a request to see the headers.",
+        empty_title: str = "No headers",
+        empty_guidance: str = "The last exchange carried no headers.",
+    ) -> None:
         super().__init__(0, 2, parent)
         self.setHorizontalHeaderLabels(["Header", "Value"])
         self.verticalHeader().setVisible(False)
@@ -313,6 +325,22 @@ class HeaderTable(QTableWidget):
         self.setWordWrap(False)
         self.horizontalHeader().setStretchLastSection(True)
         self.setColumnWidth(0, 260)
+        self._idle = (idle_title, idle_guidance)
+        self._empty = (empty_title, empty_guidance)
+        self.empty_state = attach_table_empty_state(
+            self, icon_name="send", title=idle_title, guidance=idle_guidance
+        )
+
+    def reset(self) -> None:
+        """Clears the rows and shows the 'send a request' prompt again."""
+        self.setRowCount(0)
+        self._set_empty_message(*self._idle)
+
+    def refresh_theme(self) -> None:
+        self.empty_state.refresh_theme()
+
+    def _set_empty_message(self, title: str, guidance: str) -> None:
+        self.empty_state.set_content(icon_name="send", title=title, guidance=guidance)
 
     def show_headers(self, headers: dict[str, str]) -> None:
         self.setRowCount(0)
@@ -321,7 +349,7 @@ class HeaderTable(QTableWidget):
             for name, value in rows:
                 self._append_row(name, value)
         if self.rowCount() == 0:
-            self._append_row("", "No headers returned")
+            self._set_empty_message(*self._empty)
 
     def _append_group(self, name: str) -> None:
         row = self.rowCount()
@@ -424,6 +452,7 @@ class ResponseViewer(QWidget):
         self._raw_text = ""
         self._previous_text: str | None = None
         self._diagnostic: dict[str, Any] = {}
+        self._inspectors: list[QDialog] = []
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -494,7 +523,7 @@ class ResponseViewer(QWidget):
             (self.wrap_button, "wrap", "Toggle response text wrapping"),
             (self.find_button, "search", "Find next match in response"),
             (self.copy_button, "copy", "Copy response body"),
-            (self.fullscreen_button, "fullscreen", "View response body fullscreen"),
+            (self.fullscreen_button, "fullscreen", "Open the response in a new window"),
             (self.compare_button, "compare", "Compare with the previous response"),
             (
                 self.export_diagnostic_button,
@@ -525,13 +554,13 @@ class ResponseViewer(QWidget):
         body_layout.addWidget(self.body_error)
         self.tabs.addTab(body_page, "Body")
 
-        self.headers_table = HeaderTable()
+        self.headers_table = HeaderTable(
+            idle_title="No response headers yet",
+            idle_guidance="Send a request to see the headers the server returns.",
+            empty_title="No response headers",
+            empty_guidance="The server returned this response without any headers.",
+        )
         self.tabs.addTab(self.headers_table, "Headers")
-
-        self.raw_view = JsonTextEdit(read_only=True)
-        self.raw_view.setObjectName("responseCodeEditor")
-        self.raw_view.set_highlighting(False)
-        self.tabs.addTab(self.raw_view, "Raw")
 
         timeline_page = QWidget()
         timeline_layout = QVBoxLayout(timeline_page)
@@ -543,22 +572,34 @@ class ResponseViewer(QWidget):
         request_page = QWidget()
         request_layout = QVBoxLayout(request_page)
         request_layout.addWidget(QLabel("Request headers"))
-        self.request_headers = HeaderTable()
+        self.request_headers = HeaderTable(
+            idle_title="No request headers yet",
+            idle_guidance="Send a request to see the headers that were sent with it.",
+            empty_title="No request headers",
+            empty_guidance="The request was sent without any headers.",
+        )
         request_layout.addWidget(self.request_headers, 1)
         request_layout.addWidget(QLabel("Request body"))
         self.request_body = JsonTextEdit(read_only=True)
         self.request_body.setObjectName("responseCodeEditor")
+        self.request_body.setPlaceholderText("Send a request to see the body that was sent.")
         request_layout.addWidget(self.request_body, 1)
         self.tabs.addTab(request_page, "Request")
 
         self.validation = QLabel("No validation result yet")
-        self.validation.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self.validation.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.validation.setWordWrap(True)
         self.tabs.addTab(self.validation, "Validation")
 
     def refresh_theme(self) -> None:
         for button, icon_name, _tooltip in self._response_actions:
             button.setIcon(icon(icon_name, theme.TEXT, 18))
+        # Called once before the tables exist, from the toolbar setup.
+        for table in (getattr(self, "headers_table", None), getattr(self, "request_headers", None)):
+            if table is not None:
+                table.refresh_theme()
+        for inspector in getattr(self, "_inspectors", []):
+            inspector.refresh_theme()
 
     def clear(self) -> None:
         self._payload = b""
@@ -572,10 +613,9 @@ class ResponseViewer(QWidget):
         self.body_summary.clear()
         self.text_view.clear()
         self.body_error.setVisible(False)
-        self.headers_table.setRowCount(0)
-        self.raw_view.clear()
+        self.headers_table.reset()
         self.timeline.set_timings({})
-        self.request_headers.setRowCount(0)
+        self.request_headers.reset()
         self.request_body.clear()
         self.validation.setText("No validation result yet")
         self.export_diagnostic_button.setEnabled(False)
@@ -588,7 +628,6 @@ class ResponseViewer(QWidget):
         )
         self.text_view.set_highlighting(False)
         self.text_view.setPlainText(message)
-        self.raw_view.setPlainText(message)
         self.validation.setText(
             "Request could not be validated because no HTTP response was received."
         )
@@ -624,9 +663,6 @@ class ResponseViewer(QWidget):
         self.request_headers.show_headers(dict(getattr(result, "request_headers", {}) or {}))
         self._show_request_body(getattr(result, "request_body", "") or "")
         self._show_body(info)
-        self.raw_view.setPlainText(
-            self._raw_text if not info.is_binary else f"<binary body: {len(payload)} bytes>"
-        )
         self._show_timeline(dict(getattr(result, "timings", {}) or {}))
         passed = bool(getattr(result, "passed", False))
         error = getattr(result, "error", "") or ""
@@ -669,20 +705,45 @@ class ResponseViewer(QWidget):
             self.text_view.setTextCursor(cursor)
             self.text_view.find(text)
 
-    def _show_fullscreen(self) -> None:
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Response body")
-        dialog.resize(1100, 760)
-        layout = QVBoxLayout(dialog)
-        editor = JsonTextEdit(read_only=True)
-        editor.setPlainText(self.text_view.toPlainText())
-        editor.set_highlighting(self.text_view.highlighter.document() is not None)
-        editor.setLineWrapMode(self.text_view.lineWrapMode())
-        layout.addWidget(editor)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        buttons.rejected.connect(dialog.reject)
-        layout.addWidget(buttons)
-        dialog.exec()
+    def _show_fullscreen(self) -> QDialog:
+        from .response_inspector import ResponseInspector
+
+        info = self._info
+        kind = info.kind if info is not None else content_module.TEXT
+        raw = self.view_mode.currentText() == "Raw"
+        text = (
+            self._raw_text
+            if raw or kind in (content_module.JSON, content_module.XML)
+            else self.text_view.toPlainText()
+        )
+        if info is None:
+            text = self.text_view.toPlainText()
+        diagnostic = self._diagnostic
+        status_parts = (
+            [f"HTTP {diagnostic.get('status_code', 0)}", f"{diagnostic.get('elapsed_ms', 0)} ms"]
+            if diagnostic.get("status_code")
+            else []
+        )
+        inspector = ResponseInspector(
+            text,
+            kind,
+            title="Response body",
+            summary=" · ".join(status_parts + [self.body_summary.text()]).strip(" ·"),
+            wrapped=self.wrap_button.isChecked(),
+            parent=self,
+        )
+        self._inspectors.append(inspector)
+        inspector.finished.connect(
+            lambda _code=0, window=inspector: self._forget_inspector(window)
+        )
+        inspector.show()
+        inspector.raise_()
+        inspector.activateWindow()
+        return inspector
+
+    def _forget_inspector(self, window: QDialog) -> None:
+        if window in self._inspectors:
+            self._inspectors.remove(window)
 
     def _compare_previous(self) -> None:
         if self._previous_text is None:

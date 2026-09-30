@@ -70,6 +70,15 @@ class PreparedEndpointRequest:
         return requests.Request(self.method, self.url, params=self.query).prepare().url or self.url
 
 
+#: Choices offered wherever an expected status is picked. Any value
+#: status_matches accepts (a range "200-299" or a list "200,204") may also be
+#: typed, so this only needs the common cases.
+EXPECTED_STATUS_CHOICES = (
+    "200-299", "200", "201", "202", "204",
+    "400", "401", "403", "404", "409", "500",
+)
+
+
 def status_matches(actual: int, expected: str) -> bool:
     expected = expected.strip()
     range_match = re.fullmatch(r"(\d{3})-(\d{3})", expected)

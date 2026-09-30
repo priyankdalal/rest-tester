@@ -3,21 +3,25 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import math
 
 from PyQt6.QtCore import (
     QAbstractAnimation,
     QEasingCurve,
     QEvent,
     QPointF,
+    QRectF,
     QSize,
     Qt,
     QVariantAnimation,
     pyqtSignal,
 )
-from PyQt6.QtGui import QColor, QFont, QFontMetrics, QIcon, QPainter
+from PyQt6.QtGui import QColor, QFont, QFontMetrics, QIcon, QPainter, QPainterPath
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QComboBox,
+    QDialog,
     QFrame,
     QGraphicsDropShadowEffect,
     QGridLayout,
@@ -244,6 +248,9 @@ class TableEmptyState(EmptyStateWidget):
     def __init__(self, table: QAbstractItemView) -> None:
         super().__init__(table.viewport())
         self._table = table
+        # Styled flat: the view already draws the frame, and a rounded card
+        # inside a square viewport leaves notched corners under the header.
+        self.setProperty("tableOverlay", True)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         table.viewport().installEventFilter(self)
         model = table.model()
@@ -348,7 +355,15 @@ def enable_result_sorting(table: QTableWidget, *, default_column: int | None = N
 
 
 class _AccordionHeader(QToolButton):
-    """Toggle button with an optional compact summary anchored to the right."""
+    """Toggle button with an optional compact summary anchored to the right.
+
+    It can also carry an outcome: a coloured pill (shown only while the
+    section is collapsed) and a short pulsing tint across the whole ribbon.
+    """
+
+    FLASH_DURATION_MS = 3000
+    FLASH_PULSES = 3
+    FLASH_PEAK_ALPHA = 0.30
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -360,7 +375,118 @@ class _AccordionHeader(QToolButton):
         self.summary_label.setSizePolicy(
             QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred
         )
+        self.status_pill = QLabel(self)
+        self.status_pill.setObjectName("accordionStatusPill")
+        self.status_pill.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents
+        )
+        self.status_pill.hide()
+        self._status_color: str | None = None
+        self._flash_color = QColor()
+        self._flash_level = 0.0
+        self._flash = QVariantAnimation(self)
+        self._flash.setStartValue(0.0)
+        self._flash.setEndValue(1.0)
+        self._flash.setDuration(self.FLASH_DURATION_MS)
+        self._flash.valueChanged.connect(self._on_flash_step)
+        self._flash.finished.connect(self._on_flash_finished)
         self.set_summary("")
+
+    # -- outcome pill and flash -------------------------------------------
+    def set_status(self, text: str | None, color: str | None) -> None:
+        """Sets (or clears, with ``None``) the collapsed-state outcome pill."""
+        self._status_color = color if text else None
+        self.status_pill.setText(text or "")
+        self._style_status_pill()
+        self._sync_status_visibility()
+
+    def status_text(self) -> str:
+        return self.status_pill.text() if self._status_color else ""
+
+    def flash(self, color: str) -> None:
+        self._flash.stop()
+        self._flash_color = QColor(color)
+        self._flash.start()
+
+    def is_flashing(self) -> bool:
+        return self._flash.state() == QAbstractAnimation.State.Running
+
+    def stop_flash(self) -> None:
+        self._flash.stop()
+        self._on_flash_finished()
+
+    def refresh_status_theme(self) -> None:
+        self._style_status_pill()
+
+    def _style_status_pill(self) -> None:
+        if not self._status_color:
+            self.status_pill.setStyleSheet("")
+            return
+        color = QColor(self._status_color)
+        fill = QColor(color)
+        fill.setAlphaF(0.16)
+        border = QColor(color)
+        border.setAlphaF(0.55)
+        self.status_pill.setStyleSheet(
+            "QLabel#accordionStatusPill {"
+            f" background-color: {fill.name(QColor.NameFormat.HexArgb)};"
+            f" color: {color.name()};"
+            f" border: 1px solid {border.name(QColor.NameFormat.HexArgb)};"
+            " border-radius: 9px; padding: 2px 9px;"
+            " font-size: 8pt; font-weight: 700; }"
+        )
+
+    def _sync_status_visibility(self) -> None:
+        self.status_pill.setVisible(bool(self._status_color) and not self.isChecked())
+        self._position_summary()
+
+    def nextCheckState(self) -> None:  # noqa: N802 - Qt signature
+        super().nextCheckState()
+        self._sync_status_visibility()
+
+    def checkStateSet(self) -> None:  # noqa: N802 - Qt signature
+        super().checkStateSet()
+        self._sync_status_visibility()
+
+    def _on_flash_step(self, value) -> None:
+        # Three soft pulses that start and end at zero, so the ribbon
+        # returns to its normal colour without a jump.
+        progress = float(value)
+        pulse = 0.5 - 0.5 * math.cos(2 * math.pi * self.FLASH_PULSES * progress)
+        self._flash_level = pulse * self.FLASH_PEAK_ALPHA
+        self.update()
+
+    def _on_flash_finished(self) -> None:
+        self._flash_level = 0.0
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt signature
+        super().paintEvent(event)
+        if self._flash_level <= 0 or not self._flash_color.isValid():
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = QRectF(self.rect())
+        radius = 7.0
+        path = QPainterPath()
+        if self.isChecked():
+            # Mirrors the stylesheet: square bottom corners while expanded.
+            path.moveTo(rect.left(), rect.bottom())
+            path.lineTo(rect.left(), rect.top() + radius)
+            path.quadTo(rect.left(), rect.top(), rect.left() + radius, rect.top())
+            path.lineTo(rect.right() - radius, rect.top())
+            path.quadTo(rect.right(), rect.top(), rect.right(), rect.top() + radius)
+            path.lineTo(rect.right(), rect.bottom())
+            path.closeSubpath()
+        else:
+            path.addRoundedRect(rect, radius, radius)
+        fill = QColor(self._flash_color)
+        fill.setAlphaF(self._flash_level)
+        painter.fillPath(path, fill)
+        edge = QColor(self._flash_color)
+        edge.setAlphaF(min(1.0, self._flash_level * 3))
+        painter.fillRect(QRectF(rect.left(), rect.top() + 4, 3, rect.height() - 8), edge)
+        painter.end()
 
     def set_summary(self, summary: str | None) -> None:
         text = summary or ""
@@ -384,25 +510,28 @@ class _AccordionHeader(QToolButton):
         self._position_summary()
 
     def _position_summary(self) -> None:
-        if not self.summary_label.isVisible():
-            return
         horizontal_margin = 12
         vertical_margin = 6
-        hint = self.summary_label.sizeHint()
-        width = min(
-            hint.width(),
-            max(0, self.width() // 3),
-        )
-        height = min(
-            hint.height(),
-            max(0, self.height() - (vertical_margin * 2)),
-        )
-        self.summary_label.setGeometry(
-            max(0, self.width() - width - horizontal_margin),
-            max(vertical_margin, (self.height() - height) // 2),
-            width,
-            height,
-        )
+        right = self.width() - horizontal_margin
+        for label in (self.summary_label, self.status_pill):
+            if label.isHidden():
+                continue
+            hint = label.sizeHint()
+            width = min(
+                hint.width(),
+                max(0, self.width() // 3),
+            )
+            height = min(
+                hint.height(),
+                max(0, self.height() - (vertical_margin * 2)),
+            )
+            label.setGeometry(
+                max(0, right - width),
+                max(vertical_margin, (self.height() - height) // 2),
+                width,
+                height,
+            )
+            right -= width + 8
 
 
 class AccordionSection(QFrame):
@@ -460,9 +589,25 @@ class AccordionSection(QFrame):
     def set_summary(self, summary: str | None) -> None:
         self.header.set_summary(summary)
 
+    def show_outcome(self, text: str, color: str, *, flash: bool = True) -> None:
+        """Flags a finished action: pulses the ribbon and, while collapsed,
+        keeps a coloured pill with ``text`` on its right edge."""
+        self.header.set_status(text, color)
+        if flash:
+            self.header.flash(color)
+
+    def clear_outcome(self) -> None:
+        self.header.stop_flash()
+        self.header.set_status(None, None)
+
+    def outcome(self) -> str:
+        return self.header.status_text()
+
     def refresh_theme(self) -> None:
         alpha = 42 if theme.ACTIVE_TOKENS["BACKGROUND"] == theme.LIGHT_TOKENS["BACKGROUND"] else 92
         self._shadow.setColor(QColor(4, 18, 38, alpha))
+        if hasattr(self, "header"):
+            self.header.refresh_status_theme()
         self.update()
 
     def changeEvent(self, event) -> None:  # noqa: N802 - Qt signature
@@ -492,9 +637,80 @@ class AccordionSection(QFrame):
         self.style().polish(self)
         self.header.style().unpolish(self.header)
         self.header.style().polish(self.header)
+        self.header._sync_status_visibility()
         self.updateGeometry()
         if changed:
             self.expandedChanged.emit(expanded)
+
+
+def expected_status_combo() -> QComboBox:
+    """Editable expected-status picker shared by the explorer and suite editor."""
+    from .client import EXPECTED_STATUS_CHOICES
+
+    combo = QComboBox()
+    combo.setEditable(True)
+    combo.addItems(EXPECTED_STATUS_CHOICES)
+    # The theme's QComboBox padding (10px left, 36px right) and the 30px
+    # drop-down, which sits inside that padding, both come off the edit
+    # field. Qt's own size hint ignores that, so "200-299" used to scroll.
+    widest = max(
+        combo.fontMetrics().horizontalAdvance(choice)
+        for choice in EXPECTED_STATUS_CHOICES
+    )
+    combo.setMinimumWidth(widest + 10 + 36 + 30 + 2 + 12)
+    return combo
+
+
+class EditorDialog(QDialog):
+    """A modal host for an editor that is edited off to the side of a row.
+
+    The editor widget is owned by the dialog for the dialog's whole life, so
+    callers seed it before ``exec()`` and read it back only when the result is
+    ``Accepted``. Cancel therefore needs no undo: the caller re-seeds from its
+    own source of truth on the next open.
+    """
+
+    def __init__(
+        self,
+        parent: QWidget | None,
+        title: str,
+        editor: QWidget,
+        accept_text: str,
+        *,
+        leading: QHBoxLayout | None = None,
+        size: tuple[int, int] = (960, 520),
+    ) -> None:
+        super().__init__(parent)
+        self.setObjectName("editorDialog")
+        self.setModal(True)
+        self.editor = editor
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(10)
+        self.title_label = QLabel()
+        self.title_label.setProperty("sectionTitle", True)
+        layout.addWidget(self.title_label)
+        layout.addWidget(editor, 1)
+        footer = QHBoxLayout()
+        footer.setSpacing(8)
+        if leading is not None:
+            footer.addLayout(leading)
+        footer.addStretch()
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        footer.addWidget(self.cancel_button)
+        self.accept_button = QPushButton(accept_text)
+        self.accept_button.setProperty("accent", True)
+        self.accept_button.setDefault(True)
+        self.accept_button.clicked.connect(self.accept)
+        footer.addWidget(self.accept_button)
+        layout.addLayout(footer)
+        self.set_title(title)
+        self.resize(*size)
+
+    def set_title(self, title: str) -> None:
+        self.setWindowTitle(title)
+        self.title_label.setText(title)
 
 
 class AccordionScrollArea(QScrollArea):

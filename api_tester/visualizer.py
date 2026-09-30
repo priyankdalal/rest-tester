@@ -326,6 +326,7 @@ class RunVisualizer(QWidget):
         chart_box.setMinimumHeight(260)
 
         lower = QWidget()
+        lower.setObjectName("runBreakdowns")
         lower_layout = QHBoxLayout(lower)
 
         slowest_box = QGroupBox("Slowest cases")

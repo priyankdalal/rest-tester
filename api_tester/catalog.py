@@ -87,6 +87,9 @@ class Service:
     repository: str
     default_base_url: str
     endpoints: tuple[Endpoint, ...]
+    # The Filter/Sort builders speak the TrialWyze grammar (Name__op:=value),
+    # so they are opt-in per service rather than offered for every API.
+    filter_sort_builders: bool = False
 
     @classmethod
     def from_dict(
@@ -99,6 +102,7 @@ class Service:
             endpoints=tuple(
                 Endpoint.from_dict(item, enums) for item in value["endpoints"]
             ),
+            filter_sort_builders=bool(value.get("filter_sort_builders", False)),
         )
 
 
@@ -118,6 +122,22 @@ class Catalog:
         if not name or name not in self.filter_schemas:
             return None
         return FilterSchema.from_dict(self.filter_schemas[name])
+
+    def builders_enabled(self, service_name: str) -> bool:
+        return any(
+            service.name == service_name and service.filter_sort_builders
+            for service in self.services
+        )
+
+    def endpoint_filter_schema(self, endpoint: Endpoint | None):
+        """The filter schema an endpoint's Filter/Sort builders should use.
+
+        None when the endpoint's service has not enabled the builders, so
+        Filter and Sort fall back to plain query values.
+        """
+        if endpoint is None or not self.builders_enabled(endpoint.service):
+            return None
+        return self.filter_schema(endpoint.filter_entity)
 
     def payload_schema(self, name: str | None) -> dict[str, Any] | None:
         if not name:

@@ -411,6 +411,8 @@ class ServiceDraft:
     default_base_url: str = ""
     framework: str = ""
     endpoints: list[EndpointDraft] = field(default_factory=list)
+    # Opt-in: the Filter/Sort builders assume the TrialWyze filter grammar.
+    filter_sort_builders: bool = False
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "ServiceDraft":
@@ -422,6 +424,7 @@ class ServiceDraft:
             endpoints=[
                 EndpointDraft.from_dict(item) for item in value.get("endpoints", [])
             ],
+            filter_sort_builders=bool(value.get("filter_sort_builders", False)),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -433,6 +436,8 @@ class ServiceDraft:
         }
         if self.framework:
             document["framework"] = self.framework
+        if self.filter_sort_builders:
+            document["filter_sort_builders"] = True
         return document
 
     def sort_endpoints(self) -> None:
