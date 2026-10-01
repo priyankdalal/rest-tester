@@ -150,8 +150,11 @@ class StatCard(QFrame):
         self.value_label.setStyleSheet(f"color: {color};" if color else "")
 
     def set_subtitle(self, text: str) -> None:
+        # The label stays in the layout even when empty: hiding it shrank the
+        # cards that have no subtitle (Throughput, Remaining), and the row
+        # centres its children vertically, so those cards sat misaligned
+        # against the rest of the strip.
         self.subtitle_label.setText(text)
-        self.subtitle_label.setVisible(bool(text))
 
 
 class ContextCard(QFrame):

@@ -380,6 +380,11 @@ def icon(name: str, color: str = "#65758B", size: int = 18) -> QIcon:
         painter.drawEllipse(QRectF(2, 2, 14, 14))
         painter.drawLine(QPointF(5, 9), QPointF(13, 9))
         painter.drawLine(QPointF(9, 5), QPointF(9, 13))
+    elif name == "remove":
+        # Deliberately mirrors "add" minus the vertical stroke: these two are
+        # always a pair, so they must read as opposites of the same action.
+        painter.drawEllipse(QRectF(2, 2, 14, 14))
+        painter.drawLine(QPointF(5, 9), QPointF(13, 9))
     elif name == "seed":
         painter.drawLine(QPointF(9, 1), QPointF(9, 5))
         painter.drawLine(QPointF(9, 13), QPointF(9, 17))
@@ -535,6 +540,9 @@ def icon(name: str, color: str = "#65758B", size: int = 18) -> QIcon:
     elif name == "chevron-right":
         painter.drawLine(QPointF(6.5, 3.5), QPointF(12, 9))
         painter.drawLine(QPointF(12, 9), QPointF(6.5, 14.5))
+    elif name == "close":
+        painter.drawLine(QPointF(4.5, 4.5), QPointF(13.5, 13.5))
+        painter.drawLine(QPointF(13.5, 4.5), QPointF(4.5, 13.5))
     else:
         painter.drawRoundedRect(QRectF(2, 2, 14, 14), 3, 3)
         painter.drawLine(5, 6, 13, 6)

@@ -34,7 +34,7 @@ from .client import parameter_enabled_key, parameter_is_enabled
 from .icons import icon
 from .seeding import refresh_payload, seed_parameter
 from .viewers import FilePicker, RequestBodyEditor, ValuePicker
-from .widgets import EditorDialog
+from .widgets import EditorDialog, attach_table_empty_state
 
 
 def merge_payload(base: dict, fields: dict) -> dict:
@@ -82,6 +82,12 @@ class RequestEditor(QWidget):
         path_layout.setSpacing(8)
         self.path_parameters = self._new_parameter_table(["Name", "Type", "Value"])
         self.path_parameters.itemChanged.connect(self._emit_changed)
+        self.path_parameters_empty_state = attach_table_empty_state(
+            self.path_parameters,
+            icon_name="fields",
+            title="No path parameters",
+            guidance="This endpoint's path has no placeholders to fill in.",
+        )
         path_layout.addWidget(self.path_parameters, 1)
         path_actions = QHBoxLayout()
         path_actions.addStretch()
@@ -108,6 +114,12 @@ class RequestEditor(QWidget):
         self.query_parameters.setColumnWidth(2, 100)
         self.query_parameters.setColumnWidth(4, 150)
         self.query_parameters.itemChanged.connect(self._emit_changed)
+        self.query_parameters_empty_state = attach_table_empty_state(
+            self.query_parameters,
+            icon_name="fields",
+            title="No query parameters",
+            guidance="This endpoint accepts no query string parameters.",
+        )
         query_layout.addWidget(self.query_parameters, 1)
         query_actions = QHBoxLayout()
         query_actions.addStretch()
@@ -530,6 +542,8 @@ class RequestEditor(QWidget):
         self.payload_form.refresh_theme()
         self.query_builder.refresh_theme()
         self.sort_builder.refresh_theme()
+        self.path_parameters_empty_state.refresh_theme()
+        self.query_parameters_empty_state.refresh_theme()
 
     # -- construction helpers -------------------------------------------------
     def _emit_changed(self, *_args: Any) -> None:

@@ -64,6 +64,8 @@ from .visualizer import OUTCOME_COLORS, RunVisualizer
 from .viewers import ResponseViewer
 from .widgets import (
     AccordionScrollArea,
+    EmptyStateWidget,
+    attach_table_empty_state,
     expected_status_combo,
     inset_shadow_detail_pane,
 )
@@ -257,6 +259,12 @@ class SuiteTab(QWidget):
         self.case_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.case_list.currentItemChanged.connect(self._case_selected)
         self.case_list.itemChanged.connect(self._case_toggled)
+        self.case_list_empty_state = attach_table_empty_state(
+            self.case_list,
+            icon_name="test-suites",
+            title="No test cases yet",
+            guidance="Add a test case to start building this suite.",
+        )
         left_layout.addWidget(self.case_list)
         buttons = QHBoxLayout()
         buttons.setSpacing(6)
@@ -300,6 +308,12 @@ class SuiteTab(QWidget):
         )
         self.variables.itemChanged.connect(self._variables_changed)
         self.variables.setMaximumHeight(140)
+        self.variables_empty_state = attach_table_empty_state(
+            self.variables,
+            icon_name="fields",
+            title="No suite variables",
+            guidance="Add a variable to reuse a value as {{name}} across cases.",
+        )
         variables_layout.addWidget(self.variables)
         variable_buttons = QHBoxLayout()
         variable_buttons.setSpacing(6)
@@ -499,6 +513,7 @@ class SuiteTab(QWidget):
         )
         self.assertions.itemChanged.connect(self._assertions_changed)
         self.assertions_empty_state = self._empty_state(
+            "verify",
             "No assertions yet",
             "Add an assertion, or suggest some from the last response. "
             "Until then only the expected status is verified.",
@@ -589,6 +604,7 @@ class SuiteTab(QWidget):
         )
         self.captures.itemChanged.connect(self._captures_changed)
         self.captures_empty_state = self._empty_state(
+            "fields",
             "No captured variables",
             "Add a capture to save a response value as a {{variable}} "
             "for the cases that run after this one.",
@@ -657,10 +673,12 @@ class SuiteTab(QWidget):
         self.assertion_results_stack = QStackedLayout()
         self.captured_results_stack = QStackedLayout()
         self.assertion_empty_state = self._empty_state(
+            "verify",
             "No assertion results",
             "Run this test case to see validation outcomes.",
         )
         self.captured_empty_state = self._empty_state(
+            "fields",
             "No captured variables",
             "Variables captured by this case will appear here.",
         )
@@ -767,22 +785,13 @@ class SuiteTab(QWidget):
         return container
 
     @staticmethod
-    def _empty_state(title: str, description: str) -> QWidget:
-        empty = QWidget()
+    def _empty_state(icon_name: str, title: str, description: str) -> QWidget:
+        """The same placeholder card the overlaid table empty states use, for
+        the stacked tables whose rows are filled in by the runner."""
+        empty = EmptyStateWidget()
         empty.setObjectName("tableEmptyState")
-        layout = QVBoxLayout(empty)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.addStretch()
-        title_label = QLabel(title)
-        title_label.setObjectName("emptyStateTitle")
-        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title_label)
-        description_label = QLabel(description)
-        description_label.setObjectName("emptyStateDescription")
-        description_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        description_label.setWordWrap(True)
-        layout.addWidget(description_label)
-        layout.addStretch()
+        empty.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        empty.set_content(icon_name=icon_name, title=title, guidance=description)
         return empty
 
     # -------------------------------------------------------------- suites
@@ -1225,6 +1234,15 @@ class SuiteTab(QWidget):
                 QColor(theme.SUCCESS_SOFT if passed else theme.DANGER_SOFT)
             )
         self.visualizer.refresh_theme()
+        for empty_state in (
+            self.assertions_empty_state,
+            self.captures_empty_state,
+            self.assertion_empty_state,
+            self.captured_empty_state,
+            self.case_list_empty_state,
+            self.variables_empty_state,
+        ):
+            empty_state.refresh_theme()
 
     def _assertion_kind_changed(self, row: int) -> None:
         self._apply_assertion_kind_hints(row)

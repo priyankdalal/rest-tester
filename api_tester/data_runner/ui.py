@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable
 
 from PyQt6.QtCore import QObject, Qt, QSize, QThread, QTimer, pyqtSignal
@@ -33,13 +34,14 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
-    QListWidgetItem,
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSpinBox,
     QSplitter,
+    QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -56,14 +58,38 @@ from api_tester.execution.models import ExecutionEnvironmentSnapshot
 from api_tester.execution.persistence import RunStore
 from api_tester.icons import icon, solid_icon
 from api_tester.viewers import JsonTextEdit
-from api_tester.widgets import attach_table_empty_state
+from api_tester.widgets import EmptyStateWidget, Pager, attach_table_empty_state
 
-from .charts import LabeledBarChart, MultiSeriesLineChart, OutcomeBreakdownChart, ScatterChart, SparklineChart
-from .csv_source import ColumnProfile, CsvImportSettings, CsvPreview, CsvSource
+from .charts import (
+    LabeledBarChart,
+    MultiSeriesLineChart,
+    OutcomeBreakdownChart,
+    PieChart,
+    ScatterChart,
+    SparklineChart,
+)
+from .csv_source import CsvImportSettings, CsvPreview, CsvSource
 from .dashboard_widgets import ContextCard, StatCard, WizardStepper
 from .mapping import ColumnMapping, MappingTarget, Transform, mapping_targets
 from .planner import DataRunPlan, PlanIssue, build_plan
 from .runner import DataRunner, DataRunnerOptions, RunSummary
+
+_PREVIEW_ROW_LIMIT = 100
+_PREVIEW_DEBOUNCE_MS = 350
+_SOURCE_STACK_THRESHOLD = 1040
+_SOURCE_SIDE_WIDTH = 460
+#: Mapping-table column widths. Both editor columns previously used Qt's 100px
+#: default, which elided the headers and the combo contents alike.
+_MAPPING_COLUMN_WIDTH = 190
+#: Sized from the widest target label the catalog produces — measured at 320px,
+#: plus the combo's arrow, padding and border.
+_MAPPING_TARGET_COLUMN_WIDTH = 400
+#: Validation issue table: Row, Correlation key, Severity. Issue stretches.
+_VALIDATION_COLUMN_WIDTHS = (90, 220, 110)
+#: Row count up to which validation runs inline on the UI thread. Below this a
+#: full pass finishes faster than a thread hand-off, and the progress bar would
+#: only flicker; above it, validation moves to a worker.
+_VALIDATION_SYNC_ROW_LIMIT = 2000
 
 _ENCODING_CHOICES = ("Auto", "utf-8", "utf-8-sig", "utf-16", "cp1252")
 _DELIMITER_CHOICES = (("Auto", ""), ("Comma (,)", ","), ("Semicolon (;)", ";"), ("Tab", "\t"), ("Pipe (|)", "|"))
@@ -103,6 +129,51 @@ def _paint_icon(button: QPushButton, icon_name: str) -> None:
         button.setIcon(solid_icon(icon_name, theme.TEXT_INVERSE, 18))
     else:
         button.setIcon(icon(icon_name, theme.TEXT, 18))
+
+
+class _ResponsiveSplitter(QSplitter):
+    """Lays two panes out side by side, stacking them when the available width
+    drops below ``threshold``.
+
+    Sizes are re-applied on every flip because a splitter's stored sizes are
+    orientation-specific. Side by side the first pane is capped at
+    ``side_width`` so a wide window grows the content pane rather than the
+    settings form; stacked it gets its natural height so nothing clips.
+    """
+
+    _UNCONSTRAINED = 16777215
+
+    def __init__(self, threshold: int, side_width: int, parent: QWidget | None = None) -> None:
+        super().__init__(Qt.Orientation.Horizontal, parent)
+        self._threshold = threshold
+        self._side_width = side_width
+        self._applied: Qt.Orientation | None = None
+        self.setChildrenCollapsible(False)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._apply_orientation()
+
+    def _apply_orientation(self) -> None:
+        if self.count() < 2:
+            return
+        wanted = (
+            Qt.Orientation.Horizontal
+            if self.width() >= self._threshold
+            else Qt.Orientation.Vertical
+        )
+        if wanted == self._applied:
+            return
+        self._applied = wanted
+        self.setOrientation(wanted)
+        side = self.widget(0)
+        if wanted == Qt.Orientation.Horizontal:
+            side.setMaximumWidth(self._side_width)
+            self.setSizes([self._side_width, max(1, self.width() - self._side_width)])
+        else:
+            side.setMaximumWidth(self._UNCONSTRAINED)
+            natural = side.sizeHint().height()
+            self.setSizes([natural, max(1, self.height() - natural)])
 
 
 @dataclass
@@ -290,8 +361,46 @@ class DataRunnerWorker(QObject):
             self.failed.emit(str(exc))
 
 
+class ValidationWorker(QObject):
+    """Builds a :class:`DataRunPlan` off the UI thread.
+
+    Full-file validation is unbounded work, so it cannot run inline for large
+    sources. Every signal carries the validation ``token`` it belongs to: a
+    superseded worker keeps running until its next cancellation check, and the
+    token is what stops its late result from overwriting a newer one.
+
+    Slots are bound methods of the UI widget rather than lambdas on purpose —
+    PyQt connects a plain callable *directly*, which would run the UI updates
+    on this thread.
+    """
+
+    progressed = pyqtSignal(int, int, int)
+    finished = pyqtSignal(object, int)
+    failed = pyqtSignal(str, int)
+
+    def __init__(self, build: Callable[[Callable[[int, int], None]], DataRunPlan], token: int) -> None:
+        super().__init__()
+        self._build = build
+        self._token = token
+
+    def run(self) -> None:
+        try:
+            plan = self._build(self._report)
+            self.finished.emit(plan, self._token)
+        except Exception as exc:  # noqa: BLE001 - surfaced to the UI, not swallowed
+            self.failed.emit(str(exc), self._token)
+
+    def _report(self, validated: int, total: int) -> None:
+        self.progressed.emit(validated, total, self._token)
+
+
 class DataRunnerTab(QWidget):
     """The Data Runner workspace tab: source, mapping, validate, run/results."""
+
+    #: Emitted when a run stops, as ``(title, detail, ok)``. The tab stays
+    #: free of any notification knowledge; the shell turns this into a bell
+    #: entry that routes back here.
+    run_completed = pyqtSignal(str, str, bool)
 
     def __init__(
         self,
@@ -307,6 +416,17 @@ class DataRunnerTab(QWidget):
         self.csv_source: CsvSource | None = None
         self.preview: CsvPreview | None = None
         self.plan: DataRunPlan | None = None
+        self._validate_summary_severity = "idle"
+        self._environment_error: str | None = None
+        # Background validation state. The token rises on every _validate()
+        # call so a superseded worker's late result can be discarded.
+        self._validation_token = 0
+        self._validate_thread: QThread | None = None
+        # Every live validation thread, not just the current one: a superseded
+        # worker keeps running until its next cancellation check, and Qt aborts
+        # if such a thread is still running at teardown.
+        self._validation_jobs: dict[QThread, ValidationWorker] = {}
+        self._validate_cancellation: CancellationController | None = None
         self.runner: DataRunner | None = None
         self._thread: QThread | None = None
         self._worker: DataRunnerWorker | None = None
@@ -319,8 +439,6 @@ class DataRunnerTab(QWidget):
         self._history_store: RunStore | None = None
         self._latency_sketch = LatencySketch()
         self._outcome_counts: dict[str, int] = {}
-        self._throughput_buckets: dict[int, int] = {}
-        self._status_code_counts: dict[str, int] = {}
         self._error_category_counts: dict[str, int] = {}
         self._cumulative_completed = 0
         self._run_started_monotonic: float | None = None
@@ -391,13 +509,26 @@ class DataRunnerTab(QWidget):
         if catalog.services:
             self._service_changed(catalog.services[0].name)
 
+    def show_results(self) -> None:
+        """Brings the run/results step forward.
+
+        Used when a bell notification routes the user back to a run that
+        finished while they were working somewhere else.
+        """
+        self.steps.setCurrentIndex(3)
+
     def _stepper_clicked(self, index: int) -> None:
         self.steps.setCurrentIndex(index)
 
     def _step_page_changed(self, index: int) -> None:
         self.stepper.set_current(index)
         self._refresh_stepper_progress()
-        if index == 3:  # Execute & review
+        if index == 2:  # Validate
+            # Validation is cheap (a sampled resolve) and its result depends on
+            # the source, mapping and environment alike, so it is always re-run
+            # on entry rather than tracking which of them changed.
+            self._validate(interactive=False)
+        elif index == 3:  # Execute & review
             self._refresh_run_context_panel()
 
     def _refresh_stepper_progress(self) -> None:
@@ -417,19 +548,22 @@ class DataRunnerTab(QWidget):
     def refresh_theme(self) -> None:
         for button, name in self._icon_buttons():
             _paint_icon(button, name)
+        # The summary's colour is a per-widget stylesheet holding a resolved
+        # hex value, so a palette switch has to re-resolve it.
+        self._set_validate_summary(
+            self.validate_summary_label.text(), self._validate_summary_severity
+        )
 
     def _icon_buttons(self) -> list[tuple[QPushButton, str]]:
         pairs = [
             (self.browse_button, "folder"),
-            (self.load_preview_button, "renew"),
             (self.add_mapping_button, "add"),
             (self.remove_mapping_button, "trash"),
             (self.auto_map_button, "wand"),
-            (self.validate_button, "verify"),
             (self.run_button, "play"),
             (self.stop_button, "stop"),
+            (self.validate_cancel_button, "stop"),
             (self.export_button, "export"),
-            (self.persist_browse_button, "folder"),
             (self.history_browse_button, "folder"),
             (self.history_refresh_button, "renew"),
             (self.history_load_button, "open"),
@@ -455,6 +589,12 @@ class DataRunnerTab(QWidget):
 
         options_group = QGroupBox("Import settings")
         options_form = QFormLayout(options_group)
+        # AllNonFixedFieldsGrow, not ExpandingFieldsGrow: the latter only grows
+        # fields whose size policy is Expanding, which left the Preferred combos
+        # and Minimum spinboxes at four different widths.
+        options_form.setFieldGrowthPolicy(
+            QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow
+        )
         self.encoding_combo = QComboBox()
         self.encoding_combo.addItems(_ENCODING_CHOICES)
         options_form.addRow("Encoding", self.encoding_combo)
@@ -478,43 +618,133 @@ class DataRunnerTab(QWidget):
         self.max_rows_spin.setRange(0, 1_000_000)
         self.max_rows_spin.setSpecialValueText("All rows")
         options_form.addRow("Max rows (0 = all)", self.max_rows_spin)
-        layout.addWidget(options_group)
+        options_form.addRow("", self._build_preview_hint())
 
-        preview_row = QHBoxLayout()
-        self.load_preview_button = _icon_button(
-            "renew", "Load / refresh CSV preview", text="Load preview"
-        )
-        self.load_preview_button.clicked.connect(self._load_preview)
-        preview_row.addWidget(self.load_preview_button)
+        preview_group = QGroupBox("Preview")
+        preview_layout = QVBoxLayout(preview_group)
+        preview_layout.setSpacing(8)
+
+        header_row = QHBoxLayout()
+        header_row.setSpacing(8)
         self.preview_summary_label = QLabel("No CSV loaded yet.")
-        preview_row.addWidget(self.preview_summary_label, 1)
-        layout.addLayout(preview_row)
-
-        splitter = QSplitter()
-        self.column_profile_table = QTableWidget(0, 4)
-        self.column_profile_table.setHorizontalHeaderLabels(["Column", "Inferred type", "Blanks", "Sample values"])
-        self.column_profile_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        self.column_profile_table.horizontalHeader().setStretchLastSection(True)
-        attach_table_empty_state(
-            self.column_profile_table,
-            icon_name="chart",
-            title="No CSV loaded",
-            guidance="Choose a CSV file above, then load the preview to profile its columns.",
-        )
-        splitter.addWidget(self.column_profile_table)
+        self.preview_summary_label.setWordWrap(True)
+        header_row.addWidget(self.preview_summary_label, 1)
+        header_row.addWidget(self._build_pager())
+        preview_layout.addLayout(header_row)
 
         self.sample_rows_table = QTableWidget(0, 0)
         self.sample_rows_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        # A wide CSV must scroll rather than squeeze its columns, so the header
+        # keeps per-column widths and both scrollbars stay available.
+        self.sample_rows_table.horizontalHeader().setStretchLastSection(False)
+        self.sample_rows_table.setHorizontalScrollMode(
+            QAbstractItemView.ScrollMode.ScrollPerPixel
+        )
+        self.sample_rows_table.setVerticalScrollMode(
+            QAbstractItemView.ScrollMode.ScrollPerPixel
+        )
+        self.sample_rows_table.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self.sample_rows_table.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self.sample_rows_table.setWordWrap(False)
+        self.sample_rows_table.setAlternatingRowColors(True)
         attach_table_empty_state(
             self.sample_rows_table,
             icon_name="eye",
-            title="No sample rows",
-            guidance="The first rows of your CSV appear here once a preview is loaded.",
+            title="No CSV loaded",
+            guidance="Choose a CSV file above and its first rows appear here automatically.",
         )
-        splitter.addWidget(self.sample_rows_table)
-        layout.addWidget(splitter, 1)
+        preview_layout.addWidget(self.sample_rows_table, 1)
+
+        self.source_splitter = _ResponsiveSplitter(_SOURCE_STACK_THRESHOLD, _SOURCE_SIDE_WIDTH)
+        self.source_splitter.addWidget(options_group)
+        self.source_splitter.addWidget(preview_group)
+        self.source_splitter.setStretchFactor(0, 0)
+        self.source_splitter.setStretchFactor(1, 1)
+        layout.addWidget(self.source_splitter, 1)
+
+        self._preview_timer = QTimer(self)
+        self._preview_timer.setSingleShot(True)
+        self._preview_timer.setInterval(_PREVIEW_DEBOUNCE_MS)
+        self._preview_timer.timeout.connect(self._auto_load_preview)
+        self._last_preview_settings: CsvImportSettings | None = None
+        self._wire_preview_auto_reload()
 
         return page
+
+    def _build_pager(self) -> QWidget:
+        """The shared split-pill pager; it hides itself on a single-page file."""
+        self.preview_pager = Pager(page_size=_PREVIEW_ROW_LIMIT)
+        self.preview_pager.page_changed.connect(self._load_preview_page)
+        return self.preview_pager
+
+    def _load_preview_page(self, page: int) -> None:
+        """Re-reads one window from the already-configured source.
+
+        The ``CsvSource`` is reused so paging never rebuilds the import
+        settings; the ``Pager`` has already clamped ``page`` into range.
+        """
+        if self.csv_source is None:
+            return
+        try:
+            preview = self.csv_source.preview(
+                sample_rows=_PREVIEW_ROW_LIMIT, row_offset=page * _PREVIEW_ROW_LIMIT
+            )
+        except OSError as exc:
+            self._clear_preview(f"Could not read CSV: {exc}")
+            return
+        self.preview = preview
+        self._render_preview(preview)
+
+    def _build_preview_hint(self) -> QLabel:
+        hint = QLabel(
+            f"The preview loads {_PREVIEW_ROW_LIMIT} rows per page. "
+            "The full file is used when the run executes."
+        )
+        hint.setWordWrap(True)
+        hint.setProperty("muted", True)
+        return hint
+
+    def _wire_preview_auto_reload(self) -> None:
+        """Any change to the path or the import settings re-reads the preview.
+
+        Every signal lands on one debounce timer and ``_auto_load_preview``
+        skips work when the resulting settings match the last load, so holding
+        a spinbox arrow or typing a path costs a single read.
+        """
+        self.csv_path.textChanged.connect(self._schedule_preview)
+        self.encoding_combo.currentIndexChanged.connect(self._schedule_preview)
+        self.delimiter_combo.currentIndexChanged.connect(self._schedule_preview)
+        self.quotechar_edit.textChanged.connect(self._schedule_preview)
+        self.has_header_checkbox.toggled.connect(self._schedule_preview)
+        self.skip_blank_checkbox.toggled.connect(self._schedule_preview)
+        self.start_row_spin.valueChanged.connect(self._schedule_preview)
+        self.max_rows_spin.valueChanged.connect(self._schedule_preview)
+
+    def _schedule_preview(self, *_args: object) -> None:
+        self._preview_timer.start()
+
+    def _auto_load_preview(self) -> None:
+        settings = self._current_import_settings()
+        if not settings.path:
+            self._clear_preview("No CSV loaded yet.")
+            return
+        if settings == self._last_preview_settings:
+            return
+        self._load_preview(interactive=False)
+
+    def _clear_preview(self, message: str) -> None:
+        self.csv_source = None
+        self.preview = None
+        self._last_preview_settings = None
+        self.sample_rows_table.setRowCount(0)
+        self.sample_rows_table.setColumnCount(0)
+        self.preview_summary_label.setText(message)
+        self.preview_pager.reset()
+        self._refresh_stepper_progress()
 
     def _browse_csv(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Choose CSV file", "", "CSV files (*.csv);;All files (*)")
@@ -540,44 +770,62 @@ class DataRunnerTab(QWidget):
             skip_blank_rows=self.skip_blank_checkbox.isChecked(),
         )
 
-    def _load_preview(self) -> None:
+    def _load_preview(self, *_args: object, interactive: bool = True) -> None:
         settings = self._current_import_settings()
         if not settings.path:
-            QMessageBox.information(self, "Choose a CSV file", "Enter or browse for a CSV file first.")
+            if interactive:
+                QMessageBox.information(self, "Choose a CSV file", "Enter or browse for a CSV file first.")
+            else:
+                self._clear_preview("No CSV loaded yet.")
             return
         self.csv_source = CsvSource(settings)
         try:
-            self.preview = self.csv_source.preview()
+            self.preview = self.csv_source.preview(sample_rows=_PREVIEW_ROW_LIMIT)
         except OSError as exc:
-            QMessageBox.warning(self, "Could not read CSV", str(exc))
-            self.csv_source = None
-            self.preview = None
+            # Auto-reload fires while a path is still being typed, so a failure
+            # there reports inline instead of interrupting with a modal.
+            if interactive:
+                QMessageBox.warning(self, "Could not read CSV", str(exc))
+            self._clear_preview(f"Could not read CSV: {exc}")
             return
+        self._last_preview_settings = settings
+        # Resets to page 1, which is what a new file or new import settings mean.
+        self.preview_pager.set_total(
+            self.preview.total_rows_available, exact=self.preview.total_is_exact
+        )
         self._render_preview(self.preview)
         self._refresh_mapping_column_choices()
         self._refresh_stepper_progress()
 
     def _render_preview(self, preview: CsvPreview) -> None:
-        self.preview_summary_label.setText(
-            f"{len(preview.columns)} columns · sampled {preview.total_rows_sampled} rows · "
+        total = preview.total_rows_available
+        total_text = f"{total}+" if not preview.total_is_exact else str(total)
+        summary = (
+            f"{len(preview.columns)} columns · {total_text} rows · "
             f"{preview.blank_row_count} blank · {preview.duplicate_row_count} duplicate"
         )
-        self.column_profile_table.setRowCount(len(preview.column_profiles))
-        for row, profile in enumerate(preview.column_profiles):
-            self._set_profile_row(row, profile)
+        shown = len(preview.rows)
+        if total > _PREVIEW_ROW_LIMIT:
+            first = preview.row_offset + 1 if shown else preview.row_offset
+            summary += f" — showing rows {first}-{preview.row_offset + shown}"
+        else:
+            summary += f" — showing all {shown} rows"
+        self.preview_summary_label.setText(summary)
 
-        self.sample_rows_table.setColumnCount(len(preview.columns))
-        self.sample_rows_table.setHorizontalHeaderLabels(list(preview.columns))
-        self.sample_rows_table.setRowCount(len(preview.rows))
-        for row_index, row in enumerate(preview.rows):
-            for column_index, column in enumerate(preview.columns):
-                self.sample_rows_table.setItem(row_index, column_index, QTableWidgetItem(row.get(column, "")))
-
-    def _set_profile_row(self, row: int, profile: ColumnProfile) -> None:
-        self.column_profile_table.setItem(row, 0, QTableWidgetItem(profile.name))
-        self.column_profile_table.setItem(row, 1, QTableWidgetItem(profile.inferred_type))
-        self.column_profile_table.setItem(row, 2, QTableWidgetItem(str(profile.blank_count)))
-        self.column_profile_table.setItem(row, 3, QTableWidgetItem(", ".join(profile.sample_values)))
+        self.sample_rows_table.setUpdatesEnabled(False)
+        try:
+            self.sample_rows_table.setColumnCount(len(preview.columns))
+            self.sample_rows_table.setHorizontalHeaderLabels(list(preview.columns))
+            self.sample_rows_table.setRowCount(len(preview.rows))
+            self.sample_rows_table.setVerticalHeaderLabels(
+                [str(preview.row_offset + index + 1) for index in range(len(preview.rows))]
+            )
+            for row_index, row in enumerate(preview.rows):
+                for column_index, column in enumerate(preview.columns):
+                    self.sample_rows_table.setItem(row_index, column_index, QTableWidgetItem(row.get(column, "")))
+            self.sample_rows_table.resizeColumnsToContents()
+        finally:
+            self.sample_rows_table.setUpdatesEnabled(True)
 
     # ------------------------------------------------------------------ mapping
 
@@ -601,6 +849,14 @@ class DataRunnerTab(QWidget):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        # Qt's 100px default truncated both headers and their combo contents.
+        # "Maps to" holds the widest text in the table — target labels such as
+        # "Filter - Id (eq, neq, gt, lt, gte, lte, in, nin)" - so it gets the
+        # larger share; Transforms still stretches into whatever is left.
+        # A header-wide minimum section size is deliberately not set: it would
+        # also apply to the two icon-button columns sized to their contents.
+        self.mapping_table.setColumnWidth(0, _MAPPING_COLUMN_WIDTH)
+        self.mapping_table.setColumnWidth(1, _MAPPING_TARGET_COLUMN_WIDTH)
         self.mapping_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.mapping_table.setObjectName("roomyEditorTable")
         self.mapping_table.verticalHeader().setDefaultSectionSize(theme.ROOMY_ROW_HEIGHT)
@@ -661,6 +917,10 @@ class DataRunnerTab(QWidget):
 
         target_combo = QComboBox()
         self._populate_target_combo(target_combo, target_key)
+        # Target labels can outrun even the widened column, and the combo hard
+        # cuts rather than eliding, so the full text stays available on hover.
+        target_combo.currentTextChanged.connect(target_combo.setToolTip)
+        target_combo.setToolTip(target_combo.currentText())
         self.mapping_table.setCellWidget(row, 1, target_combo)
 
         transforms_label = QLabel(_transforms_summary(transforms))
@@ -812,83 +1072,323 @@ class DataRunnerTab(QWidget):
         page = QWidget()
         layout = QVBoxLayout(page)
 
-        actions_row = QHBoxLayout()
-        self.validate_button = _icon_button(
-            "verify", "Validate the mapping against a sample of rows", text="Validate"
-        )
-        self.validate_button.clicked.connect(self._validate)
-        actions_row.addWidget(self.validate_button)
+        # No Validate button: the page validates on entry, so a button would
+        # only ever re-run work that has already happened.
         self.validate_summary_label = QLabel("Not validated yet.")
-        actions_row.addWidget(self.validate_summary_label, 1)
-        layout.addLayout(actions_row)
+        self.validate_summary_label.setWordWrap(True)
+        layout.addWidget(self.validate_summary_label)
 
-        self.plan_issues_list = QListWidget()
-        self.plan_issues_list.setMaximumHeight(120)
-        layout.addWidget(self.plan_issues_list)
+        # Progress is only shown while a large file is validating on the
+        # worker thread; small files finish inline and never reveal this row.
+        self.validate_progress_row = QWidget()
+        progress_layout = QHBoxLayout(self.validate_progress_row)
+        progress_layout.setContentsMargins(0, 0, 0, 0)
+        self.validate_progress_bar = QProgressBar()
+        self.validate_progress_bar.setRange(0, 100)
+        self.validate_progress_bar.setTextVisible(True)
+        progress_layout.addWidget(self.validate_progress_bar, 1)
+        self.validate_cancel_button = _icon_button("stop", "Cancel validation", danger=True)
+        self.validate_cancel_button.clicked.connect(self._cancel_validation)
+        progress_layout.addWidget(self.validate_cancel_button)
+        self.validate_progress_row.setVisible(False)
+        layout.addWidget(self.validate_progress_row)
 
         self.preview_rows_table = QTableWidget(0, 4)
-        self.preview_rows_table.setHorizontalHeaderLabels(["Row", "Correlation key", "Status", "Issues"])
-        self.preview_rows_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        self.preview_rows_table.horizontalHeader().setStretchLastSection(True)
-        attach_table_empty_state(
+        self.preview_rows_table.setHorizontalHeaderLabels(["Row", "Correlation key", "Severity", "Issue"])
+        header = self.preview_rows_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        header.setStretchLastSection(True)
+        for column, width in enumerate(_VALIDATION_COLUMN_WIDTHS):
+            self.preview_rows_table.setColumnWidth(column, width)
+        self.preview_rows_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.validate_empty_state = attach_table_empty_state(
             self.preview_rows_table,
             icon_name="verify",
             title="Nothing validated yet",
-            guidance="Run Validate to check each mapped row before sending any request.",
+            guidance="Load a CSV and map its columns; this page checks them automatically.",
         )
         layout.addWidget(self.preview_rows_table, 1)
 
         return page
 
-    def _build_environment(self) -> ExecutionEnvironmentSnapshot | None:
+    def _build_environment(self, *, interactive: bool = True) -> ExecutionEnvironmentSnapshot | None:
+        """Resolves the active environment, or ``None`` with the reason shown.
+
+        ``interactive=False`` suppresses the modal: validation now runs simply
+        because the user entered the step, and a dialog triggered by
+        navigation would be hostile. The caller reports the failure in the
+        summary line instead.
+        """
         try:
             return self.environment_provider()
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.warning(self, "Environment unavailable", str(exc))
+            self._environment_error = str(exc)
+            if interactive:
+                QMessageBox.warning(self, "Environment unavailable", str(exc))
             return None
 
-    def _validate(self) -> None:
+    def _validate(self, *, interactive: bool = True) -> None:
+        """Rebuilds the plan from the current source, mapping and environment.
+
+        Entering the Validate step calls this with ``interactive=False``: a
+        modal dialog fired by merely navigating to a tab would be hostile, so
+        the blocking reason is reported in the summary line instead.
+
+        Every row is validated. Small files run inline so the call is
+        synchronous and the result is available immediately; larger ones are
+        handed to :class:`ValidationWorker` with a progress bar.
+        """
+        self._cancel_validation()
+        self._validation_token += 1
+        blocker: str | None = None
         if self.current_endpoint is None:
-            QMessageBox.information(self, "Choose an endpoint", "Select a service and endpoint first.")
+            blocker = "Select a service and endpoint to validate."
+        elif self.csv_source is None:
+            blocker = "Load a CSV on the Source tab to validate it."
+        if blocker is not None:
+            if interactive:
+                QMessageBox.information(self, "Cannot validate yet", blocker)
+            self.plan = None
+            self._clear_plan_render(blocker)
             return
-        if self.csv_source is None:
-            QMessageBox.information(self, "Load a CSV first", "Load a CSV preview on the Source tab first.")
-            return
-        environment = self._build_environment()
+        self._environment_error = None
+        environment = self._build_environment(interactive=interactive)
         if environment is None:
+            self.plan = None
+            reason = self._environment_error or "Environment unavailable"
+            self._clear_plan_render(f"{reason}; validation did not run.")
             return
         mappings = self._current_mappings()
-        plan = build_plan(
-            self.current_endpoint,
-            self.catalog,
-            self.csv_source,
-            mappings,
-            environment,
-            default_expected_status=self.default_expected_status.text().strip() or "200-299",
+        expected_status = self.default_expected_status.text().strip() or "200-299"
+
+        def build(
+            progress: Callable[[int, int], None] | None,
+            cancellation: CancellationController | None,
+        ) -> DataRunPlan:
+            return build_plan(
+                self.current_endpoint,
+                self.catalog,
+                self.csv_source,
+                mappings,
+                environment,
+                default_expected_status=expected_status,
+                progress=progress,
+                cancellation=cancellation,
+            )
+
+        if self._should_validate_inline():
+            self._validation_finished(build(None, None), self._validation_token)
+            return
+        self._start_background_validation(build)
+
+    def _should_validate_inline(self) -> bool:
+        """True when the row count is small enough to resolve on the UI thread.
+
+        Uses the Source step's already-computed preview counts rather than
+        counting the file again here, which would itself block the UI.
+        """
+        preview = self.preview
+        if preview is None:
+            return True
+        if not preview.total_is_exact:
+            return False
+        return preview.total_rows_available <= _VALIDATION_SYNC_ROW_LIMIT
+
+    def _start_background_validation(
+        self,
+        build: Callable[
+            [Callable[[int, int], None] | None, CancellationController | None], DataRunPlan
+        ],
+    ) -> None:
+        cancellation = CancellationController()
+        self._validate_cancellation = cancellation
+        self.validate_progress_bar.setRange(0, 100)
+        self.validate_progress_bar.setValue(0)
+        self.validate_progress_bar.setFormat("Validating…")
+        self.validate_progress_row.setVisible(True)
+        self.validate_cancel_button.setEnabled(True)
+        self._set_validate_summary("Validating every row…", "idle")
+        # Without this the placeholder still reads "Nothing validated yet"
+        # while a quarter-million rows are visibly being validated.
+        self.validate_empty_state.set_content(
+            icon_name="verify",
+            title="Validating every row…",
+            guidance="Problem rows appear here as soon as the check finishes.",
         )
+        self.run_button.setEnabled(False)
+
+        # The controller is bound here rather than read from ``self`` inside
+        # the worker: cancelling clears the attribute, and a worker that had
+        # not yet started would otherwise read None and ignore the stop.
+        def run_build(progress: Callable[[int, int], None] | None) -> DataRunPlan:
+            return build(progress, cancellation)
+
+        thread = QThread()
+        worker = ValidationWorker(run_build, self._validation_token)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.progressed.connect(self._validation_progressed)
+        worker.finished.connect(self._validation_finished)
+        worker.failed.connect(self._validation_failed)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(self._cleanup_validation_thread)
+        self._validate_thread = thread
+        self._validation_jobs[thread] = worker
+        thread.start()
+
+    def _validation_progressed(self, validated: int, total: int, token: int) -> None:
+        if token != self._validation_token or total <= 0:
+            return
+        self.validate_progress_bar.setValue(int(validated * 100 / total))
+        self.validate_progress_bar.setFormat(f"Validating {validated:,} of {total:,} rows (%p%)")
+
+    def _validation_finished(self, plan: DataRunPlan, token: int) -> None:
+        if token != self._validation_token:
+            return
+        self.validate_progress_row.setVisible(False)
         self.plan = plan
         self._render_plan(plan)
         self._refresh_stepper_progress()
 
-    def _render_plan(self, plan: DataRunPlan) -> None:
-        self.validate_summary_label.setText(
-            f"{plan.total_row_count} total rows · {plan.preview_valid_count} valid · "
-            f"{plan.preview_invalid_count} invalid · {plan.preview_skip_count} skip (sampled preview)"
-        )
-        self.plan_issues_list.clear()
-        for issue in plan.issues:
-            item = QListWidgetItem(f"[{issue.severity.upper()}] {issue.message}")
-            if issue.severity == "error":
-                item.setForeground(QColor(theme.FAIL))
-            self.plan_issues_list.addItem(item)
+    def _validation_failed(self, message: str, token: int) -> None:
+        if token != self._validation_token:
+            return
+        self.validate_progress_row.setVisible(False)
+        self.plan = None
+        self._clear_plan_render(f"Validation failed: {message}")
 
-        self.preview_rows_table.setRowCount(len(plan.preview_rows))
-        for row_index, preview_row in enumerate(plan.preview_rows):
-            status = "Skip" if preview_row.skip else ("Valid" if preview_row.is_valid else "Invalid")
-            self.preview_rows_table.setItem(row_index, 0, QTableWidgetItem(str(preview_row.row_number)))
-            self.preview_rows_table.setItem(row_index, 1, QTableWidgetItem(preview_row.correlation_key))
-            self.preview_rows_table.setItem(row_index, 2, QTableWidgetItem(status))
-            self.preview_rows_table.setItem(row_index, 3, QTableWidgetItem(str(preview_row.issue_count)))
+    def _cancel_validation(self) -> None:
+        """Stops an in-flight background validation, if any.
+
+        Also called before starting a new validation: re-entering the step
+        while a large file is still validating would otherwise leave two
+        workers racing to render into the same table.
+        """
+        if self._validate_cancellation is not None:
+            self._validate_cancellation.stop()
+            self._validate_cancellation = None
+        self.validate_cancel_button.setEnabled(False)
+
+    def _cleanup_validation_thread(self) -> None:
+        """Disposes of the thread that just finished, current or superseded."""
+        thread = self.sender()
+        if not isinstance(thread, QThread):
+            return
+        worker = self._validation_jobs.pop(thread, None)
+        if worker is not None:
+            worker.deleteLater()
+        thread.deleteLater()
+        if thread is self._validate_thread:
+            self._validate_thread = None
+
+    def shutdown(self) -> None:
+        """Stops background validation so Qt never destroys a running thread.
+
+        Validation of a large file can still be in flight when the window
+        closes, and a superseded worker may be draining too; the cancellation
+        check is per row, so each wait is short.
+        """
+        self._cancel_validation()
+        for thread in list(self._validation_jobs):
+            if thread.isRunning():
+                thread.quit()
+                thread.wait(2000)
+
+    def _clear_plan_render(self, message: str) -> None:
+        """Shows why no plan exists, leaving the issue table empty."""
+        self._set_validate_summary(message, "blocked")
+        self.preview_rows_table.setRowCount(0)
+        self.validate_empty_state.set_content(
+            icon_name="verify",
+            title="Nothing to validate yet",
+            guidance=message,
+        )
+        self.run_button.setEnabled(False)
+
+    def _set_validate_summary(self, text: str, severity: str) -> None:
+        """Colours the summary by outcome so status is readable at a glance."""
+        self._validate_summary_severity = severity
+        self.validate_summary_label.setText(text)
+        colour = {
+            "error": theme.FAIL,
+            "warning": theme.WARN,
+            "ok": theme.PASS,
+        }.get(severity, theme.TEXT_MUTED)
+        self.validate_summary_label.setStyleSheet(f"color: {colour}; font-weight: 600;")
+
+    def _render_plan(self, plan: DataRunPlan) -> None:
+        validated = plan.validated_row_count
+        counts = (
+            f"{plan.total_row_count:,} total rows · {plan.valid_count:,} valid · "
+            f"{plan.invalid_count:,} invalid · {plan.skip_count:,} skip"
+        )
+        if validated < plan.total_row_count:
+            counts = f"{counts} (validated {validated:,})"
+
+        # Plan-level problems and per-row problems share one table: both block
+        # or degrade the same run, and splitting them made the user check two
+        # places. Valid rows are deliberately omitted - a list of "Valid, 0
+        # issues" rows hid the handful of rows that actually need attention.
+        rows: list[tuple[str, str, str, str]] = []
+        for issue in plan.issues:
+            rows.append(("Plan", "—", issue.severity.capitalize(), issue.message))
+        for issue_row in plan.issue_rows:
+            severity = "Skip" if issue_row.skip else "Invalid"
+            message = "; ".join(issue_row.issue_messages) or (
+                "Row skipped by a skip-if transform." if issue_row.skip else "Row is not valid."
+            )
+            rows.append((str(issue_row.row_number), issue_row.correlation_key, severity, message))
+        if plan.issue_rows_truncated:
+            rows.append(
+                (
+                    "…",
+                    "—",
+                    "Warning",
+                    f"Only the first {len(plan.issue_rows):,} problem rows are listed; "
+                    "the counts above cover every row.",
+                )
+            )
+
+        self.preview_rows_table.setRowCount(len(rows))
+        for index, (row_label, key, severity, message) in enumerate(rows):
+            severity_item = QTableWidgetItem(severity)
+            if severity in ("Error", "Invalid"):
+                severity_item.setForeground(QColor(theme.FAIL))
+            elif severity in ("Warning", "Skip"):
+                severity_item.setForeground(QColor(theme.WARN))
+            message_item = QTableWidgetItem(message)
+            message_item.setToolTip(message)
+            self.preview_rows_table.setItem(index, 0, QTableWidgetItem(row_label))
+            self.preview_rows_table.setItem(index, 1, QTableWidgetItem(key))
+            self.preview_rows_table.setItem(index, 2, severity_item)
+            self.preview_rows_table.setItem(index, 3, message_item)
+
+        # The counts alone cannot explain a red summary: a plan can be blocked
+        # (no base URL) while every row resolves cleanly. Lead with the
+        # blocker so the colour always has a stated reason.
+        blocking = sum(1 for issue in plan.issues if issue.severity == "error")
+        warnings = len(plan.issues) - blocking
+        if blocking:
+            lead = f"{blocking} blocking issue{'s' if blocking > 1 else ''}"
+            self._set_validate_summary(f"{lead} · {counts}", "error")
+        elif plan.invalid_count:
+            self._set_validate_summary(
+                f"{plan.invalid_count:,} invalid rows · {counts}", "error"
+            )
+        elif rows:
+            lead = f"{warnings} warning{'s' if warnings != 1 else ''}" if warnings else "Rows skipped"
+            self._set_validate_summary(f"{lead} · {counts}", "warning")
+        else:
+            self._set_validate_summary(f"Ready to run · {counts}", "ok")
+            self.validate_empty_state.set_content(
+                icon_name="verify",
+                title="No validation issues",
+                guidance=(
+                    f"All {validated:,} rows resolved cleanly against "
+                    f"{plan.endpoint.method} {plan.endpoint.path} and are ready to run."
+                ),
+            )
 
         self.run_button.setEnabled(plan.is_executable)
 
@@ -921,10 +1421,6 @@ class DataRunnerTab(QWidget):
         self.stop_button.setEnabled(False)
         self.stop_button.clicked.connect(self._stop_run)
         actions_row.addWidget(self.stop_button)
-        self.export_button = _icon_button("export", "Export row results to CSV")
-        self.export_button.setEnabled(False)
-        self.export_button.clicked.connect(self._export_results)
-        actions_row.addWidget(self.export_button)
         actions_row.addStretch()
         layout.addLayout(actions_row)
 
@@ -948,6 +1444,9 @@ class DataRunnerTab(QWidget):
         self.run_progress_bar = QProgressBar()
         self.run_progress_bar.setObjectName("suiteRunProgress")
         self.run_progress_bar.setTextVisible(False)
+        # Shown only while a run is in flight, matching the Validate step: an
+        # idle bar reads as a stalled run and is just an empty box otherwise.
+        self.run_progress_bar.setVisible(False)
         progress_group.addWidget(self.run_progress_bar)
         progress_labels_row = QHBoxLayout()
         self.progress_left_label = QLabel("Not run yet.")
@@ -968,7 +1467,18 @@ class DataRunnerTab(QWidget):
         self.results_tabs.addTab(self._build_errors_tab(), "Errors")
         self.results_tabs.addTab(self._build_charts_tab(), "Charts")
         self.results_tabs.addTab(self._build_mapping_summary_tab(), "Mapping")
-        self.results_tabs.addTab(self._build_export_tab(), "Export")
+
+        # Export lives in the tab bar's right corner rather than in a tab of
+        # its own: it is an action on the results, not another view of them.
+        corner = QWidget()
+        corner_layout = QHBoxLayout(corner)
+        corner_layout.setContentsMargins(0, 0, 6, 0)
+        corner_layout.setSpacing(6)
+        self.export_button = _icon_button("export", "Export row results to CSV")
+        self.export_button.setEnabled(False)
+        self.export_button.clicked.connect(self._export_results)
+        corner_layout.addWidget(self.export_button)
+        self.results_tabs.setCornerWidget(corner, Qt.Corner.TopRightCorner)
         layout.addWidget(self.results_tabs, 1)
 
         return page
@@ -988,6 +1498,7 @@ class DataRunnerTab(QWidget):
         tab_layout.setContentsMargins(8, 8, 8, 8)
 
         pagination_row = QHBoxLayout()
+        pagination_row.setSpacing(8)
         pagination_row.addWidget(QLabel("Rows per page:"))
         self.results_page_size = QComboBox()
         self.results_page_size.addItems(["100", "250", "500", "1000", "5000"])
@@ -995,17 +1506,11 @@ class DataRunnerTab(QWidget):
         self.results_page_size.currentTextChanged.connect(self._on_page_size_changed)
         pagination_row.addWidget(self.results_page_size)
         pagination_row.addStretch(1)
-        self.results_prev_page_button = QPushButton("< Prev")
-        self.results_prev_page_button.clicked.connect(self._go_to_previous_page)
-        self.results_next_page_button = QPushButton("Next >")
-        self.results_next_page_button.clicked.connect(self._go_to_next_page)
-        self.results_jump_latest_button = QPushButton("Jump to latest")
-        self.results_jump_latest_button.clicked.connect(self._jump_to_latest_page)
-        self.results_page_label = QLabel("Page 0 of 0 (0 rows)")
-        pagination_row.addWidget(self.results_page_label)
-        pagination_row.addWidget(self.results_prev_page_button)
-        pagination_row.addWidget(self.results_next_page_button)
-        pagination_row.addWidget(self.results_jump_latest_button)
+        # The shared split-pill pager, so results page the same way the CSV
+        # preview and every other paged table in the app do.
+        self.results_pager = Pager(page_size=self._results_page_size)
+        self.results_pager.page_changed.connect(self._on_results_page_changed)
+        pagination_row.addWidget(self.results_pager)
         tab_layout.addLayout(pagination_row)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -1035,10 +1540,29 @@ class DataRunnerTab(QWidget):
     def _build_row_inspector(self) -> QWidget:
         box = QGroupBox("Row inspector")
         box_layout = QVBoxLayout(box)
+
+        # Two pages rather than an empty editor: with nothing selected the
+        # read-only editors rendered as a large blank panel, which read as a
+        # broken view instead of an intentional empty state.
+        self.row_inspector_stack = QStackedWidget()
+        self.row_inspector_stack.setObjectName("dataRunnerTransparentPane")
+
+        self.row_inspector_empty = EmptyStateWidget()
+        self.row_inspector_empty.set_content(
+            icon_name="eye",
+            title="Nothing to inspect",
+            guidance="Select a row on the left to see its resolved request, response, and assertions.",
+        )
+        self.row_inspector_stack.addWidget(self.row_inspector_empty)
+
+        content = QWidget()
+        content.setObjectName("dataRunnerTransparentPane")
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
         self.row_inspector_hint = QLabel("Select a row to inspect its request/response.")
         self.row_inspector_hint.setObjectName("dataRunnerStatCardSubtitle")
         self.row_inspector_hint.setWordWrap(True)
-        box_layout.addWidget(self.row_inspector_hint)
+        content_layout.addWidget(self.row_inspector_hint)
 
         self.row_inspector_tabs = QTabWidget()
         self.row_inspector_response = JsonTextEdit(read_only=True)
@@ -1049,7 +1573,11 @@ class DataRunnerTab(QWidget):
         self.row_inspector_tabs.addTab(self.row_inspector_request, "Resolved request")
         self.row_inspector_tabs.addTab(self.row_inspector_input_row, "Input row")
         self.row_inspector_tabs.addTab(self.row_inspector_assertions, "Assertions")
-        box_layout.addWidget(self.row_inspector_tabs, 1)
+        content_layout.addWidget(self.row_inspector_tabs, 1)
+        self.row_inspector_stack.addWidget(content)
+
+        self.row_inspector_stack.setCurrentWidget(self.row_inspector_empty)
+        box_layout.addWidget(self.row_inspector_stack, 1)
         return box
 
     def _build_input_validation_tab(self) -> QWidget:
@@ -1097,6 +1625,9 @@ class DataRunnerTab(QWidget):
         return tab
 
     def _build_charts_tab(self) -> QWidget:
+        # Scrolled: the six charts cannot all meet their minimum heights in a
+        # short window, and without this the group boxes squeeze below their
+        # minimum and clip the plots rather than letting the user scroll.
         tab = QWidget()
         tab_layout = QVBoxLayout(tab)
         tab_layout.setSpacing(10)
@@ -1105,26 +1636,20 @@ class DataRunnerTab(QWidget):
         outcome_box = QGroupBox("Outcome breakdown")
         outcome_layout = QVBoxLayout(outcome_box)
         self.outcome_chart = OutcomeBreakdownChart()
-        outcome_layout.addWidget(self.outcome_chart)
-        outcome_layout.addWidget(QLabel("Status codes"))
-        self.status_code_chart = LabeledBarChart(color=theme.PRIMARY, value_format="{:.0f}")
-        outcome_layout.addWidget(self.status_code_chart, 1)
+        outcome_layout.addWidget(self.outcome_chart, 1)
         top_row.addWidget(outcome_box, 1)
 
-        throughput_box = QGroupBox("Throughput (requests / second)")
+        throughput_box = QGroupBox("Throughput (rows completed)")
         throughput_layout = QVBoxLayout(throughput_box)
-        self.throughput_chart = SparklineChart(mode="bar", color=theme.PRIMARY)
-        throughput_layout.addWidget(self.throughput_chart)
-        throughput_layout.addWidget(QLabel("Cumulative rows completed"))
         self.cumulative_completed_chart = MultiSeriesLineChart(
-            (("Completed", theme.PRIMARY),), unit=""
+            (("Completed", theme.PRIMARY),), unit="", style="bar"
         )
         throughput_layout.addWidget(self.cumulative_completed_chart, 1)
         top_row.addWidget(throughput_box, 1)
 
         latency_box = QGroupBox("Latency (ms)")
         latency_layout = QVBoxLayout(latency_box)
-        self.latency_chart = SparklineChart(mode="line", color=theme.ACCENT)
+        self.latency_chart = SparklineChart(mode="bar", color=theme.ACCENT, dotted_grid=True)
         latency_layout.addWidget(self.latency_chart)
         self.latency_summary_label = QLabel("min – / mean – / p50 – / p90 – / p99 – / max –")
         latency_layout.addWidget(self.latency_summary_label)
@@ -1136,7 +1661,7 @@ class DataRunnerTab(QWidget):
         bottom_row = QHBoxLayout()
         errors_box = QGroupBox("Errors by category")
         errors_layout = QVBoxLayout(errors_box)
-        self.error_category_chart = LabeledBarChart(color=theme.FAIL, value_format="{:.0f}")
+        self.error_category_chart = PieChart()
         errors_layout.addWidget(self.error_category_chart)
         bottom_row.addWidget(errors_box, 1)
 
@@ -1147,7 +1672,12 @@ class DataRunnerTab(QWidget):
         bottom_row.addWidget(latency_timeline_box, 2)
         tab_layout.addLayout(bottom_row, 1)
 
-        return tab
+        self.charts_scroll = QScrollArea()
+        self.charts_scroll.setWidgetResizable(True)
+        self.charts_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.charts_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.charts_scroll.setWidget(tab)
+        return self.charts_scroll
 
     def _build_mapping_summary_tab(self) -> QWidget:
         tab = QWidget()
@@ -1158,36 +1688,90 @@ class DataRunnerTab(QWidget):
         self.mapping_summary_table.setHorizontalHeaderLabels(["CSV column", "Target", "Transforms"])
         self.mapping_summary_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.mapping_summary_table.horizontalHeader().setStretchLastSection(True)
+        attach_table_empty_state(
+            self.mapping_summary_table,
+            icon_name="data-runner",
+            title="No mapping yet",
+            guidance="Map CSV columns to request fields, then run to see them here.",
+        )
         tab_layout.addWidget(self.mapping_summary_table, 1)
         return tab
 
-    def _build_export_tab(self) -> QWidget:
-        tab = QWidget()
-        tab_layout = QVBoxLayout(tab)
-        tab_layout.setContentsMargins(8, 8, 8, 8)
+    def _build_persist_card(self) -> ContextCard:
+        """The run-history card on the left rail.
 
-        persistence_group = QGroupBox("Run history (SQLite)")
-        persistence_row = QHBoxLayout(persistence_group)
-        self.persist_checkbox = QCheckBox("Persist this run's samples")
-        persistence_row.addWidget(self.persist_checkbox)
+        Deliberately never passed through ``_refresh_run_context_panel``:
+        ``ContextCard.clear_body`` calls ``deleteLater`` on its children, which
+        would destroy these live controls and leave dangling references.
+        """
+        card = ContextCard("Run history")
+        self.persist_checkbox = QCheckBox("Persist this run")
+        self.persist_checkbox.setToolTip(
+            "Store this run's rows in a local database file so it appears in the History step"
+        )
+        self.persist_checkbox.toggled.connect(self._on_persist_toggled)
+        card.body.addWidget(self.persist_checkbox)
+
+        self.persist_off_label = QLabel("Off — results are kept in memory only.")
+        self.persist_off_label.setObjectName("dataRunnerStatCardSubtitle")
+        self.persist_off_label.setWordWrap(True)
+        card.body.addWidget(self.persist_off_label)
+
+        # Collapsed until the user opts in, so the card costs one row at rest.
+        self.persist_detail = QWidget()
+        # Bare QWidgets inherit the global `QWidget { background-color }` rule,
+        # which painted a grey block over the white card.
+        self.persist_detail.setObjectName("dataRunnerTransparentPane")
+        detail_layout = QVBoxLayout(self.persist_detail)
+        detail_layout.setContentsMargins(0, 0, 0, 0)
+        detail_layout.setSpacing(4)
+
         self.persist_path = QLineEdit()
-        self.persist_path.setPlaceholderText("Path to a .db file (defaults next to the CSV)")
-        persistence_row.addWidget(self.persist_path, 1)
-        self.persist_browse_button = _icon_button("folder", "Choose where to store the run history database")
-        self.persist_browse_button.clicked.connect(self._browse_persist_path)
-        persistence_row.addWidget(self.persist_browse_button)
-        tab_layout.addWidget(persistence_group)
+        self.persist_path.setPlaceholderText("Defaults next to the CSV")
+        self.persist_path.setToolTip("Path to the .db file that stores this run")
+        self.persist_path.textChanged.connect(self._refresh_persist_status)
+        detail_layout.addWidget(self.persist_path)
 
-        export_group = QGroupBox("Export row results")
-        export_layout = QHBoxLayout(export_group)
-        export_layout.addWidget(QLabel("Export the reserved diagnostic columns for every row to a CSV file."))
-        export_layout.addStretch()
-        export_tab_button = _icon_button("export", "Export row results to CSV")
-        export_tab_button.clicked.connect(self._export_results)
-        export_layout.addWidget(export_tab_button)
-        tab_layout.addWidget(export_group)
-        tab_layout.addStretch()
-        return tab
+        status_row = QHBoxLayout()
+        status_row.setContentsMargins(0, 0, 0, 0)
+        self.persist_status_label = QLabel("")
+        self.persist_status_label.setObjectName("dataRunnerStatCardSubtitle")
+        status_row.addWidget(self.persist_status_label, 1)
+        self.persist_browse_button = QPushButton("Browse…")
+        self.persist_browse_button.setToolTip(
+            "Choose where to store the run history database"
+        )
+        self.persist_browse_button.clicked.connect(self._browse_persist_path)
+        status_row.addWidget(self.persist_browse_button)
+        detail_layout.addLayout(status_row)
+
+        self.persist_detail.setVisible(False)
+        card.body.addWidget(self.persist_detail)
+        return card
+
+    def _on_persist_toggled(self, checked: bool) -> None:
+        self.persist_detail.setVisible(checked)
+        self.persist_off_label.setVisible(not checked)
+        if checked and not self.persist_path.text().strip():
+            self.persist_path.setPlaceholderText(
+                self._default_persist_path() or "Defaults next to the CSV"
+            )
+        self._refresh_persist_status()
+
+    def _refresh_persist_status(self) -> None:
+        """Reports where the run will be written and whether that file exists."""
+        if not self.persist_checkbox.isChecked():
+            return
+        path = self.persist_path.text().strip() or self._default_persist_path()
+        if not path:
+            self.persist_status_label.setText("Size · load a CSV first")
+            return
+        existing = Path(path)
+        if existing.exists():
+            size_mb = existing.stat().st_size / (1024 * 1024)
+            self.persist_status_label.setText(f"Size · {size_mb:.1f} MB")
+        else:
+            self.persist_status_label.setText("Size · new file")
 
     def _build_run_context_panel(self) -> QWidget:
         panel = QWidget()
@@ -1202,6 +1786,7 @@ class DataRunnerTab(QWidget):
         panel_layout.addWidget(self.context_card_template)
         self.context_card_mapping = ContextCard("Schema-aware mapping")
         panel_layout.addWidget(self.context_card_mapping)
+        panel_layout.addWidget(self._build_persist_card())
         self.context_card_settings = ContextCard("Run settings")
         panel_layout.addWidget(self.context_card_settings)
 
@@ -1296,7 +1881,6 @@ class DataRunnerTab(QWidget):
         settings_rows = [
             ("Execution mode", "Sequential"),
             ("Default expected status", self.default_expected_status.text().strip() or "200-299"),
-            ("Persist history", "Yes" if self.persist_checkbox.isChecked() else "No"),
         ]
         for caption, value in settings_rows:
             row = QHBoxLayout()
@@ -1335,8 +1919,6 @@ class DataRunnerTab(QWidget):
     def _reset_live_metrics(self) -> None:
         self._latency_sketch = LatencySketch()
         self._outcome_counts = {}
-        self._throughput_buckets = {}
-        self._status_code_counts = {}
         self._error_category_counts = {}
         self._cumulative_completed = 0
         self._row_details = {}
@@ -1346,10 +1928,8 @@ class DataRunnerTab(QWidget):
         self._follow_latest_page = True
         self.results_table.setRowCount(0)
         self._update_pagination_controls()
-        self.throughput_chart.clear()
         self.latency_chart.clear()
         self.latency_summary_label.setText("min – / mean – / p50 – / p90 – / p99 – / max –")
-        self.status_code_chart.set_entries({})
         self.cumulative_completed_chart.clear()
         self.latency_percentile_chart.set_entries({})
         self.error_category_chart.set_entries({})
@@ -1358,6 +1938,7 @@ class DataRunnerTab(QWidget):
             card.set_value("–")
             card.set_subtitle("")
         self.run_progress_bar.setValue(0)
+        self.run_progress_bar.setVisible(False)
         self.progress_left_label.setText("Not run yet.")
         self.progress_right_label.setText("")
         self.invalid_rows_table.setRowCount(0)
@@ -1371,7 +1952,11 @@ class DataRunnerTab(QWidget):
 
     def _start_run(self) -> None:
         if self.plan is None or not self.plan.is_executable:
-            QMessageBox.information(self, "Validate first", "Validate the mapping before running.")
+            QMessageBox.information(
+                self,
+                "Cannot run",
+                "The current plan is not executable. Open the Validate step to see why.",
+            )
             return
         environment = self._build_environment()
         if environment is None:
@@ -1397,6 +1982,7 @@ class DataRunnerTab(QWidget):
         self.run_summary_label.setText("Running...")
         self._run_started_monotonic = time.monotonic()
         self.run_progress_bar.setRange(0, max(1, plan.total_row_count))
+        self.run_progress_bar.setVisible(True)
         self.progress_left_label.setText(f"0 of {plan.total_row_count:,} rows completed")
         self._event_bus = EventBus()
         cancellation = CancellationController()
@@ -1488,12 +2074,6 @@ class DataRunnerTab(QWidget):
         self._outcome_counts[outcome] = self._outcome_counts.get(outcome, 0) + 1
         self.outcome_chart.set_counts(self._outcome_counts)
 
-        status_code = payload.get("status_code")
-        if status_code not in (None, ""):
-            key = str(status_code)
-            self._status_code_counts[key] = self._status_code_counts.get(key, 0) + 1
-            self.status_code_chart.set_entries(self._status_code_counts)
-
         http_ms = payload.get("http_ms")
         if isinstance(http_ms, (int, float)):
             self._latency_sketch.add(float(http_ms))
@@ -1518,14 +2098,6 @@ class DataRunnerTab(QWidget):
 
         self._cumulative_completed += 1
         self.cumulative_completed_chart.append({"Completed": self._cumulative_completed})
-
-        offset_ms = payload.get("offset_ms")
-        if isinstance(offset_ms, (int, float)):
-            bucket = int(offset_ms // 1000)
-            self._throughput_buckets[bucket] = self._throughput_buckets.get(bucket, 0) + 1
-            if self._throughput_buckets:
-                span = range(min(self._throughput_buckets), max(self._throughput_buckets) + 1)
-                self.throughput_chart.set_values([self._throughput_buckets.get(i, 0) for i in span])
 
         self._refresh_run_progress()
 
@@ -1649,14 +2221,17 @@ class DataRunnerTab(QWidget):
         self._update_pagination_controls()
 
     def _update_pagination_controls(self) -> None:
-        total_pages = self._total_results_pages()
         total_rows = len(self._result_rows)
-        self.results_page_label.setText(
-            f"Page {self._current_results_page + 1} of {total_pages} ({total_rows:,} rows)"
-        )
-        self.results_prev_page_button.setEnabled(self._current_results_page > 0)
-        self.results_next_page_button.setEnabled(self._current_results_page < total_pages - 1)
-        self.results_jump_latest_button.setEnabled(not self._follow_latest_page)
+        # set_total rewinds to page 1, so the current page is restored right
+        # after — a live run appends rows constantly and must not jump back.
+        self.results_pager.set_total(total_rows, page_size=self._results_page_size)
+        self.results_pager.set_page(self._current_results_page, emit=False)
+        self._current_results_page = self.results_pager.page
+
+    def _on_results_page_changed(self, page: int) -> None:
+        self._current_results_page = page
+        self._follow_latest_page = page == self._total_results_pages() - 1
+        self._render_current_page()
 
     def _on_page_size_changed(self, text: str) -> None:
         try:
@@ -1677,17 +2252,12 @@ class DataRunnerTab(QWidget):
     def _go_to_previous_page(self) -> None:
         if self._current_results_page <= 0:
             return
-        self._current_results_page -= 1
-        self._follow_latest_page = False
-        self._render_current_page()
+        self.results_pager.set_page(self._current_results_page - 1)
 
     def _go_to_next_page(self) -> None:
-        total_pages = self._total_results_pages()
-        if self._current_results_page >= total_pages - 1:
+        if self._current_results_page >= self._total_results_pages() - 1:
             return
-        self._current_results_page += 1
-        self._follow_latest_page = self._current_results_page == total_pages - 1
-        self._render_current_page()
+        self.results_pager.set_page(self._current_results_page + 1)
 
     def _jump_to_latest_page(self) -> None:
         self._follow_latest_page = True
@@ -1746,6 +2316,12 @@ class DataRunnerTab(QWidget):
             self.errors_filter_summary_label.setText(f"{total} errors" if total else "")
 
     def _clear_row_inspector(self) -> None:
+        self.row_inspector_empty.set_content(
+            icon_name="eye",
+            title="Nothing to inspect",
+            guidance="Select a row on the left to see its resolved request, response, and assertions.",
+        )
+        self.row_inspector_stack.setCurrentWidget(self.row_inspector_empty)
         self.row_inspector_hint.setText("Select a row to inspect its request/response.")
         for editor in (
             self.row_inspector_response,
@@ -1782,6 +2358,14 @@ class DataRunnerTab(QWidget):
         if detail is None:
             detail = self._fetch_persisted_row_detail(int(row_number))
         if detail is None:
+            # Row selected, but nothing captured — still an empty state rather
+            # than four blank editors.
+            self.row_inspector_empty.set_content(
+                icon_name="eye",
+                title=f"No detail for row {row_number}",
+                guidance="This run predates detail capture, so its request and response were not stored.",
+            )
+            self.row_inspector_stack.setCurrentWidget(self.row_inspector_empty)
             self.row_inspector_hint.setText(
                 f"Row {row_number}: no detail captured for this row (run predates detail capture)."
             )
@@ -1793,6 +2377,7 @@ class DataRunnerTab(QWidget):
             ):
                 editor.setPlainText("")
             return
+        self.row_inspector_stack.setCurrentIndex(1)
         self.row_inspector_hint.setText(f"Row {row_number}")
         response = detail.get("response")
         if response is None:
@@ -1821,17 +2406,29 @@ class DataRunnerTab(QWidget):
         )
         self.export_button.setEnabled(bool(self.runner and self.runner.row_outcomes))
         self.progress_right_label.setText("")
+        # The run may have just created the database, so the card's size
+        # readout is stale until it is recomputed.
+        self._refresh_persist_status()
         self._refresh_stepper_progress()
+        self.run_completed.emit(
+            "Data Runner finished",
+            f"{summary.outcome} — {summary.passed} passed, {summary.failed} failed",
+            summary.failed == 0 and summary.errored == 0,
+        )
 
     def _run_failed(self, message: str) -> None:
         self._event_timer.stop()
         self.run_summary_label.setText("Run failed.")
+        self.run_completed.emit("Data Runner failed", message.strip(), False)
         QMessageBox.warning(self, "Data Runner failed", message)
 
     def _cleanup_thread(self) -> None:
         self.run_button.setEnabled(True)
         self.pause_button.setEnabled(False)
         self.stop_button.setEnabled(False)
+        # Reached for every ending — finished, failed, or cancelled — so the
+        # bar never lingers after the run stops.
+        self.run_progress_bar.setVisible(False)
         if self._worker is not None:
             self._worker.deleteLater()
         if self._thread is not None:

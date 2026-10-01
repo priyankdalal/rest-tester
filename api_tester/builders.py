@@ -43,6 +43,7 @@ from .schema import (
     seed_filter_value,
     seed_payload_field,
 )
+from .widgets import attach_table_empty_state
 
 
 ROW_HEIGHT = 38
@@ -174,6 +175,12 @@ class QueryBuilder(QWidget):
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self.empty_state = attach_table_empty_state(
+            self.table,
+            icon_name="filter",
+            title="No conditions yet",
+            guidance="Add a condition to filter this endpoint's results.",
+        )
         layout.addWidget(self.table)
 
         buttons = QHBoxLayout()
@@ -286,6 +293,7 @@ class QueryBuilder(QWidget):
                 button.setIcon(icon("seed", theme.TEXT, 16))
             elif action == "remove":
                 button.setIcon(icon("trash", theme.FAIL, 16))
+        self.empty_state.refresh_theme()
 
     def _field_changed(self, row: int) -> None:
         self._populate_operators(row)
@@ -448,6 +456,12 @@ class SortBuilder(QWidget):
         self.table.verticalHeader().setDefaultSectionSize(ROW_HEIGHT)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.empty_state = attach_table_empty_state(
+            self.table,
+            icon_name="sort",
+            title="No sort fields yet",
+            guidance="Add a sort field to order this endpoint's results.",
+        )
         layout.addWidget(self.table)
 
         buttons = QHBoxLayout()
@@ -536,6 +550,7 @@ class SortBuilder(QWidget):
         for button in self.table.findChildren(QPushButton):
             if button.property("sortRowAction") == "remove":
                 button.setIcon(icon("trash", theme.FAIL, 16))
+        self.empty_state.refresh_theme()
 
     def remove_row(self, row: int) -> None:
         entries = self.entries()

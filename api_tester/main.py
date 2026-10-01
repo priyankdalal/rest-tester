@@ -84,9 +84,16 @@ from .data_runner.ui import DataRunnerTab
 from .load_testing.ui import LoadTestingTab
 from .environment_ui import EnvironmentEditor, EnvironmentManagerPage
 from .execution.models import ExecutionEnvironmentSnapshot
-from .auth_log import activity_log
 from .icons import app_icon, app_pixmap, badged_icon, icon
 from .documentation import endpoint_documentation
+from .notifications import (
+    CATALOG,
+    DATA_RUNNER,
+    LOAD_TEST,
+    REQUEST,
+    Notification,
+    notification_center,
+)
 from .seeding import seed_parameter
 from .saved_requests import (
     CollectionsPage,
@@ -298,7 +305,6 @@ class MainWindow(QMainWindow):
         self._request_thread: QThread | None = None
         self._request_worker: RequestWorker | None = None
         self._connection_probes: set[ConnectionProbe] = set()
-        self._notifications_seen = 0
         self._connection_token = 0
         self.app_settings = AppSettings.from_dict(
             raw_settings,
@@ -363,7 +369,7 @@ class MainWindow(QMainWindow):
         self.notifications_button.setObjectName("headerIconButton")
         self.notifications_button.setIconSize(QSize(18, 18))
         self.notifications_button.setFixedSize(32, 32)
-        self.notifications_button.setToolTip("Recent authentication activity")
+        self.notifications_button.setToolTip("Notifications")
         self.notifications_button.setAccessibleName("Notifications")
         self.notifications_button.setPopupMode(
             QToolButton.ToolButtonPopupMode.InstantPopup
@@ -373,6 +379,8 @@ class MainWindow(QMainWindow):
             self._populate_notifications_menu
         )
         self.notifications_button.setMenu(self.notifications_menu)
+        self.notifications = notification_center
+        self.notifications.changed.connect(self._refresh_header_buttons)
         header_layout.addWidget(self.notifications_button)
         self.theme_toggle_button = QToolButton()
         self.theme_toggle_button.setObjectName("headerIconButton")
@@ -717,14 +725,25 @@ class MainWindow(QMainWindow):
         )
         self.workspace_tabs.addTab(self.suite_tab, "Test suites")
         self.data_runner_tab = DataRunnerTab(self.catalog, self._execution_environment_snapshot)
+        self.data_runner_tab.run_completed.connect(
+            lambda title, detail, ok: self.notifications.notify(
+                DATA_RUNNER, title, detail, ok=ok
+            )
+        )
         self.workspace_tabs.addTab(self.data_runner_tab, "Data Runner")
         self.load_testing_tab = LoadTestingTab(self.catalog, self._execution_environment_snapshot)
+        self.load_testing_tab.run_completed.connect(
+            lambda title, detail, ok: self.notifications.notify(
+                LOAD_TEST, title, detail, ok=ok
+            )
+        )
         self.workspace_tabs.addTab(self.load_testing_tab, "Load Testing")
         self.saved_requests_page = SavedRequestsPage(self.saved_request_store)
         self.saved_requests_page.request_selected.connect(self._open_saved_request)
         self.workspace_tabs.addTab(self.saved_requests_page, "Saved Requests")
         self.collections_page = CollectionsPage(self.saved_request_store)
         self.collections_page.run_collection_requested.connect(self._run_collection)
+        self.collections_page.request_send_requested.connect(self._send_saved_request)
         self.workspace_tabs.addTab(self.collections_page, "Collections")
         self.environment_page = EnvironmentManagerPage(
             self.app_settings, [service.name for service in self.services]
@@ -822,7 +841,7 @@ class MainWindow(QMainWindow):
             ("API Explorer", "api-explorer"),
             ("Test Suites", "test-suites"),
             ("Data Runner", "data-runner"),
-            ("Load Testing", "load-testing"),
+            ("Load Studio", "load-testing"),
             ("Saved Requests", "bookmark"),
             ("Collections", "folder"),
             ("Environments", "globe"),
@@ -1244,10 +1263,11 @@ class MainWindow(QMainWindow):
         self._refresh_catalog_label()
         self.refresh_catalog_presence()
         self._save_settings()
-        QMessageBox.information(
-            self,
-            "Catalog loaded",
-            f"Loaded {len(self.services)} services and {len(known)} endpoints.",
+        self.notifications.notify(
+            CATALOG,
+            "Catalog reloaded",
+            f"{len(self.services)} services · {len(known)} endpoints",
+            route={},
         )
         return True
 
@@ -1325,6 +1345,10 @@ class MainWindow(QMainWindow):
             for service in self.services
             for endpoint in service.endpoints
         }
+        # Saved request rows show the method and URL of the endpoint they
+        # point at, so they need the catalog whenever it is (re)loaded.
+        self.saved_requests_page.set_endpoints(self.endpoints_by_id)
+        self.collections_page.set_endpoints(self.endpoints_by_id)
         for service in self.services:
             service_item = QTreeWidgetItem([service.name, str(len(service.endpoints))])
             service_font = service_item.font(0)
@@ -1622,7 +1646,112 @@ class MainWindow(QMainWindow):
         populate_auth_choices(
             self.request_authentication, self.app_settings.active.auth_profiles, request.authentication,
         )
+        self.saved_request_store.mark_request_used(request_id)
+        self.saved_requests_page.refresh()
         self.navigation.setCurrentRow(0)
+
+    def _send_saved_request(self, request_id: str, payload: object) -> None:
+        """Runs one saved request for the Collections mini handler.
+
+        This uses a dedicated thread rather than ``_start_request`` so that
+        sending from Collections never disturbs the API Explorer's in-flight
+        request, its response pane, or its draft payload.
+        """
+        if getattr(self, "_mini_thread", None) is not None:
+            return
+        request = self.saved_request_store.requests.get(request_id)
+        endpoint = self.endpoints_by_id.get(request.endpoint_id) if request else None
+        if request is None or endpoint is None:
+            self.collections_page.show_handler_error(
+                "The saved request's endpoint is no longer present in the catalog."
+            )
+            return
+        base_url = ""
+        field = self.base_url_inputs.get(endpoint.service)
+        if field is not None:
+            base_url = field.text().strip()
+        if not base_url:
+            self.collections_page.show_handler_error(
+                f"Provide the {endpoint.service} base URL on the API Explorer page first."
+            )
+            return
+        values, payload = self._resolve_environment_values(dict(request.values), payload)
+
+        self.collections_page.handler_busy(True)
+        arguments = (
+            endpoint,
+            base_url,
+            self.access_token.text(),
+            self.api_key.text(),
+            values,
+            payload,
+            request.expected_status,
+            self.request_timeout.value(),
+            self.verify_ssl.isChecked(),
+            dict(self.app_settings.active.custom_headers),
+        )
+        self._mini_request_id = request_id
+        self._mini_endpoint = endpoint
+        self._mini_environment = self.app_settings.active_environment
+        self._mini_thread = QThread()
+        self._mini_worker = RequestWorker(
+            arguments,
+            AuthenticationContext.from_environment(self.app_settings.active),
+            request.authentication or "inherit",
+        )
+        self._mini_worker.moveToThread(self._mini_thread)
+        self._mini_thread.started.connect(self._mini_worker.run)
+        self._mini_worker.completed.connect(self._mini_completed)
+        self._mini_worker.failed.connect(self._mini_failed)
+        self._mini_worker.completed.connect(self._mini_thread.quit)
+        self._mini_worker.failed.connect(self._mini_thread.quit)
+        self._mini_thread.finished.connect(self._mini_finished)
+        self._mini_thread.start()
+
+    def _mini_completed(self, result: ApiResult) -> None:
+        endpoint = getattr(self, "_mini_endpoint", None)
+        if endpoint is not None:
+            append_history(
+                self.workspace_store, endpoint, result,
+                getattr(self, "_mini_environment", self.app_settings.active_environment),
+            )
+        request_id = getattr(self, "_mini_request_id", "")
+        if request_id:
+            self.saved_request_store.mark_request_used(request_id, passed=result.passed)
+        if not self._on_page("Collections"):
+            status = int(getattr(result, "status_code", 0) or 0)
+            self.notifications.notify(
+                REQUEST,
+                self._saved_request_label(request_id, endpoint),
+                f"{status} · {'passed' if result.passed else 'failed'}"
+                if status
+                else ("passed" if result.passed else "failed"),
+                ok=bool(result.passed),
+                route={"page": "Collections", "request_id": request_id},
+            )
+        self.collections_page.show_handler_result(result)
+        self.saved_requests_page.refresh()
+
+    def _mini_failed(self, message: str) -> None:
+        if not self._on_page("Collections"):
+            request_id = getattr(self, "_mini_request_id", "")
+            self.notifications.notify(
+                REQUEST,
+                self._saved_request_label(
+                    request_id, getattr(self, "_mini_endpoint", None)
+                ),
+                message.strip().splitlines()[0] if message.strip() else "Request failed",
+                ok=False,
+                route={"page": "Collections", "request_id": request_id},
+            )
+        self.collections_page.show_handler_error(message)
+
+    def _mini_finished(self) -> None:
+        thread = getattr(self, "_mini_thread", None)
+        if thread is not None:
+            thread.deleteLater()
+        self._mini_thread = None
+        self._mini_worker = None
 
     def _run_collection(self, request_ids: list[str]) -> None:
         cases = self._collection_cases(request_ids)
@@ -1992,6 +2121,19 @@ class MainWindow(QMainWindow):
             self.workspace_store, endpoint, result,
             getattr(self, "_request_environment", self.app_settings.active_environment),
         )
+        # Posted before the early returns below, because those are exactly
+        # the cases where the user cannot see the response.
+        if not self._request_response_visible(endpoint):
+            status = int(getattr(result, "status_code", 0) or 0)
+            self.notifications.notify(
+                REQUEST,
+                self._endpoint_label(endpoint),
+                f"{status} · {'passed' if result.passed else 'failed'}"
+                if status
+                else ("passed" if result.passed else "failed"),
+                ok=bool(result.passed),
+                route={"endpoint_id": endpoint.id},
+            )
         if self.current_endpoint is None or self.current_endpoint.id != endpoint.id:
             return
         if self.app_settings.active_environment != getattr(
@@ -2014,7 +2156,50 @@ class MainWindow(QMainWindow):
             text, color = "No response", theme.FAIL
         self.response_section.show_outcome(text, color)
 
+    @staticmethod
+    def _endpoint_label(endpoint: Endpoint) -> str:
+        """Short "GET /brands" title used in notifications."""
+        return f"{endpoint.method} {endpoint.path}".strip()
+
+    def _saved_request_label(self, request_id: str, endpoint: Endpoint | None) -> str:
+        """The saved request's own name, falling back to its endpoint."""
+        request = self.saved_request_store.requests.get(request_id) if request_id else None
+        if request is not None and request.name:
+            return request.name
+        if endpoint is not None:
+            return self._endpoint_label(endpoint)
+        return "Saved request"
+
+    def _on_page(self, page: str) -> bool:
+        """Whether the named workspace page is the one currently on screen."""
+        item = self.navigation.currentItem()
+        return item is not None and item.toolTip() == page
+
+    def _request_response_visible(self, endpoint: Endpoint) -> bool:
+        """Whether the user can actually see this request's response land.
+
+        False when they moved to another workspace page, picked a different
+        endpoint, or switched environment -- the three ways a reply arrives
+        somewhere they are not looking.
+        """
+        if not self._on_page("API Explorer"):
+            return False
+        if self.current_endpoint is None or self.current_endpoint.id != endpoint.id:
+            return False
+        return self.app_settings.active_environment == getattr(
+            self, "_request_environment", self.app_settings.active_environment
+        )
+
     def _request_failed(self, message: str) -> None:
+        endpoint = getattr(self, "_request_endpoint", self.current_endpoint)
+        if endpoint is not None and not self._request_response_visible(endpoint):
+            self.notifications.notify(
+                REQUEST,
+                self._endpoint_label(endpoint),
+                message.strip().splitlines()[0] if message.strip() else "Request failed",
+                ok=False,
+                route={"endpoint_id": endpoint.id},
+            )
         self.response.show_error(message)
         self.response_section.show_outcome("Error", theme.FAIL)
 
@@ -2241,8 +2426,7 @@ class MainWindow(QMainWindow):
                 title="No matching endpoints",
                 guidance="No endpoint matches the current search, method, or scope filter.",
             )
-        state.setVisible(not any_visible)
-        state.raise_()
+        state.set_placeholder_visible(not any_visible)
 
     def _restore_shell_state(self) -> None:
         expanded = set(self.app_settings.expanded_nodes)
@@ -2291,40 +2475,91 @@ class MainWindow(QMainWindow):
         target = "light" if dark else "dark"
         self.theme_toggle_button.setToolTip(f"Turn the lights {'on' if dark else 'off'}")
         self.theme_toggle_button.setAccessibleName(f"Switch to {target} theme")
-        unread = max(0, len(activity_log) - self._notifications_seen)
+        unread = self.notifications.unread_count()
         if unread:
             self.notifications_button.setIcon(
                 badged_icon("bell", theme.TEXT_MUTED, theme.PRIMARY, 18)
             )
             self.notifications_button.setToolTip(
-                f"{unread} new authentication event{'s' if unread != 1 else ''}"
+                f"{unread} new notification{'s' if unread != 1 else ''}"
             )
         else:
             self.notifications_button.setIcon(icon("bell", theme.TEXT_MUTED, 18))
-            self.notifications_button.setToolTip("Recent authentication activity")
+            self.notifications_button.setToolTip("Notifications")
 
     def _populate_notifications_menu(self) -> None:
-        """Fills the bell menu from the shared authentication activity log."""
+        """Fills the bell with clickable entries that route back to the work."""
         menu = self.notifications_menu
         menu.clear()
-        entries = activity_log.entries()[:12]
+        entries = self.notifications.entries(12)
         if not entries:
-            empty = menu.addAction("No activity yet")
+            empty = menu.addAction("No notifications yet")
             empty.setEnabled(False)
         else:
             for entry in entries:
-                action = menu.addAction(f"{entry.when}   {entry.event} · {entry.profile}")
-                action.setToolTip(entry.summary() or entry.method)
-                action.setEnabled(False)
+                colour = theme.TEXT if entry.ok else theme.FAIL
+                action = menu.addAction(
+                    icon(entry.icon_name, colour, 16), entry.label()
+                )
+                action.setToolTip(entry.detail or entry.title)
+                action.triggered.connect(
+                    lambda _checked=False, item=entry: self._open_notification(item)
+                )
             menu.addSeparator()
-            menu.addAction("Clear activity", self._clear_notifications)
-        self._notifications_seen = len(activity_log)
+            menu.addAction("Clear notifications", self._clear_notifications)
+        self.notifications.mark_all_read()
         self._refresh_header_buttons()
 
     def _clear_notifications(self) -> None:
-        activity_log.clear()
-        self._notifications_seen = 0
+        self.notifications.clear()
         self._refresh_header_buttons()
+
+    def _navigate_to(self, page: str) -> bool:
+        """Selects a workspace page by its rail label. Returns success.
+
+        Matching on the label rather than a hard-coded row keeps routing
+        correct if the rail is ever reordered.
+        """
+        for row in range(self.navigation.count()):
+            if self.navigation.item(row).toolTip() == page:
+                self.navigation.setCurrentRow(row)
+                return True
+        return False
+
+    def _open_notification(self, entry: Notification) -> None:
+        """Takes the user back to the work a notification describes."""
+        route = entry.route
+        if entry.kind == REQUEST and route.get("page") == "Collections":
+            if self._navigate_to("Collections"):
+                request_id = str(route.get("request_id") or "")
+                if request_id:
+                    self.collections_page.focus_request(request_id)
+            return
+        if entry.kind == REQUEST:
+            if not self._navigate_to("API Explorer"):
+                return
+            endpoint_id = str(route.get("endpoint_id") or "")
+            item = self.endpoint_items.get(endpoint_id)
+            if item is not None:
+                # The service group may be collapsed, in which case selecting
+                # the row alone would leave nothing visible.
+                parent = item.parent()
+                while parent is not None:
+                    parent.setExpanded(True)
+                    parent = parent.parent()
+                self.endpoint_tree.setCurrentItem(item)
+                self.endpoint_tree.scrollToItem(item)
+            return
+        if entry.kind == DATA_RUNNER:
+            if self._navigate_to("Data Runner"):
+                self.data_runner_tab.show_results()
+            return
+        if entry.kind == LOAD_TEST:
+            if self._navigate_to("Load Studio"):
+                self.load_testing_tab.show_results()
+            return
+        if entry.kind == CATALOG:
+            self._navigate_to("API Explorer")
 
     def _theme_changed(self, name: str) -> None:
         theme.apply_theme(QApplication.instance(), name)
@@ -2348,6 +2583,8 @@ class MainWindow(QMainWindow):
         self.data_runner_tab.refresh_theme()
         self.load_testing_tab.refresh_theme()
         self.environment_page.refresh_theme()
+        self.saved_requests_page.refresh_theme()
+        self.collections_page.refresh_theme()
         self.response.refresh_theme()
         self.request_editor.refresh_theme()
         self.connection_pill.refresh_theme()
@@ -2378,6 +2615,7 @@ class MainWindow(QMainWindow):
         for probe in list(self._connection_probes):
             if probe.isRunning():
                 probe.wait(2000)
+        self.data_runner_tab.shutdown()
         super().closeEvent(event)
 
 

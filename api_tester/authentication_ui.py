@@ -55,7 +55,7 @@ from .authentication import (
 )
 from . import theme
 from .icons import icon
-from .widgets import form_caption
+from .widgets import form_caption, attach_table_empty_state
 
 
 #: Methods that identify a caller (bound as a service's "Identity"). API-key
@@ -585,6 +585,12 @@ class AuthenticationSettings(QWidget):
             self.bindings_table.setColumnWidth(column, width)
         self.bindings_table.verticalHeader().setVisible(False)
         self.bindings_table.verticalHeader().setDefaultSectionSize(36)
+        self.bindings_empty_state = attach_table_empty_state(
+            self.bindings_table,
+            icon_name="api-explorer",
+            title="No services to bind",
+            guidance="Load an API catalog to choose how each service authenticates.",
+        )
         layout.addWidget(self.bindings_table, 2)
 
         self.conflict_warning = QLabel()
@@ -791,6 +797,7 @@ class AuthenticationSettings(QWidget):
             button.setIcon(icon("renew", theme.TEXT, 16))
         for button in self._clear_buttons.values():
             button.setIcon(icon("sign-out", theme.FAIL, 16))
+        self.bindings_empty_state.refresh_theme()
 
     def changeEvent(self, event) -> None:  # noqa: N802 - Qt signature
         super().changeEvent(event)

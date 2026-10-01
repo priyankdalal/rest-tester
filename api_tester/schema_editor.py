@@ -46,7 +46,7 @@ from .catalog_builder import (
     operators_for,
 )
 from .icons import icon
-from .widgets import button_in_cell, cell_button
+from .widgets import button_in_cell, cell_button, attach_table_empty_state
 
 
 def _checkbox_cell(checked: bool, on_toggle: Callable[[], None]) -> QWidget:
@@ -352,6 +352,12 @@ class FilterFieldTable(QWidget):
         for index, width in enumerate((160, 160, 110, 130, 80, 80, 130, 130)):
             self.table.setColumnWidth(index, width)
         self.table.itemChanged.connect(self._name_edited)
+        self.empty_state = attach_table_empty_state(
+            self.table,
+            icon_name="filter",
+            title="No filterable fields",
+            guidance="Add a field to describe what this endpoint can filter and sort on.",
+        )
         layout.addWidget(self.table, 1)
 
         row = QHBoxLayout()
@@ -719,6 +725,12 @@ class PayloadFieldTable(QWidget):
         for index, width in enumerate((170, 160, 110, 150, 80, 80, 150)):
             self.table.setColumnWidth(index, width)
         self.table.itemChanged.connect(self._name_edited)
+        self.empty_state = attach_table_empty_state(
+            self.table,
+            icon_name="fields",
+            title="No payload fields",
+            guidance="Add a field to describe the request body this endpoint accepts.",
+        )
         layout.addWidget(self.table, 1)
 
         row = QHBoxLayout()

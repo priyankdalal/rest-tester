@@ -10,6 +10,9 @@ _SAMPLE_BYTES = 8192
 _COMMON_DELIMITERS = (",", ";", "\t", "|")
 _BOOLEAN_VALUES = {"true", "false", "1", "0", "yes", "no"}
 _AUTO_VALUES = {"", "auto"}
+# Counting accepted rows is a full sequential read, so it is bounded. Past the
+# cap the row total is reported as a lower bound and the UI says "or more".
+_DEFAULT_COUNT_LIMIT = 200_000
 
 
 @dataclass(frozen=True)
@@ -65,6 +68,9 @@ class CsvPreview:
     total_rows_sampled: int
     duplicate_row_count: int
     blank_row_count: int
+    row_offset: int = 0
+    total_rows_available: int = 0
+    total_is_exact: bool = True
 
 
 class _ColumnAccumulator:
@@ -128,7 +134,22 @@ class CsvSource:
         self.settings = settings
         self._cached_total_row_count: int | None = None
 
-    def preview(self, *, sample_rows: int = 50, profile_scan_rows: int = 2000) -> CsvPreview:
+    def preview(
+        self,
+        *,
+        sample_rows: int = 50,
+        row_offset: int = 0,
+        profile_scan_rows: int = 2000,
+        count_limit: int = _DEFAULT_COUNT_LIMIT,
+    ) -> CsvPreview:
+        """Reads one window of accepted rows plus file-level statistics.
+
+        ``row_offset`` selects the window, which is what lets the UI page
+        through a large file without holding it in memory. Profiling and the
+        blank/duplicate tallies stay tied to the first ``profile_scan_rows``
+        accepted-or-blank rows so they describe the file consistently
+        regardless of which page is being viewed.
+        """
         columns, raw_rows = self._open_row_iterator()
         accumulators = [_ColumnAccumulator(name) for name in columns]
         preview_rows: list[dict[str, str]] = []
@@ -136,6 +157,8 @@ class CsvSource:
         duplicate_row_count = 0
         blank_row_count = 0
         accepted_count = 0
+        total_is_exact = True
+        window_end = row_offset + sample_rows
         seen_signatures: set[tuple[str, ...]] = set()
 
         try:
@@ -146,28 +169,30 @@ class CsvSource:
                 if not (self.settings.skip_blank_rows and is_blank):
                     if self.settings.max_rows is not None and accepted_count >= self.settings.max_rows:
                         break
-                if total_rows_sampled >= profile_scan_rows:
-                    break
 
-                total_rows_sampled += 1
-                if is_blank:
-                    blank_row_count += 1
+                if total_rows_sampled < profile_scan_rows:
+                    total_rows_sampled += 1
+                    if is_blank:
+                        blank_row_count += 1
 
-                row_signature = tuple(row_dict.get(column, "") for column in columns)
-                if row_signature in seen_signatures:
-                    duplicate_row_count += 1
-                else:
-                    seen_signatures.add(row_signature)
+                    row_signature = tuple(row_dict.get(column, "") for column in columns)
+                    if row_signature in seen_signatures:
+                        duplicate_row_count += 1
+                    else:
+                        seen_signatures.add(row_signature)
 
-                for accumulator in accumulators:
-                    accumulator.add(row_dict.get(accumulator.name, ""))
+                    for accumulator in accumulators:
+                        accumulator.add(row_dict.get(accumulator.name, ""))
 
                 if self.settings.skip_blank_rows and is_blank:
                     continue
 
-                accepted_count += 1
-                if len(preview_rows) < sample_rows:
+                if row_offset <= accepted_count < window_end:
                     preview_rows.append(dict(row_dict))
+                accepted_count += 1
+                if accepted_count >= count_limit:
+                    total_is_exact = False
+                    break
         finally:
             raw_rows.close()
 
@@ -178,6 +203,9 @@ class CsvSource:
             total_rows_sampled=total_rows_sampled,
             duplicate_row_count=duplicate_row_count,
             blank_row_count=blank_row_count,
+            row_offset=row_offset,
+            total_rows_available=accepted_count,
+            total_is_exact=total_is_exact,
         )
 
     def iter_rows(self) -> Iterator[tuple[int, dict[str, str]]]:

@@ -63,7 +63,7 @@ from .schema_editor import (
     PayloadFieldTable,
     ValueListWidget,
 )
-from .widgets import button_in_cell, cell_button, form_caption
+from .widgets import button_in_cell, cell_button, form_caption, attach_table_empty_state
 
 
 NODE_KIND = Qt.ItemDataRole.UserRole
@@ -157,6 +157,12 @@ class ScanServiceDialog(QDialog):
         )
         self.preview.setColumnWidth(0, 240)
         self.preview.setColumnWidth(1, 70)
+        attach_table_empty_state(
+            self.preview,
+            icon_name="search",
+            title="Nothing scanned yet",
+            guidance="Choose a folder and project type, then scan to preview endpoints.",
+        )
         layout.addWidget(self.preview, 1)
 
         self.status = QLabel("Choose a folder and project type, then scan.")
@@ -403,6 +409,12 @@ class ParameterTable(QWidget):
         self.table.setColumnWidth(3, 80)
         self.table.setColumnWidth(4, 150)
         self.table.itemChanged.connect(lambda _: self.changed.emit())
+        self.empty_state = attach_table_empty_state(
+            self.table,
+            icon_name="fields",
+            title="No parameters",
+            guidance="Add a parameter to describe what this endpoint accepts.",
+        )
         layout.addWidget(self.table, 1)
 
         row = QHBoxLayout()
@@ -631,6 +643,12 @@ class CatalogBuilderWindow(QMainWindow):
         self.tree.setMinimumWidth(280)
         self.tree.currentItemChanged.connect(lambda *_: self._selection_changed())
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
+        attach_table_empty_state(
+            self.tree,
+            icon_name="api-explorer",
+            title="Catalog is empty",
+            guidance="Scan a project or add a service to start building the catalog.",
+        )
         splitter.addWidget(self.tree)
 
         self.editor = QStackedWidget()

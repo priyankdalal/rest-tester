@@ -36,6 +36,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSpinBox,
     QTableWidget,
@@ -57,7 +58,7 @@ from api_tester.execution.persistence import RunStore
 from api_tester.icons import icon, solid_icon
 from api_tester.seeding import refresh_payload, seed_parameter
 from api_tester.viewers import JsonTextEdit
-from api_tester.widgets import AccordionScrollArea, attach_table_empty_state
+from api_tester.widgets import AccordionScrollArea, ResponsiveTwoColumn, attach_table_empty_state
 
 from .engine import LoadEngine, LoadRunOptions, LoadRunSummary
 from .planner import LoadPlan, build_plan
@@ -80,6 +81,10 @@ _OUTCOME_COLORS = {
     "INCONCLUSIVE": theme.WARN,
     "RUNNING": theme.TEXT,
 }
+
+#: Stage-table column widths for Kind, Duration, Start users, End users and
+#: Think time. Label is the stretch column and so is omitted.
+_STAGE_COLUMN_WIDTHS = (130, 120, 120, 120, 140)
 
 
 def _icon_button(
@@ -135,6 +140,9 @@ class LoadTestingTab(QWidget):
     callable) so it is unit testable in isolation and wired into the main
     shell with a couple of lines.
     """
+
+    #: Emitted when a load run stops, as ``(title, detail, ok)``.
+    run_completed = pyqtSignal(str, str, bool)
 
     def __init__(
         self,
@@ -240,6 +248,14 @@ class LoadTestingTab(QWidget):
         for index, icon_name in enumerate(tab_icons):
             self.results_tabs.setTabIcon(index, icon(icon_name, theme.TEXT_MUTED, 15))
 
+    def show_results(self) -> None:
+        """Brings the "Live & Results" step forward.
+
+        Used when a bell notification routes the user back to a load run
+        that finished while they were working somewhere else.
+        """
+        self.steps.setCurrentIndex(3)
+
     def _stepper_clicked(self, index: int) -> None:
         self.steps.setCurrentIndex(index)
 
@@ -318,6 +334,12 @@ class LoadTestingTab(QWidget):
         self.parameters_table.verticalHeader().setVisible(False)
         self.parameters_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         self.parameters_table.setMinimumHeight(180)
+        attach_table_empty_state(
+            self.parameters_table,
+            icon_name="fields",
+            title="No request values",
+            guidance="Choose an endpoint that takes path, query or form parameters.",
+        )
         params_layout.addWidget(self.parameters_table)
         self.request_values_section = accordion.add_section(
             "Request values",
@@ -375,11 +397,22 @@ class LoadTestingTab(QWidget):
             ["Kind", "Duration (s)", "Start users", "End users", "Think time (ms)", "Label"]
         )
         self.stages_table.verticalHeader().setVisible(False)
-        self.stages_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
+        header = self.stages_table.horizontalHeader()
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
+        # Qt's 100px default clipped the Kind combo and elided the numeric
+        # headers; these sizes come from the header and editor content widths.
+        for column, width in enumerate(_STAGE_COLUMN_WIDTHS):
+            self.stages_table.setColumnWidth(column, width)
         self.stages_table.setObjectName("roomyEditorTable")
         self.stages_table.verticalHeader().setDefaultSectionSize(theme.ROOMY_ROW_HEIGHT)
         self.stages_table.setMinimumHeight(330)
         self.stages_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        attach_table_empty_state(
+            self.stages_table,
+            icon_name="chart",
+            title="No stages yet",
+            guidance="Add a stage, or reset to the default ramp, to shape the load.",
+        )
         stages_layout.addWidget(self.stages_table)
 
         self.stage_totals_label = QLabel("")
@@ -600,6 +633,7 @@ class LoadTestingTab(QWidget):
 
     def _build_safety_page(self) -> QWidget:
         page = QWidget()
+        page.setProperty("transparentPane", True)
         layout = QVBoxLayout(page)
 
         limits_box = QGroupBox("Safety limits")
@@ -664,7 +698,6 @@ class LoadTestingTab(QWidget):
         self.auth_failure_stop_checkbox = QCheckBox("Stop immediately on any authentication failure")
         self.auth_failure_stop_checkbox.setChecked(True)
         form.addRow(self.auth_failure_stop_checkbox)
-        layout.addWidget(limits_box)
 
         thresholds_box = QGroupBox("Pass/fail thresholds (evaluated against the final metrics snapshot)")
         thresholds_layout = QVBoxLayout(thresholds_box)
@@ -682,10 +715,29 @@ class LoadTestingTab(QWidget):
         self.thresholds_table.setHorizontalHeaderLabels(["Metric", "Operator", "Target", "Label"])
         self.thresholds_table.verticalHeader().setVisible(False)
         self.thresholds_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        # Every row but the last holds an inline editor, so it needs the roomy
+        # row height or the combo boxes and spin box clip against the grid line.
+        self.thresholds_table.setObjectName("roomyEditorTable")
+        self.thresholds_table.verticalHeader().setDefaultSectionSize(theme.ROOMY_ROW_HEIGHT)
+        attach_table_empty_state(
+            self.thresholds_table,
+            icon_name="verify",
+            title="No thresholds yet",
+            guidance="Add a threshold to make the run pass or fail on a metric.",
+        )
         thresholds_layout.addWidget(self.thresholds_table)
-        layout.addWidget(thresholds_box, 1)
 
-        return page
+        self.safety_columns = ResponsiveTwoColumn(limits_box, thresholds_box, min_pane_width=420)
+        layout.addWidget(self.safety_columns, 1)
+
+        # Stacked, the two boxes are taller than the step page, so the page
+        # scrolls rather than clipping the lower one.
+        scroller = QScrollArea()
+        scroller.setObjectName("accordionScroll")
+        scroller.setWidgetResizable(True)
+        scroller.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroller.setWidget(page)
+        return scroller
 
     def _add_threshold_row(
         self, *, metric: str = "p95_ms", operator: str = "<=", target: float = 1000.0, label: str = ""
@@ -1228,12 +1280,18 @@ class LoadTestingTab(QWidget):
     def _build_endpoint_tab(self) -> QWidget:
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        self.endpoint_metrics_table = QTableWidget(1, 8)
+        self.endpoint_metrics_table = QTableWidget(0, 8)
         self.endpoint_metrics_table.setHorizontalHeaderLabels(
             ["Endpoint", "Requests", "Passed", "Failed", "P50", "P95", "P99", "Throughput"]
         )
         self.endpoint_metrics_table.verticalHeader().setVisible(False)
         self.endpoint_metrics_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        attach_table_empty_state(
+            self.endpoint_metrics_table,
+            icon_name="chart",
+            title="No endpoint metrics yet",
+            guidance="Run a load test to see this endpoint's latency and throughput.",
+        )
         layout.addWidget(self.endpoint_metrics_table)
         return tab
 
@@ -1308,9 +1366,7 @@ class LoadTestingTab(QWidget):
         self.throughput_chart.clear()
         self.latency_chart.clear()
         self.recent_errors_table.setRowCount(0)
-        self.endpoint_metrics_table.setRowCount(1)
-        for column in range(self.endpoint_metrics_table.columnCount()):
-            self.endpoint_metrics_table.setItem(0, column, QTableWidgetItem("—"))
+        self.endpoint_metrics_table.setRowCount(0)
         self.latency_summary_label.setText("min – / mean – / p50 – / p95 – / p99 – / max –")
         for card in self.stat_cards.values():
             card.set_value("–")
@@ -1456,6 +1512,8 @@ class LoadTestingTab(QWidget):
             f"{p99:.0f} ms",
             f"{throughput:.1f} rps",
         )
+        if self.endpoint_metrics_table.rowCount() == 0:
+            self.endpoint_metrics_table.setRowCount(1)
         for column, value in enumerate(endpoint_values):
             self.endpoint_metrics_table.setItem(0, column, QTableWidgetItem(value))
 
@@ -1537,12 +1595,19 @@ class LoadTestingTab(QWidget):
         self._set_live_status(summary.outcome, summary.outcome.lower())
         self._render_final_report(summary)
         self.results_tabs.setCurrentIndex(self.results_tabs.count() - 1)
+        self.run_completed.emit(
+            "Load test finished",
+            f"{summary.outcome} — {summary.total_requests:,} requests, "
+            f"{summary.failed:,} failed",
+            summary.failed == 0 and summary.errored == 0,
+        )
 
     def _run_failed(self, message: str) -> None:
         self._event_timer.stop()
         self.run_status_label.setText("Load test failed.")
         self.run_status_label.setStyleSheet(f"color: {theme.FAIL}; font-weight: 600;")
         self._set_live_status("FAILED", "fail")
+        self.run_completed.emit("Load test failed", message.strip(), False)
         QMessageBox.warning(self, "Load Testing Studio failed", message)
 
     def _cleanup_thread(self) -> None:

@@ -25,9 +25,12 @@ BORDER_STRONG = "#b9cae0"
 TEXT = "#173052"
 TEXT_MUTED = "#65758b"
 TEXT_INVERSE = "#ffffff"
-#: Row height for tables whose cells are mostly inline editors: the default
-#: 30px plus 5px, paired with the ``#roomyEditorTable`` stylesheet rule.
-ROOMY_ROW_HEIGHT = 35
+#: Row height for tables whose cells are mostly inline editors. Derived, not
+#: guessed: the ``#roomyEditorTable`` editors resolve to 29px tall (21px of
+#: content plus padding and border), ``QTableWidget::item`` insets every cell
+#: by 5px top and bottom, and the row contributes a 1px grid line — so
+#: anything under 40 clips the editor against the row boundary.
+ROOMY_ROW_HEIGHT = 40
 
 # Accents
 PRIMARY = "#0878f9"
@@ -994,6 +997,10 @@ QTableCornerButton::section {{
     border-right: 1px solid {BORDER};
     border-bottom: 1px solid {BORDER};
 }}
+/* ``outline: none`` suppresses the dotted focus rectangle the style paints
+   around the *current* item. Without it every clicked cell gained a dark
+   1px dashed box on top of the selection fill, which read as a stray black
+   border. The selection background is the only current-item cue we want. */
 QTableWidget, QTableView, QTreeWidget, QTreeView, QListWidget, QListView {{
     background-color: {SURFACE};
     color: {TEXT};
@@ -1003,6 +1010,7 @@ QTableWidget, QTableView, QTreeWidget, QTreeView, QListWidget, QListView {{
     selection-background-color: {SELECT_SOFT};
     selection-color: {SELECT_SOFT_TEXT};
     gridline-color: transparent;
+    outline: none;
 }}
 QTreeWidget::item, QListWidget::item, QTableWidget::item {{
     min-height: 24px;
@@ -1135,6 +1143,14 @@ QLabel#endpointMethodPill[method="DELETE"] {{
     color: {METHOD_DELETE_TEXT};
     border-color: {METHOD_DELETE_BORDER};
 }}
+/* The base rule above is GET's colouring, so a pill whose method could not be
+   resolved would otherwise be indistinguishable from a real GET. Neutral
+   grey keeps the unresolved state honest. */
+QLabel#endpointMethodPill[method="N/A"] {{
+    background-color: {SURFACE_ALT};
+    color: {TEXT_MUTED};
+    border-color: {BORDER};
+}}
 QLabel#endpointTreeAction {{
     background: transparent;
     color: {TEXT};
@@ -1146,6 +1162,165 @@ QWidget#endpointTreeRow[selected="true"] QLabel#endpointTreeAction {{
 QLabel#endpointTreePath {{
     background: transparent;
     color: {TEXT_MUTED};
+}}
+/* Saved request rows. The method pill is the shared #endpointMethodPill, so
+   only the three text lines need their own treatment: a prominent name, a
+   muted URL, and smaller dimmer identifiers. */
+/* The shared QListWidget::item padding would inset a row widget and clip its
+   bottom line, so a list of row widgets opts out and lets the row's own
+   margins control spacing. Property-based so any such list can reuse it. */
+QListWidget[rowWidgetList="true"]::item {{
+    padding: 0;
+    min-height: 0;
+}}
+QWidget#savedRequestRow {{
+    background: transparent;
+}}
+QLabel#savedRequestName {{
+    background: transparent;
+    color: {TEXT};
+    font-weight: 600;
+}}
+QLabel#savedRequestName[missing="true"] {{
+    color: {FAIL};
+}}
+QLabel#savedRequestUrl {{
+    background: transparent;
+    color: {TEXT_MUTED};
+}}
+QLabel#savedRequestUrl[missing="true"] {{
+    color: {FAIL};
+    font-style: italic;
+}}
+QLabel#savedRequestIds {{
+    background: transparent;
+    color: {TEXT_MUTED};
+    font-size: 11px;
+}}
+QLabel#savedRequestUsed {{
+    background: transparent;
+    color: {TEXT_MUTED};
+    font-size: 11px;
+}}
+QLabel#savedRequestDot {{
+    background-color: {BORDER_STRONG};
+    border-radius: 5px;
+}}
+QLabel#savedRequestDot[state="pass"] {{ background-color: {PASS}; }}
+QLabel#savedRequestDot[state="fail"] {{ background-color: {FAIL}; }}
+QWidget#collectionRow {{
+    background: transparent;
+}}
+QLabel#collectionFolderIcon {{
+    background: transparent;
+}}
+QLabel#collectionName {{
+    background: transparent;
+    color: {TEXT};
+    font-weight: 600;
+}}
+QLabel#collectionCount {{
+    background: transparent;
+    color: {TEXT_MUTED};
+    font-size: 11px;
+}}
+QLabel#collectionCount[warn="true"] {{
+    color: {WARN};
+}}
+QLabel#collectionMeta {{
+    background: transparent;
+    color: {TEXT_MUTED};
+    font-size: 11px;
+}}
+QWidget#listPane {{
+    background-color: {SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: 8px;
+}}
+QWidget#listPaneHeader {{
+    background-color: {SURFACE_ALT};
+    border: none;
+    border-bottom: 1px solid {BORDER};
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+}}
+QLabel#listPaneTitle {{
+    background: transparent;
+    color: {TEXT};
+    font-weight: 600;
+}}
+QLabel#listPaneCount {{
+    background-color: {BACKGROUND};
+    border: 1px solid {BORDER};
+    border-radius: 9px;
+    color: {TEXT_MUTED};
+    font-size: 11px;
+    min-width: 18px;
+    padding: 1px 6px;
+}}
+QWidget#listPane QListWidget {{
+    background: transparent;
+    border: none;
+}}
+QWidget#miniHandler {{
+    background-color: {SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: 8px;
+}}
+QPushButton#miniHandlerClose {{
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+}}
+QPushButton#miniHandlerClose:hover {{
+    background-color: {BACKGROUND};
+    border-color: {BORDER};
+}}
+QLabel#miniHandlerUrl {{
+    background: transparent;
+    color: {TEXT_MUTED};
+}}
+QLabel#miniHandlerCaption {{
+    background: transparent;
+    color: {TEXT_MUTED};
+    font-size: 11px;
+    font-weight: 600;
+}}
+QLabel#miniHandlerError {{
+    background: transparent;
+    color: {FAIL};
+    font-size: 11px;
+}}
+QPlainTextEdit#miniHandlerEditor {{
+    background-color: {BACKGROUND};
+    border: 1px solid {BORDER};
+    border-radius: 6px;
+    color: {TEXT};
+    padding: 6px;
+}}
+QLabel#miniHandlerChip {{
+    background-color: {BACKGROUND};
+    border: 1px solid {BORDER};
+    border-radius: 9px;
+    color: {TEXT_MUTED};
+    font-size: 11px;
+    padding: 2px 8px;
+}}
+QLabel#miniHandlerStatus {{
+    border: 1px solid {BORDER};
+    border-radius: 9px;
+    color: {TEXT_INVERSE};
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+}}
+QLabel#miniHandlerStatus[state="pass"] {{
+    background-color: {PASS};
+    border-color: {PASS};
+}}
+QLabel#miniHandlerStatus[state="fail"] {{
+    background-color: {FAIL};
+    border-color: {FAIL};
 }}
 QToolButton#endpointActionMenu {{
     background: transparent;
@@ -1204,15 +1379,6 @@ QWidget#tableEmptyState {{
     border: 1px solid {BORDER};
     border-radius: 6px;
 }}
-QLabel#emptyStateTitle {{
-    color: {TEXT};
-    font-size: 11pt;
-    font-weight: 600;
-}}
-QLabel#emptyStateDescription {{
-    color: {TEXT_MUTED};
-    font-size: 9pt;
-}}
 QWidget#emptyState {{
     background-color: {SURFACE_ALT};
     border: 1px solid {BORDER};
@@ -1238,6 +1404,73 @@ QLabel[emptyStateGuidance="true"] {{
 }}
 QPushButton[emptyStateAction="true"] {{
     margin-top: 4px;
+}}
+
+/* Pagination — the split pill used by every pager in the app. Prev is a ghost
+   button, Next carries the primary fill as the forward action.
+   The per-button rules repeat the ``QWidget#pager`` ancestor: without it the
+   descendant rule above outranks them on CSS specificity and Next loses its
+   fill. */
+QWidget#pager {{
+    background-color: {SURFACE};
+    border: 1px solid {BORDER_STRONG};
+    border-radius: 16px;
+}}
+QWidget#pager QPushButton {{
+    background-color: transparent;
+    border: none;
+    padding: 0px;
+    /* The global QPushButton rule pins every button to 22px tall and adds
+       padding; the pager's buttons must instead fill the pill so the primary
+       Next reaches its rounded edge. These metrics mirror Pager._CONTROL_HEIGHT
+       and Pager._BUTTON_WIDTH — a bare ``min-width: 0`` here would let the
+       layout squeeze the chevrons down to their icon size. */
+    min-width: 34px;
+    max-width: 34px;
+    min-height: 30px;
+    max-height: 30px;
+}}
+QWidget#pager QPushButton#pagerPrev {{
+    background-color: {PRIMARY};
+    border-top-left-radius: 15px;
+    border-bottom-left-radius: 15px;
+    /* The global QPushButton rule rounds all four corners; the inner edge must
+       stay square so the filled end butts flush against the page box. */
+    border-top-right-radius: 0px;
+    border-bottom-right-radius: 0px;
+}}
+QWidget#pager QPushButton#pagerPrev:hover:enabled {{ background-color: {PRIMARY_HOVER}; }}
+QWidget#pager QPushButton#pagerPrev:pressed:enabled {{ background-color: {PRIMARY_PRESSED}; }}
+QWidget#pager QPushButton#pagerPrev:disabled {{ background-color: {SURFACE_ALT}; }}
+QWidget#pager QPushButton#pagerNext {{
+    background-color: {PRIMARY};
+    border-top-right-radius: 15px;
+    border-bottom-right-radius: 15px;
+    border-top-left-radius: 0px;
+    border-bottom-left-radius: 0px;
+}}
+QWidget#pager QPushButton#pagerNext:hover:enabled {{ background-color: {PRIMARY_HOVER}; }}
+QWidget#pager QPushButton#pagerNext:pressed:enabled {{ background-color: {PRIMARY_PRESSED}; }}
+QWidget#pager QPushButton#pagerNext:disabled {{ background-color: {SURFACE_ALT}; }}
+QWidget#pager QLineEdit#pagerPage {{
+    background-color: transparent;
+    border: none;
+    border-radius: 0px;
+    color: {TEXT};
+    font-weight: 700;
+    padding: 0px;
+    min-height: 30px;
+    max-height: 30px;
+}}
+QWidget#pager QLineEdit#pagerPage:focus {{
+    background-color: {HOVER_SOFT};
+}}
+QWidget#pager QLabel#pagerTotal {{
+    background-color: transparent;
+    border: none;
+    color: {TEXT_MUTED};
+    padding-left: 2px;
+    padding-right: 10px;
 }}
 
 QSplitter::handle {{ background-color: transparent; }}
@@ -1389,6 +1622,13 @@ QLabel#dataRunnerContextCardTitle {{
     font-size: 8pt;
     font-weight: 600;
     letter-spacing: 0.4px;
+}}
+/* Plain layout containers that sit on a card or group-box surface: without this
+   they inherit the global QWidget background and paint a grey block. The
+   property form is set automatically on every AccordionSection content pane. */
+QWidget#dataRunnerTransparentPane,
+QWidget[transparentPane="true"] {{
+    background-color: transparent;
 }}
 QLabel#dataRunnerWriteWarning {{
     background-color: {SURFACE_ALT};

@@ -77,14 +77,17 @@ CREATE TABLE IF NOT EXISTS saved_requests(
     expected_status TEXT DEFAULT '200-299',
     authentication TEXT DEFAULT 'inherit',
     created_at TEXT,
-    updated_at TEXT
+    updated_at TEXT,
+    last_used_at TEXT,
+    last_status TEXT
 );
 
 CREATE TABLE IF NOT EXISTS request_collections(
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     created_at TEXT,
-    updated_at TEXT
+    updated_at TEXT,
+    last_used_at TEXT
 );
 
 -- A collection is an ordered list that may repeat a request, so the
@@ -130,6 +133,34 @@ class WorkspaceStore:
     def initialize(self) -> None:
         with self._lock:
             self._connection.executescript(_SCHEMA)
+            self._connection.commit()
+        self._add_missing_columns()
+
+    #: Columns introduced after the first release. ``CREATE TABLE IF NOT
+    #: EXISTS`` leaves an existing table untouched, so a database created by
+    #: an older build would keep the old shape and every read of these
+    #: columns would raise. They are all nullable with no default, which is
+    #: the only kind of column SQLite can add in place.
+    _ADDED_COLUMNS = (
+        ("saved_requests", "last_used_at", "TEXT"),
+        ("saved_requests", "last_status", "TEXT"),
+        ("request_collections", "last_used_at", "TEXT"),
+    )
+
+    def _add_missing_columns(self) -> None:
+        with self._lock:
+            for table, column, declared_type in self._ADDED_COLUMNS:
+                existing = {
+                    row["name"]
+                    for row in self._connection.execute(
+                        f"PRAGMA table_info({table})"
+                    ).fetchall()
+                }
+                if not existing or column in existing:
+                    continue
+                self._connection.execute(
+                    f"ALTER TABLE {table} ADD COLUMN {column} {declared_type}"
+                )
             self._connection.commit()
 
     def close(self) -> None:
@@ -286,6 +317,8 @@ class WorkspaceStore:
                     "authentication": row["authentication"] or "inherit",
                     "created_at": row["created_at"] or "",
                     "updated_at": row["updated_at"] or "",
+                    "last_used_at": row["last_used_at"] or "",
+                    "last_status": row["last_status"] or "",
                 }
             )
         return records
@@ -296,14 +329,17 @@ class WorkspaceStore:
             self._connection.execute(
                 "INSERT INTO saved_requests(id, endpoint_id, name, values_json,"
                 " payload_json, expected_status, authentication, created_at,"
-                " updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                " updated_at, last_used_at, last_status)"
+                " VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 " ON CONFLICT(id) DO UPDATE SET"
                 " endpoint_id=excluded.endpoint_id, name=excluded.name,"
                 " values_json=excluded.values_json,"
                 " payload_json=excluded.payload_json,"
                 " expected_status=excluded.expected_status,"
                 " authentication=excluded.authentication,"
-                " updated_at=excluded.updated_at",
+                " updated_at=excluded.updated_at,"
+                " last_used_at=excluded.last_used_at,"
+                " last_status=excluded.last_status",
                 (
                     str(record["id"]),
                     str(record.get("endpoint_id") or ""),
@@ -314,7 +350,44 @@ class WorkspaceStore:
                     str(record.get("authentication") or "inherit"),
                     str(record.get("created_at") or _now()),
                     str(record.get("updated_at") or _now()),
+                    str(record.get("last_used_at") or ""),
+                    str(record.get("last_status") or ""),
                 ),
+            )
+            self._connection.commit()
+
+    def touch_saved_request(
+        self, request_id: str, *, timestamp: str = "", passed: bool | None = None
+    ) -> None:
+        """Records that a saved request was just run.
+
+        Kept separate from :meth:`upsert_saved_request` so recording a run
+        cannot rewrite the user's payload, and so a run started from a stale
+        in-memory copy cannot resurrect old field values.
+        """
+        status = None if passed is None else ("pass" if passed else "fail")
+        with self._lock:
+            if status is None:
+                # Preserve the recorded outcome: merely opening a request is
+                # not a run, and must not erase the result of the last one.
+                self._connection.execute(
+                    "UPDATE saved_requests SET last_used_at = ? WHERE id = ?",
+                    (timestamp or _now(), str(request_id)),
+                )
+            else:
+                self._connection.execute(
+                    "UPDATE saved_requests SET last_used_at = ?, last_status = ?"
+                    " WHERE id = ?",
+                    (timestamp or _now(), status, str(request_id)),
+                )
+            self._connection.commit()
+
+    def touch_collection(self, collection_id: str, *, timestamp: str = "") -> None:
+        """Records that a collection was just run."""
+        with self._lock:
+            self._connection.execute(
+                "UPDATE request_collections SET last_used_at = ? WHERE id = ?",
+                (timestamp or _now(), str(collection_id)),
             )
             self._connection.commit()
 
@@ -350,6 +423,7 @@ class WorkspaceStore:
                 "request_ids": ordered.get(row["id"], []),
                 "created_at": row["created_at"] or "",
                 "updated_at": row["updated_at"] or "",
+                "last_used_at": row["last_used_at"] or "",
             }
             for row in rows
         ]
@@ -359,15 +433,17 @@ class WorkspaceStore:
         request_ids = [str(item) for item in record.get("request_ids") or []]
         with self._lock:
             self._connection.execute(
-                "INSERT INTO request_collections(id, name, created_at, updated_at)"
-                " VALUES(?, ?, ?, ?)"
+                "INSERT INTO request_collections(id, name, created_at, updated_at,"
+                " last_used_at) VALUES(?, ?, ?, ?, ?)"
                 " ON CONFLICT(id) DO UPDATE SET name=excluded.name,"
-                " updated_at=excluded.updated_at",
+                " updated_at=excluded.updated_at,"
+                " last_used_at=excluded.last_used_at",
                 (
                     collection_id,
                     str(record.get("name") or "Collection"),
                     str(record.get("created_at") or _now()),
                     str(record.get("updated_at") or _now()),
+                    str(record.get("last_used_at") or ""),
                 ),
             )
             # Rewriting the membership wholesale keeps position contiguous

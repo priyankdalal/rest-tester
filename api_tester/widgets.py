@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable
 import math
 
+from PyQt6 import sip
+
 from PyQt6.QtCore import (
     QAbstractAnimation,
     QEasingCurve,
@@ -16,10 +18,19 @@ from PyQt6.QtCore import (
     QVariantAnimation,
     pyqtSignal,
 )
-from PyQt6.QtGui import QColor, QFont, QFontMetrics, QIcon, QPainter, QPainterPath
+from PyQt6.QtGui import (
+    QColor,
+    QFont,
+    QFontMetrics,
+    QIcon,
+    QIntValidator,
+    QPainter,
+    QPainterPath,
+)
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QBoxLayout,
     QComboBox,
     QDialog,
     QFrame,
@@ -28,6 +39,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QListWidgetItem,
     QListWidget,
     QPushButton,
@@ -183,8 +195,14 @@ class EmptyStateWidget(QWidget):
         super().__init__(parent)
         self.setObjectName("emptyState")
         self._icon_name = ""
+        self._palette_version = theme.PALETTE_VERSION
         layout = QVBoxLayout(self)
-        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(6)
+        # Stretches rather than AlignCenter: a centred layout sizes every child
+        # to its size hint, which makes the word-wrapped guidance break far
+        # earlier than the available width.
+        layout.addStretch()
         self.icon_label = QLabel()
         self.icon_label.setObjectName("emptyStateIcon")
         self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -202,6 +220,7 @@ class EmptyStateWidget(QWidget):
         self.action_button.setProperty("emptyStateAction", True)
         self.action_button.setVisible(False)
         layout.addWidget(self.action_button, 0, Qt.AlignmentFlag.AlignHCenter)
+        layout.addStretch()
 
     def set_content(
         self,
@@ -229,25 +248,49 @@ class EmptyStateWidget(QWidget):
 
     def refresh_theme(self) -> None:
         """Repaints the glyph in the active palette's muted text colour."""
+        self._palette_version = theme.PALETTE_VERSION
         if self._icon_name:
             self.icon_label.setPixmap(
                 icon(self._icon_name, theme.TEXT_MUTED, 32).pixmap(32, 32)
             )
 
+    def changeEvent(self, event) -> None:
+        # Re-tints without the owning page needing a refresh_theme hook: a theme
+        # switch restyles the whole app, which delivers StyleChange here.
+        if event.type() in (QEvent.Type.StyleChange, QEvent.Type.PaletteChange):
+            if self._palette_version != theme.PALETTE_VERSION:
+                self.refresh_theme()
+        super().changeEvent(event)
+
 
 class TableEmptyState(EmptyStateWidget):
     """An empty state overlaid on an item view, shown whenever it has no rows.
 
-    Attaching to the viewport rather than replacing the view in its layout
-    keeps the header row visible, so the user can still see what the columns
-    will be, and avoids restructuring every page that owns a table. Works for
-    any ``QAbstractItemView`` - tables and trees alike - because it only needs
-    the viewport and the model's top-level row count.
+    While the view is empty its headers are hidden, so every empty table in
+    the app reads as one centred placeholder card instead of a column strip
+    above a blank area. The headers come back as soon as rows arrive. Works
+    for any ``QAbstractItemView`` - tables and trees alike - because it only
+    needs the viewport and the model's top-level row count.
     """
 
     def __init__(self, table: QAbstractItemView) -> None:
         super().__init__(table.viewport())
         self._table = table
+        self._headers = [
+            header
+            for header in (
+                getattr(table, "horizontalHeader", lambda: None)(),
+                getattr(table, "verticalHeader", lambda: None)(),
+                getattr(table, "header", lambda: None)(),
+            )
+            if header is not None
+        ]
+        # Only headers the owner already shows may be restored, so hiding the
+        # placeholder never reveals a header a page deliberately turned off.
+        # ``isHidden`` rather than ``isVisible``: the view is usually still
+        # unshown while being built, so ``isVisible`` is False for every
+        # header at this point and nothing would ever be restored.
+        self._restorable = [header for header in self._headers if not header.isHidden()]
         # Styled flat: the view already draws the frame, and a rounded card
         # inside a square viewport leaves notched corners under the header.
         self.setProperty("tableOverlay", True)
@@ -268,10 +311,26 @@ class TableEmptyState(EmptyStateWidget):
             self.setGeometry(self._table.viewport().rect())
         return super().eventFilter(source, event)
 
+    def set_placeholder_visible(self, visible: bool) -> None:
+        """Shows or hides the placeholder, hiding the headers along with it.
+
+        For views whose emptiness the row count cannot express - a filtered
+        tree still holds its rows - the owner drives visibility through here
+        so the headers follow the same rule as a genuinely empty view.
+        """
+        for header in self._restorable:
+            if not sip.isdeleted(header):
+                header.setVisible(not visible)
+        if visible:
+            self.setGeometry(self._table.viewport().rect())
+            self.raise_()
+        self.setVisible(visible)
+
     def _sync(self) -> None:
+        if sip.isdeleted(self) or sip.isdeleted(self._table):
+            return
         self.setGeometry(self._table.viewport().rect())
-        self.setVisible(self._table.model().rowCount() == 0)
-        self.raise_()
+        self.set_placeholder_visible(self._table.model().rowCount() == 0)
 
 
 class OverlayEmptyState(EmptyStateWidget):
@@ -576,6 +635,11 @@ class AccordionSection(QFrame):
         self.body.setObjectName("accordionBody")
         body_layout = QVBoxLayout(self.body)
         body_layout.setContentsMargins(12, 10, 12, 12)
+        # A plain layout container inherits the global QWidget background and
+        # would paint a grey block over the card. Only bare QWidgets are tagged:
+        # real widgets (tables, editors) must keep their own background.
+        if type(content) is QWidget:
+            content.setProperty("transparentPane", True)
         body_layout.addWidget(content)
         layout.addWidget(self.body)
         self.set_expanded(expanded)
@@ -711,6 +775,86 @@ class EditorDialog(QDialog):
     def set_title(self, title: str) -> None:
         self.setWindowTitle(title)
         self.title_label.setText(title)
+
+
+class ResponsiveTwoColumn(QWidget):
+    """Lays two panes side by side with an even split, stacking them vertically
+    once the available width can no longer hold both.
+
+    Unlike :class:`_ResponsiveSplitter` this is for peers of equal importance:
+    both panes get stretch ``1`` so the split stays 50/50 at every width, and
+    there is no draggable handle to knock it out of balance.
+
+    ``min_pane_width`` is the narrowest a pane may become before stacking. When
+    it is not supplied the threshold is derived from the panes' own
+    ``minimumSizeHint`` so the breakpoint tracks the real content rather than a
+    guessed pixel count.
+    """
+
+    def __init__(
+        self,
+        first: QWidget,
+        second: QWidget,
+        *,
+        min_pane_width: int | None = None,
+        spacing: int = 12,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setObjectName("responsiveTwoColumn")
+        # A bare QWidget would inherit the global window background and paint a
+        # block over whatever surface it is placed on.
+        self.setProperty("transparentPane", True)
+        self.first = first
+        self.second = second
+        self._min_pane_width = min_pane_width
+        self._applied: QBoxLayout.Direction | None = None
+        self._layout = QBoxLayout(QBoxLayout.Direction.LeftToRight, self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(spacing)
+        self._layout.addWidget(first, 1)
+        self._layout.addWidget(second, 1)
+        self._apply_direction()
+
+    def threshold(self) -> int:
+        """The width at or above which the panes sit side by side."""
+        if self._min_pane_width is not None:
+            return self._min_pane_width * 2 + self._layout.spacing()
+        widest = max(
+            self.first.minimumSizeHint().width(),
+            self.second.minimumSizeHint().width(),
+        )
+        return widest * 2 + self._layout.spacing()
+
+    def is_stacked(self) -> bool:
+        return self._layout.direction() == QBoxLayout.Direction.TopToBottom
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt override signature
+        super().resizeEvent(event)
+        self._apply_direction()
+
+    def _apply_direction(self) -> None:
+        wanted = (
+            QBoxLayout.Direction.LeftToRight
+            if self.width() >= self.threshold()
+            else QBoxLayout.Direction.TopToBottom
+        )
+        if wanted == self._applied:
+            return
+        self._applied = wanted
+        self._layout.setDirection(wanted)
+        side_by_side = wanted == QBoxLayout.Direction.LeftToRight
+        for pane in (self.first, self.second):
+            # Side by side the horizontal policy is Ignored on purpose: a
+            # QBoxLayout hands out surplus space in proportion to stretch only
+            # *after* satisfying each pane's sizeHint, so two panes with equal
+            # stretch but different hints end up different widths. Ignoring the
+            # hint makes the equal stretch the only input, which is what keeps
+            # the split at exactly 50/50. minimumSizeHint is still honoured.
+            pane.setSizePolicy(
+                QSizePolicy.Policy.Ignored if side_by_side else QSizePolicy.Policy.Preferred,
+                QSizePolicy.Policy.Preferred if side_by_side else QSizePolicy.Policy.Maximum,
+            )
 
 
 class AccordionScrollArea(QScrollArea):
@@ -1073,6 +1217,12 @@ class KeyValueTable(QWidget):
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table.setColumnWidth(0, 200)
         self.table.itemChanged.connect(lambda _: self.changed.emit())
+        self.empty_state = attach_table_empty_state(
+            self.table,
+            icon_name="fields",
+            title=f"No {key_label.lower()}s yet",
+            guidance=f"Use Add row to create the first {key_label.lower()}.",
+        )
         layout.addWidget(self.table, 1)
 
         row = QHBoxLayout()
@@ -1145,6 +1295,182 @@ class KeyValueTable(QWidget):
 
     def keys(self) -> list[str]:
         return list(self.pairs())
+
+
+class Pager(QWidget):
+    """The app-wide pagination control: a split pill with a primary Next.
+
+    Owns the page arithmetic as well as the chrome, so every pager in the app
+    enforces the same rules — Prev disabled on the first page, Next disabled on
+    the last, typed input clamped into range, and the whole strip hidden when
+    the data fits on a single page. Callers supply a total and react to
+    :attr:`page_changed`; they never compute page counts themselves.
+
+    Styling lives in ``theme.py`` under the ``pager*`` object names, and the
+    chevrons re-tint on a palette switch without the owning page needing a
+    ``refresh_theme`` hook.
+    """
+
+    page_changed = pyqtSignal(int)
+
+    #: Inner height of the pill. The theme stylesheet repeats this as the
+    #: pager button min/max-height to override the global 22px button cap.
+    _CONTROL_HEIGHT = 30
+
+    #: Width of the chevron buttons, also repeated in the theme stylesheet.
+    _BUTTON_WIDTH = 34
+
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        page_size: int = 100,
+        hide_when_single_page: bool = True,
+    ) -> None:
+        super().__init__(parent)
+        self.setObjectName("pager")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self._page_size = max(1, page_size)
+        self._hide_when_single_page = hide_when_single_page
+        self._page = 0
+        self._total_items = 0
+        self._total_is_exact = True
+        self._palette_version = theme.PALETTE_VERSION
+
+        row = QHBoxLayout(self)
+        # 1px inset so the children sit inside the pill's border instead of
+        # painting over it, which would square off the rounded corners.
+        row.setContentsMargins(1, 1, 1, 1)
+        row.setSpacing(0)
+
+        self.prev_button = QPushButton()
+        self.prev_button.setObjectName("pagerPrev")
+        self.prev_button.setToolTip("Previous page")
+        self.prev_button.setAccessibleName("Previous page")
+        self.prev_button.clicked.connect(lambda: self.set_page(self._page - 1))
+        row.addWidget(self.prev_button)
+
+        self.page_edit = QLineEdit("1")
+        self.page_edit.setObjectName("pagerPage")
+        self.page_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.page_edit.setValidator(QIntValidator(1, 1, self.page_edit))
+        self.page_edit.editingFinished.connect(self._commit_typed_page)
+        row.addWidget(self.page_edit)
+
+        self.total_label = QLabel("of 1")
+        self.total_label.setObjectName("pagerTotal")
+        self.total_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        row.addWidget(self.total_label)
+
+        self.next_button = QPushButton()
+        self.next_button.setObjectName("pagerNext")
+        self.next_button.setToolTip("Next page")
+        self.next_button.setAccessibleName("Next page")
+        self.next_button.clicked.connect(lambda: self.set_page(self._page + 1))
+        row.addWidget(self.next_button)
+
+        for button in (self.prev_button, self.next_button):
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setIconSize(QSize(16, 16))
+            button.setFixedSize(self._BUTTON_WIDTH, self._CONTROL_HEIGHT)
+        self.page_edit.setFixedHeight(self._CONTROL_HEIGHT)
+        self.total_label.setFixedHeight(self._CONTROL_HEIGHT)
+
+        self.refresh_theme()
+        self._sync()
+
+    # ------------------------------------------------------------------ state
+
+    @property
+    def page(self) -> int:
+        """The current page, zero-based."""
+        return self._page
+
+    @property
+    def page_size(self) -> int:
+        return self._page_size
+
+    @property
+    def page_count(self) -> int:
+        return max(1, -(-max(self._total_items, 1) // self._page_size))
+
+    def offset(self) -> int:
+        """The index of the first item on the current page."""
+        return self._page * self._page_size
+
+    def set_total(
+        self, total_items: int, *, page_size: int | None = None, exact: bool = True
+    ) -> None:
+        """Re-points the pager at a new result set and returns to page 1.
+
+        ``exact=False`` marks the total as a lower bound — the page count then
+        renders with a trailing ``+`` — which is what a capped row scan needs.
+        """
+        if page_size is not None:
+            self._page_size = max(1, page_size)
+        self._total_items = max(0, total_items)
+        self._total_is_exact = exact
+        self._page = 0
+        self._sync()
+
+    def set_page(self, page: int, *, emit: bool = True) -> None:
+        """Clamps ``page`` into range and emits :attr:`page_changed` if it moved."""
+        target = max(0, min(int(page), self.page_count - 1))
+        changed = target != self._page
+        self._page = target
+        self._sync()
+        if changed and emit:
+            self.page_changed.emit(target)
+
+    def reset(self) -> None:
+        self.set_total(0)
+
+    # ------------------------------------------------------------------ internals
+
+    def _commit_typed_page(self) -> None:
+        text = self.page_edit.text().strip()
+        if not text.isdigit():
+            # Restores the displayed page rather than guessing at the intent.
+            self._sync()
+            return
+        self.set_page(int(text) - 1)
+
+    def _sync(self) -> None:
+        count = self.page_count
+        self.page_edit.setText(str(self._page + 1))
+        self.total_label.setText(f"of {count}" + ("" if self._total_is_exact else "+"))
+        self.prev_button.setEnabled(self._page > 0)
+        self.next_button.setEnabled(self._page < count - 1)
+        self._tint_chevrons()
+        validator = self.page_edit.validator()
+        if isinstance(validator, QIntValidator):
+            validator.setTop(count)
+        self.page_edit.setToolTip(f"Jump to a page (1-{count})")
+        width = QFontMetrics(self.page_edit.font()).horizontalAdvance("0" * len(str(count)))
+        self.page_edit.setFixedWidth(max(34, width + 20))
+        if self._hide_when_single_page:
+            self.setVisible(count > 1)
+
+    def _tint_chevrons(self) -> None:
+        # Both ends are primary-filled while usable, so their glyphs are
+        # inverse; a disabled end falls back to the neutral pill colour, where
+        # an inverse glyph would be invisible.
+        for button, name in (
+            (self.prev_button, "chevron-left"),
+            (self.next_button, "chevron-right"),
+        ):
+            colour = theme.TEXT_INVERSE if button.isEnabled() else theme.TEXT_MUTED
+            button.setIcon(icon(name, colour, 16))
+
+    def refresh_theme(self) -> None:
+        self._palette_version = theme.PALETTE_VERSION
+        self._tint_chevrons()
+
+    def changeEvent(self, event) -> None:
+        if event.type() in (QEvent.Type.StyleChange, QEvent.Type.PaletteChange):
+            if self._palette_version != theme.PALETTE_VERSION:
+                self.refresh_theme()
+        super().changeEvent(event)
 
 
 def form_caption(text: str) -> QLabel:

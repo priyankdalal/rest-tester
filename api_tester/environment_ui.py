@@ -37,7 +37,7 @@ from .environment import (
     validate_base_url,
 )
 from .icons import icon
-from .widgets import KeyValueTable
+from .widgets import KeyValueTable, attach_table_empty_state
 
 
 CREDENTIAL_HINT = (
@@ -330,6 +330,12 @@ class EnvironmentManagerPage(QWidget):
         self.table.setColumnWidth(3, 112)
         self.table.itemDoubleClicked.connect(lambda _: self.edit_selected())
         self.table.itemSelectionChanged.connect(self._refresh_summary)
+        self.empty_state = attach_table_empty_state(
+            self.table,
+            icon_name="globe",
+            title="No environments yet",
+            guidance="Create an environment to store a base URL, variables and headers.",
+        )
         layout.addWidget(self.table, 1)
 
         self.summary = QLabel()
@@ -458,6 +464,7 @@ class EnvironmentManagerPage(QWidget):
             button.setIcon(icon("sliders-v", theme.TEXT, 16))
         for button in self._delete_buttons.values():
             button.setIcon(icon("trash", theme.FAIL, 16))
+        self.empty_state.refresh_theme()
 
     def _row_for(self, name: str) -> int | None:
         for row in range(self.table.rowCount()):
