@@ -11,7 +11,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal
+from PyQt6.QtCore import QEvent, QObject, Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -35,7 +36,7 @@ from PyQt6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
-    QToolBar,
+    QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -63,7 +64,20 @@ from .schema_editor import (
     PayloadFieldTable,
     ValueListWidget,
 )
-from .widgets import button_in_cell, cell_button, form_caption, attach_table_empty_state
+from .widgets import (
+    Pane,
+    ToolbarAction,
+    attach_table_empty_state,
+    build_page_toolbar,
+    button_in_cell,
+    cell_button,
+    center_in_cell,
+    form_caption,
+    retint_text_glyphs,
+    set_text_glyph,
+    settle_table_rows,
+    tint_toolbar,
+)
 
 
 NODE_KIND = Qt.ItemDataRole.UserRole
@@ -117,6 +131,7 @@ class ScanServiceDialog(QDialog):
         self.folder.textChanged.connect(self._folder_changed)
         folder_row.addWidget(self.folder, 1)
         browse = QPushButton("Browse...")
+        set_text_glyph(browse, "folder")
         browse.clicked.connect(self._browse)
         folder_row.addWidget(browse)
         form.addRow("Project folder", folder_row)
@@ -419,6 +434,7 @@ class ParameterTable(QWidget):
 
         row = QHBoxLayout()
         add = QPushButton("Add parameter")
+        set_text_glyph(add, "add")
         add.clicked.connect(lambda: self._append({"name": "", "source": "query"}))
         row.addWidget(add)
         remove = QPushButton("Delete parameter")
@@ -428,6 +444,13 @@ class ParameterTable(QWidget):
         row.addWidget(remove)
         row.addStretch()
         layout.addLayout(row)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        # The first layout pass is the earliest point the row padding can be
+        # measured, so the fit has to be retried here rather than only when
+        # the parameters are set.
+        settle_table_rows(self.table)
 
     def _append(self, parameter: dict[str, Any]) -> None:
         index = self.table.rowCount()
@@ -455,12 +478,7 @@ class ParameterTable(QWidget):
         required = QCheckBox()
         required.setChecked(bool(parameter.get("required", False)))
         required.toggled.connect(lambda _: self.changed.emit())
-        holder = QWidget()
-        holder_layout = QHBoxLayout(holder)
-        holder_layout.setContentsMargins(0, 0, 0, 0)
-        holder_layout.addWidget(required)
-        holder_layout.addStretch()
-        self.table.setCellWidget(index, 3, holder)
+        self.table.setCellWidget(index, 3, center_in_cell(required))
 
         holder, button = cell_button(
             tooltip="Restrict this parameter to an enum or a list of values"
@@ -538,6 +556,7 @@ class ParameterTable(QWidget):
         self._values.clear()
         for parameter in parameters:
             self._append(parameter)
+        settle_table_rows(self.table)
 
     def parameters(self) -> list[dict[str, Any]]:
         result: list[dict[str, Any]] = []
@@ -592,6 +611,7 @@ class CatalogBuilderWindow(QMainWindow):
         self._history: list[tuple[str, Any]] = [("catalog", None)]
         self._history_index = 0
         self._navigating = False
+        self._palette_version = theme.PALETTE_VERSION
         self.setWindowTitle("Rest Tester Catalog Builder")
         self.setWindowIcon(app_icon())
         self.resize(1320, 840)
@@ -605,42 +625,115 @@ class CatalogBuilderWindow(QMainWindow):
     # ------------------------------------------------------------------- shell
 
     def _build_ui(self) -> None:
-        toolbar = QToolBar("Catalog")
-        toolbar.setMovable(False)
-        self.addToolBar(toolbar)
-        self.back_action = toolbar.addAction(icon("chevron-left"), "Back")
-        self.back_action.setToolTip("Return to the previous item (Alt+Left)")
+        central = QWidget()
+        outer = QVBoxLayout(central)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(self._build_toolbar())
+
+        body = QWidget()
+        body.setProperty("transparentPane", True)
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(10, 10, 10, 8)
+        splitter = QSplitter()
+        splitter.addWidget(self._build_tree_pane())
+        splitter.addWidget(self._build_editor_pane())
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([360, 960])
+        body_layout.addWidget(splitter, 1)
+        outer.addWidget(body, 1)
+
+        outer.addWidget(self._build_activity_strip())
+        self.setCentralWidget(central)
+
+    def _build_toolbar(self) -> QWidget:
+        """The top action row: navigation, then File / Build / Check groups.
+
+        Deliberately a plain widget rather than a ``QToolBar``. The toolbar
+        rendered bare captions that no stylesheet in this app targets, so it
+        never matched the button styling used everywhere else.
+        """
+        holder = QWidget()
+        holder.setObjectName("builderToolbar")
+        holder.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        row = QHBoxLayout(holder)
+        row.setContentsMargins(10, 8, 10, 8)
+        row.setSpacing(6)
+
+        # The actions stay real QActions so their shortcuts keep working even
+        # though the visible control is now a button.
+        self.back_action = QAction(icon("chevron-left"), "Back", self)
         self.back_action.setShortcut("Alt+Left")
         self.back_action.triggered.connect(self.go_back)
-        self.forward_action = toolbar.addAction(icon("chevron-right"), "Forward")
+        self.forward_action = QAction(icon("chevron-right"), "Forward", self)
         self.forward_action.setToolTip("Go forward again (Alt+Right)")
         self.forward_action.setShortcut("Alt+Right")
         self.forward_action.triggered.connect(self.go_forward)
-        toolbar.addSeparator()
-        for caption, slot, tip in (
-            ("New Catalog", self.new_catalog, "Start an empty catalog"),
-            ("Open...", self.open_catalog, "Open an existing catalog"),
-            ("Save", self.save, "Save to the current file"),
-            ("Save As...", self.save_as, "Save to a new file"),
-            ("Scan Service...", self.add_scanned_service, "Add a service by scanning a folder"),
-            ("Manual Service", self.add_manual_service, "Add an empty service"),
-            ("New Schema...", self.new_schema_of_kind, "Create a filter, payload, form schema, or enum"),
-            ("Validate", self.validate, "Check the catalog before saving"),
+        self.addAction(self.back_action)
+        self.addAction(self.forward_action)
+
+        self._nav_buttons: dict[str, QToolButton] = {}
+        for key, action, glyph in (
+            ("back", self.back_action, "chevron-left"),
+            ("forward", self.forward_action, "chevron-right"),
         ):
-            action = toolbar.addAction(caption)
-            action.setToolTip(tip)
-            action.triggered.connect(lambda _, handler=slot: handler())
+            button = QToolButton()
+            button.setObjectName("headerIconButton")
+            button.setFixedSize(30, 30)
+            button.setAccessibleName(action.text())
+            button.setDefaultAction(action)
+            button.setIcon(icon(glyph, theme.TEXT_MUTED, 16))
+            row.addWidget(button)
+            self._nav_buttons[key] = button
+        row.addSpacing(10)
 
-        central = QWidget()
-        outer = QVBoxLayout(central)
-        outer.setContentsMargins(10, 10, 10, 10)
+        self._toolbar_actions = (
+            ToolbarAction("New Catalog", "new", self.new_catalog, group=0,
+                          tooltip="Start an empty catalog"),
+            ToolbarAction("Open", "open", self.open_catalog, group=0,
+                          tooltip="Open an existing catalog"),
+            ToolbarAction("Save", "save", self.save, accent=True, group=0,
+                          tooltip="Save to the current file"),
+            ToolbarAction("Save As", "save-as", self.save_as, group=0,
+                          tooltip="Save to a new file"),
+            ToolbarAction("Scan Service", "search", self.add_scanned_service, group=1,
+                          tooltip="Add a service by scanning a folder"),
+            ToolbarAction("Manual Service", "add", self.add_manual_service, group=1,
+                          tooltip="Add an empty service"),
+            ToolbarAction("New Schema", "fields", self.new_schema_of_kind, group=1,
+                          tooltip="Create a filter, payload, form schema, or enum"),
+            ToolbarAction("Validate", "verify", self.validate, group=2,
+                          tooltip="Check the catalog before saving"),
+        )
+        toolbar, self._toolbar_buttons = build_page_toolbar(self._toolbar_actions)
+        tint_toolbar(self._toolbar_actions, self._toolbar_buttons)
+        row.addLayout(toolbar, 1)
+        return holder
 
-        splitter = QSplitter()
+    def _build_tree_pane(self) -> Pane:
+        pane = Pane("Catalog")
+        self.tree_pane = pane
+
+        self.tree_search = QLineEdit()
+        self.tree_search.setPlaceholderText("Search services, modules, endpoints")
+        self.tree_search.setClearButtonEnabled(True)
+        self.tree_search.addAction(
+            icon("search", theme.TEXT_MUTED, 14),
+            QLineEdit.ActionPosition.LeadingPosition,
+        )
+        self.tree_search.textChanged.connect(self._filter_tree)
+        pane.body.addWidget(self.tree_search)
+
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels(["Catalog", "Method"])
-        self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
-        self.tree.setColumnWidth(0, 300)
-        self.tree.setMinimumWidth(280)
+        header = self.tree.header()
+        # Fixed widths wider than the pane forced a permanent horizontal
+        # scrollbar and clipped the second header, so size to the space that
+        # actually exists instead.
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setStretchLastSection(False)
+        self.tree.setMinimumWidth(260)
         self.tree.currentItemChanged.connect(lambda *_: self._selection_changed())
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
         attach_table_empty_state(
@@ -649,13 +742,13 @@ class CatalogBuilderWindow(QMainWindow):
             title="Catalog is empty",
             guidance="Scan a project or add a service to start building the catalog.",
         )
-        splitter.addWidget(self.tree)
+        pane.body.addWidget(self.tree, 1)
+        return pane
 
-        self.editor = QStackedWidget()
-        editor_holder = QWidget()
-        editor_layout = QVBoxLayout(editor_holder)
-        editor_layout.setContentsMargins(0, 0, 0, 0)
-        editor_layout.setSpacing(6)
+    def _build_editor_pane(self) -> Pane:
+        pane = Pane("Catalog")
+        self.editor_pane = pane
+
         self.back_label = QPushButton()
         self.back_label.setFlat(True)
         self.back_label.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -666,8 +759,9 @@ class CatalogBuilderWindow(QMainWindow):
         crumb_row.setContentsMargins(0, 0, 0, 0)
         crumb_row.addWidget(self.back_label)
         crumb_row.addStretch()
-        editor_layout.addLayout(crumb_row)
-        editor_layout.addWidget(self.editor, 1)
+        pane.body.addLayout(crumb_row)
+
+        self.editor = QStackedWidget()
         self.editor.addWidget(self._build_catalog_page())
         self.editor.addWidget(self._build_service_page())
         self.editor.addWidget(self._build_module_page())
@@ -676,23 +770,107 @@ class CatalogBuilderWindow(QMainWindow):
         self.editor.addWidget(self._build_filter_schema_page())
         self.editor.addWidget(self._build_payload_schema_page())
         self.editor.addWidget(self._build_enum_page())
-        splitter.addWidget(editor_holder)
-        splitter.setStretchFactor(1, 1)
-        splitter.setSizes([340, 980])
-        outer.addWidget(splitter, 1)
+        pane.body.addWidget(self.editor, 1)
+        return pane
+
+    def _build_activity_strip(self) -> QWidget:
+        """A one-line status with the scan log folded away behind a toggle.
+
+        The log used to sit open at all times showing exactly the same text as
+        the status bar, so the window spent 110px saying everything twice.
+        """
+        holder = QWidget()
+        holder.setObjectName("builderStatus")
+        holder.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        column = QVBoxLayout(holder)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(0)
 
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
-        self.log.setMaximumHeight(110)
+        self.log.setMaximumHeight(140)
         self.log.setPlaceholderText("Scan results and validation messages appear here.")
-        outer.addWidget(self.log)
+        self.log.setVisible(False)
+        column.addWidget(self.log)
 
-        self.setCentralWidget(central)
-        self.statusBar().showMessage("Ready")
+        row = QHBoxLayout()
+        row.setContentsMargins(12, 7, 12, 7)
+        row.setSpacing(8)
+        self.status_icon = QLabel()
+        self.status_icon.setPixmap(icon("info-circle", theme.TEXT_MUTED, 15).pixmap(15, 15))
+        row.addWidget(self.status_icon)
+        self.status_label = QLabel("Ready")
+        self.status_label.setObjectName("collectionMeta")
+        row.addWidget(self.status_label, 1)
+        self.activity_button = QPushButton("Activity")
+        self.activity_button.setToolTip("Show the scan and validation log")
+        self.activity_button.setCheckable(True)
+        self.activity_button.toggled.connect(self._set_activity_visible)
+        row.addWidget(self.activity_button)
+        column.addLayout(row)
+        self._tint_activity_button()
+        return holder
+
+    def _tint_activity_button(self) -> None:
+        expanded = self.activity_button.isChecked()
+        self.activity_button.setIcon(
+            icon("move-down" if expanded else "move-up", theme.TEXT, 14)
+        )
+
+    def _set_activity_visible(self, visible: bool) -> None:
+        self.log.setVisible(visible)
+        self.activity_button.setToolTip(
+            "Hide the scan and validation log"
+            if visible
+            else "Show the scan and validation log"
+        )
+        self._tint_activity_button()
+
+    def _filter_tree(self, text: str) -> None:
+        """Hides tree rows that do not match, keeping ancestors of matches.
+
+        Filtering never changes the selection: hiding the current item would
+        silently swap the editor page out from under an edit in progress.
+        """
+        needle = text.strip().lower()
+
+        def visit(item: QTreeWidgetItem) -> bool:
+            matched = not needle or needle in item.text(0).lower() or needle in item.text(1).lower()
+            child_matched = False
+            for index in range(item.childCount()):
+                if visit(item.child(index)):
+                    child_matched = True
+            item.setHidden(not (matched or child_matched))
+            if needle and child_matched:
+                item.setExpanded(True)
+            return matched or child_matched
+
+        for index in range(self.tree.topLevelItemCount()):
+            visit(self.tree.topLevelItem(index))
+
+    def refresh_theme(self) -> None:
+        """Rebuilds every rasterised glyph for the active palette."""
+        tint_toolbar(self._toolbar_actions, self._toolbar_buttons)
+        for key, glyph in (("back", "chevron-left"), ("forward", "chevron-right")):
+            button = self._nav_buttons.get(key)
+            if button is not None:
+                button.setIcon(icon(glyph, theme.TEXT_MUTED, 16))
+        self.tree_search.setClearButtonEnabled(True)
+        self.status_icon.setPixmap(icon("info-circle", theme.TEXT_MUTED, 15).pixmap(15, 15))
+        self._tint_activity_button()
+        retint_text_glyphs(self)
+
+    def changeEvent(self, event) -> None:
+        if event.type() in (QEvent.Type.StyleChange, QEvent.Type.PaletteChange):
+            if self._palette_version != theme.PALETTE_VERSION:
+                self._palette_version = theme.PALETTE_VERSION
+                self.refresh_theme()
+        super().changeEvent(event)
 
     def _note(self, message: str) -> None:
         self.log.appendPlainText(message)
-        self.statusBar().showMessage(message, 8000)
+        self.status_label.setText(message)
+        self.status_label.setToolTip(message)
 
     # ------------------------------------------------------------------- pages
 
@@ -701,6 +879,7 @@ class CatalogBuilderWindow(QMainWindow):
         layout = QVBoxLayout(page)
         heading = QLabel("Catalog")
         heading.setProperty("workspaceTitle", True)
+        heading.setVisible(False)
         layout.addWidget(heading)
         form = QFormLayout()
         self.catalog_name = QLineEdit()
@@ -739,6 +918,7 @@ class CatalogBuilderWindow(QMainWindow):
         layout = QVBoxLayout(page)
         heading = QLabel("Service")
         heading.setProperty("workspaceTitle", True)
+        heading.setVisible(False)
         layout.addWidget(heading)
         form = QFormLayout()
         self.service_name = QLineEdit()
@@ -765,13 +945,16 @@ class CatalogBuilderWindow(QMainWindow):
 
         row = QHBoxLayout()
         apply_button = QPushButton("Apply changes")
+        set_text_glyph(apply_button, "save")
         apply_button.clicked.connect(self._apply_service)
         row.addWidget(apply_button)
         rescan = QPushButton("Rescan folder")
+        set_text_glyph(rescan, "renew")
         rescan.setToolTip("Re-read the repository folder and replace the endpoints")
         rescan.clicked.connect(self._rescan_service)
         row.addWidget(rescan)
         add_module = QPushButton("Add module")
+        set_text_glyph(add_module, "add")
         add_module.clicked.connect(self._add_module)
         row.addWidget(add_module)
         remove = QPushButton("Delete service")
@@ -789,6 +972,7 @@ class CatalogBuilderWindow(QMainWindow):
         layout = QVBoxLayout(page)
         heading = QLabel("Module")
         heading.setProperty("workspaceTitle", True)
+        heading.setVisible(False)
         layout.addWidget(heading)
         form = QFormLayout()
         self.module_name = QLineEdit()
@@ -798,9 +982,11 @@ class CatalogBuilderWindow(QMainWindow):
         layout.addLayout(form)
         row = QHBoxLayout()
         rename = QPushButton("Rename module")
+        set_text_glyph(rename, "edit")
         rename.clicked.connect(self._rename_module)
         row.addWidget(rename)
         add = QPushButton("Add endpoint")
+        set_text_glyph(add, "add")
         add.clicked.connect(self._add_endpoint)
         row.addWidget(add)
         remove = QPushButton("Delete module")
@@ -818,6 +1004,7 @@ class CatalogBuilderWindow(QMainWindow):
         layout = QVBoxLayout(page)
         heading = QLabel("Endpoint")
         heading.setProperty("workspaceTitle", True)
+        heading.setVisible(False)
         layout.addWidget(heading)
 
         form = QFormLayout()
@@ -901,9 +1088,11 @@ class CatalogBuilderWindow(QMainWindow):
 
         row = QHBoxLayout()
         apply_button = QPushButton("Apply changes")
+        set_text_glyph(apply_button, "save")
         apply_button.clicked.connect(self._apply_endpoint)
         row.addWidget(apply_button)
         duplicate = QPushButton("Duplicate")
+        set_text_glyph(duplicate, "duplicate")
         duplicate.clicked.connect(self._duplicate_endpoint)
         row.addWidget(duplicate)
         remove = QPushButton("Delete endpoint")
@@ -933,21 +1122,25 @@ class CatalogBuilderWindow(QMainWindow):
         combo.setEditable(False)
         layout.addWidget(combo, 1)
         create = QPushButton("Create...")
+        set_text_glyph(create, "new")
         create.setToolTip(f"Create a new {SCHEMA_LABELS[kind].lower()} and use it here")
         create.clicked.connect(lambda: self._create_schema_for_endpoint(kind, combo))
         layout.addWidget(create)
         open_button = QPushButton("Open")
+        set_text_glyph(open_button, "open")
         open_button.setToolTip("Edit the selected schema under Schemas")
         open_button.clicked.connect(lambda: self._open_selected_schema(kind, combo))
         layout.addWidget(open_button)
         if autodetect is not None:
             detect = QPushButton("Auto-detect from source")
+            set_text_glyph(detect, "wand")
             detect.setToolTip(
                 "Rescan the source project and reuse any discovered response schema."
             )
             detect.clicked.connect(autodetect)
             layout.addWidget(detect)
         clear = QPushButton("Clear")
+        set_text_glyph(clear, "clear")
         clear.clicked.connect(lambda: combo.setCurrentIndex(0))
         layout.addWidget(clear)
         return holder
@@ -1032,12 +1225,13 @@ class CatalogBuilderWindow(QMainWindow):
     def _schema_action_row(self, kind_getter) -> QHBoxLayout:
         """The New / Duplicate / Rename / Delete row shared by schema pages."""
         row = QHBoxLayout()
-        for caption, handler in (
-            ("New", lambda: self.new_schema(kind_getter())),
-            ("Duplicate", lambda: self.duplicate_schema(kind_getter())),
-            ("Rename", lambda: self.rename_schema(kind_getter())),
+        for caption, glyph, handler in (
+            ("New", "new", lambda: self.new_schema(kind_getter())),
+            ("Duplicate", "duplicate", lambda: self.duplicate_schema(kind_getter())),
+            ("Rename", "edit", lambda: self.rename_schema(kind_getter())),
         ):
             button = QPushButton(caption)
+            set_text_glyph(button, glyph)
             button.clicked.connect(lambda _, fn=handler: fn())
             row.addWidget(button)
         delete = QPushButton("Delete")
@@ -1052,6 +1246,7 @@ class CatalogBuilderWindow(QMainWindow):
         layout = QVBoxLayout(page)
         self.schema_group_heading = QLabel("Schemas")
         self.schema_group_heading.setProperty("workspaceTitle", True)
+        self.schema_group_heading.setVisible(False)
         layout.addWidget(self.schema_group_heading)
         self.schema_group_hint = QLabel()
         self.schema_group_hint.setWordWrap(True)
@@ -1069,6 +1264,7 @@ class CatalogBuilderWindow(QMainWindow):
         layout = QVBoxLayout(page)
         heading = QLabel("Filter entity")
         heading.setProperty("workspaceTitle", True)
+        heading.setVisible(False)
         layout.addWidget(heading)
         form = QFormLayout()
         self.filter_schema_name = QLabel()
@@ -1087,6 +1283,7 @@ class CatalogBuilderWindow(QMainWindow):
         layout.addWidget(self.filter_fields, 1)
         row = QHBoxLayout()
         apply_button = QPushButton("Apply changes")
+        set_text_glyph(apply_button, "save")
         apply_button.clicked.connect(self._apply_filter_schema)
         row.addWidget(apply_button)
         row.addLayout(self._schema_action_row(lambda: "filter"))
@@ -1099,6 +1296,7 @@ class CatalogBuilderWindow(QMainWindow):
         layout = QVBoxLayout(page)
         self.payload_schema_heading = QLabel("Payload schema")
         self.payload_schema_heading.setProperty("workspaceTitle", True)
+        self.payload_schema_heading.setVisible(False)
         layout.addWidget(self.payload_schema_heading)
         form = QFormLayout()
         self.payload_schema_name = QLabel()
@@ -1121,6 +1319,7 @@ class CatalogBuilderWindow(QMainWindow):
         layout.addWidget(self.payload_fields, 1)
         row = QHBoxLayout()
         apply_button = QPushButton("Apply changes")
+        set_text_glyph(apply_button, "save")
         apply_button.clicked.connect(self._apply_payload_schema)
         row.addWidget(apply_button)
         row.addLayout(self._schema_action_row(lambda: self._active_schema_kind))
@@ -1133,6 +1332,7 @@ class CatalogBuilderWindow(QMainWindow):
         layout = QVBoxLayout(page)
         heading = QLabel("Enum")
         heading.setProperty("workspaceTitle", True)
+        heading.setVisible(False)
         layout.addWidget(heading)
         form = QFormLayout()
         self.enum_name = QLabel()
@@ -1151,6 +1351,7 @@ class CatalogBuilderWindow(QMainWindow):
         layout.addWidget(self.enum_values, 1)
         row = QHBoxLayout()
         apply_button = QPushButton("Apply changes")
+        set_text_glyph(apply_button, "save")
         apply_button.clicked.connect(self._apply_enum)
         row.addWidget(apply_button)
         row.addLayout(self._schema_action_row(lambda: "enum"))
@@ -1189,6 +1390,7 @@ class CatalogBuilderWindow(QMainWindow):
         for index in range(root.childCount()):
             root.child(index).setExpanded(True)
         self._populate_schema_nodes()
+        self.tree_pane.set_count(self.document.endpoint_count)
         self._loading = False
         if select_id:
             self._select_endpoint_item(select_id)
@@ -1267,6 +1469,7 @@ class CatalogBuilderWindow(QMainWindow):
         self._show(kind, reference)
 
     def _show(self, kind: str, reference: Any) -> None:
+        self._refresh_editor_title(kind, reference)
         if kind == "service":
             self._load_service(str(reference))
             self.editor.setCurrentIndex(1)
@@ -1333,6 +1536,42 @@ class CatalogBuilderWindow(QMainWindow):
         if kind == "service":
             return str(reference)
         return "Catalog"
+
+    def _pane_title(self, kind: str, reference: Any) -> str:
+        """Labels the editor pane with the item's type and name.
+
+        The type used to be a separate heading inside every page. Folding it
+        into the pane header keeps it without saying the same thing twice.
+        """
+        name = self._describe(kind, reference)
+        prefix = {
+            "service": "Service",
+            "module": "Module",
+            "endpoint": "Endpoint",
+        }.get(kind, "")
+        if kind == "schema" and isinstance(reference, tuple):
+            return name
+        return f"{prefix} · {name}" if prefix else name
+
+    def _refresh_editor_title(self, kind: str, reference: Any) -> None:
+        """Names the editor pane after the item it is showing.
+
+        The pane header replaces the per-page static heading, so it has to
+        carry the item's own name or the right-hand column loses its label.
+        """
+        self.editor_pane.set_title(self._pane_title(kind, reference))
+        count: int | None = None
+        if kind == "catalog":
+            count = self.document.endpoint_count
+        elif kind == "service":
+            service = self.document.service(str(reference))
+            count = len(service.endpoints) if service is not None else None
+        elif kind == "module" and isinstance(reference, tuple):
+            service = self.document.service(reference[0])
+            count = len(service.module(reference[1])) if service is not None else None
+        elif kind == "schemagroup":
+            count = len(self.document.schema_names(str(reference)))
+        self.editor_pane.set_count(count)
 
     def _goto(self, index: int) -> None:
         if not 0 <= index < len(self._history):

@@ -46,7 +46,15 @@ from .catalog_builder import (
     operators_for,
 )
 from .icons import icon
-from .widgets import button_in_cell, cell_button, attach_table_empty_state
+from .widgets import (
+    attach_table_empty_state,
+    button_in_cell,
+    cell_button,
+    center_in_cell,
+    fit_last_column,
+    set_text_glyph,
+    settle_table_rows,
+)
 
 
 def _checkbox_cell(checked: bool, on_toggle: Callable[[], None]) -> QWidget:
@@ -54,12 +62,7 @@ def _checkbox_cell(checked: bool, on_toggle: Callable[[], None]) -> QWidget:
     box = QCheckBox()
     box.setChecked(checked)
     box.toggled.connect(lambda _: on_toggle())
-    holder = QWidget()
-    layout = QHBoxLayout(holder)
-    layout.setContentsMargins(0, 0, 0, 0)
-    layout.addWidget(box)
-    layout.addStretch()
-    return holder
+    return center_in_cell(box)
 
 
 def _cell_checked(table: QTableWidget, row: int, column: int) -> bool:
@@ -94,6 +97,7 @@ class ValueListWidget(QWidget):
             self.enum_combo.addItems(sorted(enums))
             row.addWidget(self.enum_combo, 1)
             copy = QPushButton("Copy")
+            set_text_glyph(copy, "duplicate")
             copy.setToolTip("Replace the list with that enum's members")
             copy.clicked.connect(lambda: self._copy_enum(enums))
             row.addWidget(copy)
@@ -106,6 +110,7 @@ class ValueListWidget(QWidget):
 
         buttons = QHBoxLayout()
         add = QPushButton("Add value")
+        set_text_glyph(add, "add")
         add.clicked.connect(lambda: self._append("new-value", edit=True))
         buttons.addWidget(add)
         remove = QPushButton("Delete value")
@@ -349,8 +354,18 @@ class FilterFieldTable(QWidget):
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        for index, width in enumerate((160, 160, 110, 130, 80, 80, 130, 130)):
+        header.setMinimumSectionSize(64)
+        for index, width in enumerate((150, 140, 115, 120, 70, 70, 120)):
             self.table.setColumnWidth(index, width)
+        # The checkbox columns only need to clear their own heading, and the
+        # last column absorbs the slack so the row never needs a sideways
+        # scroll to reach its buttons. It gets no explicit width: a width set
+        # before the stretch mode is applied survives as the section size and
+        # pushes the total past the viewport.
+        for index in (4, 5):
+            header.setSectionResizeMode(index, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(7, QHeaderView.ResizeMode.Interactive)
+        header.setStretchLastSection(False)
         self.table.itemChanged.connect(self._name_edited)
         self.empty_state = attach_table_empty_state(
             self.table,
@@ -362,6 +377,7 @@ class FilterFieldTable(QWidget):
 
         row = QHBoxLayout()
         add = QPushButton("Add field")
+        set_text_glyph(add, "add")
         add.clicked.connect(lambda: self.append(new_filter_field("NewField", "Text")))
         row.addWidget(add)
         remove = QPushButton("Delete field")
@@ -546,6 +562,22 @@ class FilterFieldTable(QWidget):
         self.table.blockSignals(False)
         for field in fields:
             self.append(field)
+        settle_table_rows(self.table)
+
+    def showEvent(self, event) -> None:
+        """Re-fits rows once the stylesheet has been applied.
+
+        Row padding is only known after the table is polished, so a fit done
+        while hidden measures the wrong deficit and leaves the cell buttons
+        clipped.
+        """
+        super().showEvent(event)
+        settle_table_rows(self.table)
+        fit_last_column(self.table)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        fit_last_column(self.table)
 
     def fields(self) -> list[dict[str, Any]]:
         result: list[dict[str, Any]] = []
@@ -722,8 +754,18 @@ class PayloadFieldTable(QWidget):
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        for index, width in enumerate((170, 160, 110, 150, 80, 80, 150)):
+        header.setMinimumSectionSize(64)
+        for index, width in enumerate((150, 140, 115, 120, 70, 70)):
             self.table.setColumnWidth(index, width)
+        # The checkbox columns only need to clear their own heading, and the
+        # Details column absorbs the slack so its button never needs a sideways
+        # scroll to reach. It gets no explicit width: a width set before the
+        # stretch mode is applied survives as the section size and pushes the
+        # total past the viewport.
+        for index in (4, 5):
+            header.setSectionResizeMode(index, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.Interactive)
+        header.setStretchLastSection(False)
         self.table.itemChanged.connect(self._name_edited)
         self.empty_state = attach_table_empty_state(
             self.table,
@@ -735,6 +777,7 @@ class PayloadFieldTable(QWidget):
 
         row = QHBoxLayout()
         add = QPushButton("Add field")
+        set_text_glyph(add, "add")
         add.clicked.connect(lambda: self.append(new_payload_field("NewField", "text")))
         row.addWidget(add)
         remove = QPushButton("Delete field")
@@ -924,6 +967,22 @@ class PayloadFieldTable(QWidget):
         self.table.blockSignals(False)
         for field in fields:
             self.append(field)
+        settle_table_rows(self.table)
+
+    def showEvent(self, event) -> None:
+        """Re-fits rows once the stylesheet has been applied.
+
+        Row padding is only known after the table is polished, so a fit done
+        while hidden measures the wrong deficit and leaves the cell buttons
+        clipped.
+        """
+        super().showEvent(event)
+        settle_table_rows(self.table)
+        fit_last_column(self.table)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        fit_last_column(self.table)
 
     def fields(self) -> list[dict[str, Any]]:
         return [

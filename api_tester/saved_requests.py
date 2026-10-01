@@ -36,70 +36,15 @@ from . import theme
 from .icons import icon
 # Re-exported: this widget used to live here, and pages still import it
 # from this module.
-from .widgets import ElidingLabel, EmptyStateWidget
+from .widgets import (
+    ElidingLabel,
+    EmptyStateWidget,
+    Pane,
+    ToolbarAction as _ToolbarAction,
+    build_page_toolbar as _build_page_toolbar,
+    tint_toolbar as _tint_toolbar,
+)
 from .workspace_store import WorkspaceStore, as_store
-
-
-@dataclass(frozen=True)
-class _ToolbarAction:
-    """One button in a page toolbar.
-
-    ``icon_name`` is required rather than optional: every toolbar button in
-    these pages carries a glyph, and making it mandatory stops a new action
-    from silently shipping without one.
-    """
-
-    caption: str
-    icon_name: str
-    slot: Callable[[], None]
-    accent: bool = False
-    danger: bool = False
-    tooltip: str = ""
-
-
-def _build_page_toolbar(
-    actions: tuple[_ToolbarAction, ...],
-) -> tuple[QHBoxLayout, dict[str, QPushButton]]:
-    """Builds the top action row shared by Saved Requests and Collections.
-
-    Matches the Environments page: a left-aligned row of buttons followed by a
-    stretch, so the group stays packed against the left edge instead of
-    spreading across the full width.
-    """
-    toolbar = QHBoxLayout()
-    buttons: dict[str, QPushButton] = {}
-    for action in actions:
-        button = QPushButton(action.caption)
-        button.setToolTip(action.tooltip or action.caption)
-        button.setAccessibleName(action.caption)
-        if action.accent:
-            button.setProperty("accent", True)
-        if action.danger:
-            button.setProperty("danger", True)
-        button.clicked.connect(action.slot)
-        toolbar.addWidget(button)
-        buttons[action.caption] = button
-    toolbar.addStretch()
-    return toolbar, buttons
-
-
-def _tint_toolbar(actions: tuple[_ToolbarAction, ...], buttons: dict[str, QPushButton]) -> None:
-    """Re-tints toolbar glyphs for the active palette.
-
-    Icons are rasterised with a fixed colour, so they have to be rebuilt on
-    every theme change or an accent button keeps a dark glyph on a blue fill.
-    """
-    for action in actions:
-        button = buttons.get(action.caption)
-        if button is None:
-            continue
-        if action.accent:
-            colour = theme.TEXT_INVERSE
-        elif action.danger:
-            colour = theme.FAIL
-        else:
-            colour = theme.TEXT
-        button.setIcon(icon(action.icon_name, colour, 16))
 
 
 def _timestamp() -> str:
@@ -550,53 +495,6 @@ class CollectionRow(QWidget):
 
     def refresh_theme(self) -> None:
         self.folder.setPixmap(icon("folder", theme.ACCENT_SOFT_TEXT, 18).pixmap(18, 18))
-
-
-class Pane(QWidget):
-    """A bordered column with a titled header and a swappable body.
-
-    The border lives on this container rather than on the list inside it.
-    That is the fix for panes visually dissolving when empty: the page used
-    to hide the list and show a sibling empty state, which removed the only
-    bordered widget and left the columns with no boundary at all.
-    """
-
-    def __init__(self, title: str, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setObjectName("listPane")
-        # A plain QWidget ignores stylesheet borders unless it is told to draw
-        # a styled background, which is exactly what the pane boundary needs.
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(0)
-
-        header = QWidget()
-        header.setObjectName("listPaneHeader")
-        header.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(12, 8, 12, 8)
-        header_layout.setSpacing(8)
-        self.title = ElidingLabel(title)
-        self.title.setObjectName("listPaneTitle")
-        header_layout.addWidget(self.title, 1)
-        self.count = QLabel("")
-        self.count.setObjectName("listPaneCount")
-        header_layout.addWidget(self.count, 0)
-        outer.addWidget(header)
-
-        self.body = QVBoxLayout()
-        self.body.setContentsMargins(8, 8, 8, 8)
-        self.body.setSpacing(8)
-        outer.addLayout(self.body, 1)
-
-    def set_title(self, title: str) -> None:
-        self.title.setText(title)
-
-    def set_count(self, count: int | None) -> None:
-        self.count.setText("" if count is None else str(count))
-        self.count.setVisible(count is not None)
 
 
 class MiniRequestHandler(QWidget):

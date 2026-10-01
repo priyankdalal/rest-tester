@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 import math
 
 from PyQt6 import sip
@@ -15,6 +16,7 @@ from PyQt6.QtCore import (
     QRectF,
     QSize,
     Qt,
+    QTimer,
     QVariantAnimation,
     pyqtSignal,
 )
@@ -28,6 +30,7 @@ from PyQt6.QtGui import (
     QPainterPath,
 )
 from PyQt6.QtWidgets import (
+    QAbstractButton,
     QAbstractItemView,
     QApplication,
     QBoxLayout,
@@ -65,6 +68,30 @@ _TEXT_COLOR_ROLE = int(Qt.ItemDataRole.UserRole) + 3
 _TEXT_PADDING_ROLE = int(Qt.ItemDataRole.UserRole) + 4
 _HIDE_TEXT_ROLE = int(Qt.ItemDataRole.UserRole) + 5
 _HIDE_ICON_ROLE = int(Qt.ItemDataRole.UserRole) + 6
+
+GLYPH_PROPERTY = "textGlyph"
+
+
+def set_text_glyph(button: QAbstractButton, glyph: str, size: int = 16) -> None:
+    """Tints ``glyph`` with the body colour and remembers it for re-tinting.
+
+    :func:`icon` rasterises the colour once, so without the recorded property a
+    palette switch leaves the button carrying the previous theme's glyph.
+    """
+    button.setProperty(GLYPH_PROPERTY, glyph)
+    button.setIcon(icon(glyph, theme.TEXT, size))
+
+
+def retint_text_glyphs(root: QWidget, size: int = 16) -> int:
+    """Re-rasterises every glyph registered by :func:`set_text_glyph`."""
+    repainted = 0
+    for button in root.findChildren(QAbstractButton):
+        glyph = button.property(GLYPH_PROPERTY)
+        if glyph:
+            button.setIcon(icon(glyph, theme.TEXT, size))
+            repainted += 1
+    return repainted
+
 
 
 class IconTextItemDelegate(QStyledItemDelegate):
@@ -927,26 +954,182 @@ def inset_shadow_detail_pane(
     return shell, left_shadow, top_shadow
 
 
-def cell_button(text: str = "", tooltip: str = "") -> tuple[QWidget, QPushButton]:
+def fit_table_rows(table: QTableWidget) -> bool:
+    """Grows rows by however much their cell widgets are actually short.
+
+    A fixed row height is guesswork: the shared ``::item`` padding shrinks the
+    rectangle a cell widget receives, and the button inside it is sized by the
+    font rather than by the ``min-height`` the stylesheet asks for. The
+    padding is not a constant either -- it grows with the row -- so this
+    measures the real deficit instead of modelling it, and reports whether
+    anything changed so the caller can let it settle.
+
+    ``visualRect`` is deliberately not used: it reports the padded row, not
+    the smaller rectangle Qt hands the widget.
+    """
+    changed = False
+    for row in range(table.rowCount()):
+        deficit = 0
+        for column in range(table.columnCount()):
+            widget = table.cellWidget(row, column)
+            if widget is None or widget.height() <= 0:
+                continue
+            widget.ensurePolished()
+            hint = max(widget.sizeHint().height(), widget.minimumSizeHint().height())
+            deficit = max(deficit, hint - widget.height())
+        if deficit > 0:
+            table.setRowHeight(row, table.rowHeight(row) + deficit)
+            changed = True
+    return changed
+
+
+def settle_table_rows(table: QTableWidget, passes: int = 5) -> None:
+    """Repeats :func:`fit_table_rows` until the rows stop changing.
+
+    One pass is not enough: growing a row also grows the padding Qt takes out
+    of it, so the widget ends up a little short again. Re-measuring after the
+    next layout pass converges in two or three rounds; the bound just stops a
+    pathological layout from looping forever.
+    """
+    if passes <= 0:
+        return
+    if fit_table_rows(table):
+        QTimer.singleShot(0, lambda: settle_table_rows(table, passes - 1))
+
+
+def fit_last_column(table: QTableWidget, minimum: int = 80) -> None:
+    """Gives the last column whatever width is left in the viewport.
+
+    ``QHeaderView``'s ``Stretch`` mode is not usable here: it sizes the section
+    once against the width the header had during the first layout pass, and
+    never recomputes it, so a table built inside a hidden ``QStackedWidget``
+    page keeps a stale width and shows a horizontal scrollbar for the few
+    pixels of difference. Measuring the viewport at the moment the table is
+    actually on screen is deterministic and holds up when the window resizes.
+    """
+    last = table.columnCount() - 1
+    if last < 0:
+        return
+    header = table.horizontalHeader()
+    if header.sectionResizeMode(last) != QHeaderView.ResizeMode.Interactive:
+        header.setSectionResizeMode(last, QHeaderView.ResizeMode.Interactive)
+    used = sum(table.columnWidth(i) for i in range(last))
+    table.setColumnWidth(last, max(minimum, table.viewport().width() - used))
+
+
+class RowButton(QPushButton):
+    """A table-cell button that elides its caption instead of demanding width.
+
+    Captions here are generated ("Values, constraints...", "3 field(s)"), so a
+    plain button reports whatever width its longest caption needs. A column set
+    to ``Stretch`` will not shrink a section below that hint, which forces a
+    horizontal scrollbar onto the table. Reporting an elided caption instead
+    lets the column shrink, and the full text stays available as the tooltip.
+    """
+
+    _WIDTH_HINT = 76
+
+    def __init__(self, text: str = "", parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("rowButton")
+        self._full_text = ""
+        self._explicit_tooltip = ""
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.setText(text)
+
+    def setText(self, text: str) -> None:  # noqa: N802 - Qt naming
+        self._full_text = text
+        self._apply_elided()
+
+    def full_text(self) -> str:
+        return self._full_text
+
+    def set_hover_text(self, tooltip: str) -> None:
+        """Sets a tooltip that survives re-eliding."""
+        self._explicit_tooltip = tooltip
+        self._apply_elided()
+
+    def _apply_elided(self) -> None:
+        available = self.width() - 20  # the rowButton style's horizontal padding
+        metrics = QFontMetrics(self.font())
+        if available > 0 and metrics.horizontalAdvance(self._full_text) > available:
+            shown = metrics.elidedText(
+                self._full_text, Qt.TextElideMode.ElideRight, available
+            )
+        else:
+            shown = self._full_text
+        super().setText(shown)
+        if self._explicit_tooltip and shown == self._full_text:
+            self.setToolTip(self._explicit_tooltip)
+        elif shown != self._full_text:
+            self.setToolTip(
+                f"{self._full_text}\n{self._explicit_tooltip}".strip()
+                if self._explicit_tooltip
+                else self._full_text
+            )
+        else:
+            self.setToolTip("")
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._apply_elided()
+
+    def sizeHint(self) -> QSize:
+        """Reports a modest width so a ``Stretch`` column can shrink.
+
+        The height still comes from the real hint, because ``fit_table_rows``
+        relies on it to grow the row enough that the button is not clipped.
+        """
+        hint = super().sizeHint()
+        return QSize(min(hint.width(), self._WIDTH_HINT), hint.height())
+
+    def minimumSizeHint(self) -> QSize:
+        hint = super().minimumSizeHint()
+        return QSize(min(hint.width(), self._WIDTH_HINT), hint.height())
+
+
+def cell_button(text: str = "", tooltip: str = "") -> tuple[QWidget, RowButton]:
     """A button sized to sit inside a table row, with its holder.
 
     A default ``QPushButton`` is 34px tall - exactly the row height of the
     builder tables - so dropping one straight into a cell fills it edge to edge
-    and collides with the grid lines. The ``rowButton`` style is 22px, and the
-    holder margins keep it clear of the row borders.
+    and collides with the grid lines. The ``rowButton`` style keeps it shorter,
+    and the holder margins keep it clear of the row borders.
+
+    The holder is marked ``transparentPane`` so it shows the row underneath:
+    a bare ``QWidget`` otherwise picks up the global window background and
+    paints a grey block across the cell.
 
     Returns ``(holder, button)``: add the holder to the cell, connect the button.
     """
-    button = QPushButton(text)
-    button.setObjectName("rowButton")
+    button = RowButton(text)
     if tooltip:
-        button.setToolTip(tooltip)
+        button.set_hover_text(tooltip)
     holder = QWidget()
+    holder.setProperty("transparentPane", True)
     layout = QHBoxLayout(holder)
     layout.setContentsMargins(4, 3, 4, 3)
     layout.setSpacing(0)
     layout.addWidget(button)
     return holder, button
+
+
+def center_in_cell(widget: QWidget) -> QWidget:
+    """Wraps ``widget`` so it sits centred in a table cell.
+
+    Checkboxes and other fixed-size controls carry no text, so left-aligning
+    them leaves them floating away from the column they belong to. The holder
+    is transparent for the same reason as :func:`cell_button`'s.
+    """
+    holder = QWidget()
+    holder.setProperty("transparentPane", True)
+    layout = QHBoxLayout(holder)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(0)
+    layout.addStretch()
+    layout.addWidget(widget)
+    layout.addStretch()
+    return holder
 
 
 def button_in_cell(table: QTableWidget, row: int, column: int) -> QPushButton | None:
@@ -1478,3 +1661,132 @@ def form_caption(text: str) -> QLabel:
     label.setWordWrap(True)
     label.setProperty("fieldCaption", True)
     return label
+
+
+@dataclass(frozen=True)
+class ToolbarAction:
+    """One button in a page toolbar.
+
+    ``icon_name`` is required rather than optional: every toolbar button in
+    these pages carries a glyph, and making it mandatory stops a new action
+    from silently shipping without one.
+    """
+
+    caption: str
+    icon_name: str
+    slot: Callable[[], None]
+    accent: bool = False
+    danger: bool = False
+    tooltip: str = ""
+    #: Buttons sharing a group number stay together; a divider is drawn
+    #: wherever the group changes.
+    group: int = 0
+
+
+def build_page_toolbar(
+    actions: tuple[ToolbarAction, ...],
+) -> tuple[QHBoxLayout, dict[str, QPushButton]]:
+    """Builds the top action row shared by the workspace pages.
+
+    Matches the Environments page: a left-aligned row of buttons followed by a
+    stretch, so the group stays packed against the left edge instead of
+    spreading across the full width. Actions carrying different ``group``
+    numbers are separated by a thin divider.
+    """
+    toolbar = QHBoxLayout()
+    buttons: dict[str, QPushButton] = {}
+    previous_group: int | None = None
+    for action in actions:
+        if previous_group is not None and action.group != previous_group:
+            toolbar.addSpacing(4)
+            divider = QFrame()
+            divider.setObjectName("toolbarDivider")
+            divider.setFixedWidth(1)
+            toolbar.addWidget(divider)
+            toolbar.addSpacing(4)
+        previous_group = action.group
+        button = QPushButton(action.caption)
+        button.setToolTip(action.tooltip or action.caption)
+        button.setAccessibleName(action.caption)
+        if action.accent:
+            button.setProperty("accent", True)
+        if action.danger:
+            button.setProperty("danger", True)
+        # ``clicked`` carries a bool. Connecting a slot directly would feed
+        # that bool into its first optional parameter -- which for actions
+        # like ``new_catalog(confirm=True)`` silently turns the confirmation
+        # off. The shim guarantees the slot is always called with no args.
+        button.clicked.connect(lambda _checked=False, slot=action.slot: slot())
+        toolbar.addWidget(button)
+        buttons[action.caption] = button
+    toolbar.addStretch()
+    return toolbar, buttons
+
+
+def tint_toolbar(
+    actions: tuple[ToolbarAction, ...], buttons: dict[str, QPushButton]
+) -> None:
+    """Re-tints toolbar glyphs for the active palette.
+
+    Icons are rasterised with a fixed colour, so they have to be rebuilt on
+    every theme change or an accent button keeps a dark glyph on a blue fill.
+    """
+    for action in actions:
+        button = buttons.get(action.caption)
+        if button is None:
+            continue
+        if action.accent:
+            colour = theme.TEXT_INVERSE
+        elif action.danger:
+            colour = theme.FAIL
+        else:
+            colour = theme.TEXT
+        button.setIcon(icon(action.icon_name, colour, 16))
+
+
+class Pane(QWidget):
+    """A bordered column with a titled header and a swappable body.
+
+    The border lives on this container rather than on the list inside it.
+    That is the fix for panes visually dissolving when empty: the page used
+    to hide the list and show a sibling empty state, which removed the only
+    bordered widget and left the columns with no boundary at all.
+    """
+
+    def __init__(self, title: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("listPane")
+        # A plain QWidget ignores stylesheet borders unless it is told to draw
+        # a styled background, which is exactly what the pane boundary needs.
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        header = QWidget()
+        header.setObjectName("listPaneHeader")
+        header.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(12, 8, 12, 8)
+        header_layout.setSpacing(8)
+        self.title = ElidingLabel(title)
+        self.title.setObjectName("listPaneTitle")
+        header_layout.addWidget(self.title, 1)
+        self.count = QLabel("")
+        self.count.setObjectName("listPaneCount")
+        header_layout.addWidget(self.count, 0)
+        outer.addWidget(header)
+
+        self.body = QVBoxLayout()
+        self.body.setContentsMargins(8, 8, 8, 8)
+        self.body.setSpacing(8)
+        outer.addLayout(self.body, 1)
+
+    def set_title(self, title: str) -> None:
+        self.title.setText(title)
+
+    def set_count(self, count: int | None) -> None:
+        self.count.setText("" if count is None else str(count))
+        self.count.setVisible(count is not None)
+

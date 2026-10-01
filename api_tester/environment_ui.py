@@ -37,7 +37,7 @@ from .environment import (
     validate_base_url,
 )
 from .icons import icon
-from .widgets import KeyValueTable, attach_table_empty_state
+from .widgets import KeyValueTable, attach_table_empty_state, center_in_cell
 
 
 CREDENTIAL_HINT = (
@@ -400,6 +400,7 @@ class EnvironmentManagerPage(QWidget):
             self.table.setItem(row, 2, QTableWidgetItem(self._summary_text(name)))
 
             actions = QWidget()
+            actions.setProperty("transparentPane", True)
             actions_layout = QHBoxLayout(actions)
             actions_layout.setContentsMargins(0, 0, 0, 0)
             actions_layout.setSpacing(2)
@@ -433,13 +434,7 @@ class EnvironmentManagerPage(QWidget):
 
     @staticmethod
     def _center(widget: QWidget) -> QWidget:
-        holder = QWidget()
-        holder_layout = QHBoxLayout(holder)
-        holder_layout.setContentsMargins(0, 0, 0, 0)
-        holder_layout.addStretch()
-        holder_layout.addWidget(widget)
-        holder_layout.addStretch()
-        return holder
+        return center_in_cell(widget)
 
     @staticmethod
     def _row_button(tooltip: str, *, danger: bool = False) -> QPushButton:

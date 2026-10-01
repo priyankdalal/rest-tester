@@ -1262,6 +1262,24 @@ QWidget#listPane QListWidget {{
     background: transparent;
     border: none;
 }}
+QWidget#listPane QTreeWidget {{
+    background: transparent;
+    border: none;
+}}
+QFrame#toolbarDivider {{
+    background-color: {BORDER};
+    border: none;
+}}
+QWidget#builderToolbar {{
+    background-color: {SURFACE};
+    border: none;
+    border-bottom: 1px solid {BORDER};
+}}
+QWidget#builderStatus {{
+    background-color: {SURFACE};
+    border: none;
+    border-top: 1px solid {BORDER};
+}}
 QWidget#miniHandler {{
     background-color: {SURFACE};
     border: 1px solid {BORDER};
