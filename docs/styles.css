@@ -70,6 +70,7 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 .text-link { font-size: 13px; font-weight: 600; }
 .text-link span { color: var(--accent); margin-left: 7px; }
 code { padding: 2px 5px; border-radius: 3px; background: #eeefe9; font: 13px var(--mono); }
+:not(pre) > code { overflow-wrap: anywhere; }
 kbd { padding: 2px 7px; border: 1px solid #ccd0cb; border-bottom-width: 2px; border-radius: 4px; background: #fff; font: 11px var(--mono); }
 
 /* ---- home hero ---- */
@@ -323,19 +324,23 @@ kbd { padding: 2px 7px; border: 1px solid #ccd0cb; border-bottom-width: 2px; bor
   .footer-grid { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 850px) {
-  .hero { grid-template-columns: 1fr; padding-top: 58px; }
+  .hero { grid-template-columns: minmax(0, 1fr); padding-top: 58px; }
   .hero-visual { margin-top: 35px; }
-  .feature-grid, .capability-layout, .split-section, .docs-inner { grid-template-columns: 1fr; gap: 48px; }
+  .feature-grid, .capability-layout, .split-section, .docs-inner { grid-template-columns: minmax(0, 1fr); gap: 48px; }
   .feature-card { min-height: 0; }
   .section { padding: 90px 0; }
   .split-section { padding: 95px 0; }
   .cta-card { display: block; padding: 40px; }
   .cta-action { text-align: left; margin-top: 30px; }
-  .nav-links { gap: 16px; }
-  .nav-links a:not(.nav-cta) { display: none; }
-  .split-block { grid-template-columns: 1fr; gap: 36px; }
+  .nav { min-height: 65px; }
+  .menu-toggle { display: block; }
+  .nav-links { display: none; position: absolute; top: 65px; left: 0; right: 0; padding: 14px; background: #fff; border: 1px solid var(--line); box-shadow: 0 8px 20px rgba(0, 0, 0, .08); border-radius: 5px; }
+  .nav-links.open { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+  .nav-links a:not(.nav-cta) { display: block; padding: 8px; }
+  .nav-cta { text-align: center; }
+  .split-block { grid-template-columns: minmax(0, 1fr); gap: 36px; }
   .split-sticky { position: static; }
-  .docs-layout { grid-template-columns: 1fr; gap: 34px; }
+  .docs-layout { grid-template-columns: minmax(0, 1fr); gap: 34px; }
   .docs-nav { position: static; max-height: none; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
   .docs-nav a { display: inline-block; margin: 0 6px 6px 0; padding: 6px 12px; border: 1px solid var(--line); border-radius: 4px; }
   .status-grid { grid-template-columns: 1fr; }
@@ -343,12 +348,6 @@ kbd { padding: 2px 7px; border: 1px solid #ccd0cb; border-bottom-width: 2px; bor
 }
 @media (max-width: 570px) {
   .shell { width: min(100% - 30px, 1160px); }
-  .nav { min-height: 65px; }
-  .menu-toggle { display: block; }
-  .nav-links { display: none; position: absolute; top: 65px; left: 0; right: 0; padding: 14px; background: #fff; border: 1px solid var(--line); box-shadow: 0 8px 20px rgba(0, 0, 0, .08); border-radius: 5px; }
-  .nav-links.open { display: flex; flex-direction: column; align-items: stretch; }
-  .nav-links a:not(.nav-cta) { display: block; padding: 8px; }
-  .nav-cta { text-align: center; }
   .hero { min-height: 0; padding: 50px 0 40px; }
   .hero-actions { align-items: flex-start; flex-direction: column; gap: 18px; }
   .app-window { transform: none; }
@@ -359,8 +358,10 @@ kbd { padding: 2px 7px; border: 1px solid #ccd0cb; border-bottom-width: 2px; bor
   .dark-section { padding: 90px 0; }
   .code-card pre { font-size: 11px; padding: 22px 15px; }
   .cta-card h2 { font-size: 36px; }
-  .detail-grid, .category-grid, .principle-grid, .tech-grid, .install-steps, .shot-pair, .footer-grid { grid-template-columns: 1fr; }
-  .shot-grid { grid-template-columns: 1fr; gap: 22px; margin-top: 38px; }
+  .detail-grid, .category-grid, .principle-grid, .tech-grid, .install-steps,   .shot-pair, .footer-grid { grid-template-columns: minmax(0, 1fr); }
+    .shot-grid { grid-template-columns: minmax(0, 1fr); gap: 22px; margin-top: 38px; }
+    h1 { overflow-wrap: break-word; }
+    .hero-visual { min-height: 0; }
   .shot:not(.shot-wide) figcaption { min-height: 0; }
   .shot-frame img { height: 240px; padding: 8px; }
   .page-hero { padding: 44px 0 40px; }
