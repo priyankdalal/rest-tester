@@ -1,0 +1,8 @@
+﻿PyQt6>=6.7,<7
+requests>=2.32,<3
+msal>=1.31,<2
+msal-extensions>=1.2,<2
+# Direct dependencies of the JWT Bearer and Atlassian ASAP methods. They also
+# arrive transitively through msal, but the auth layer imports them itself.
+PyJWT>=2.8,<3
+cryptography>=42,<100

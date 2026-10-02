@@ -1,0 +1,4154 @@
+{
+  "schema_version": 2,
+  "generated_at": "2025-01-15T00:00:00+00:00",
+  "name": "Demo Store API",
+  "workspace_root": "",
+  "filter_grammar": {
+    "separator": ":=",
+    "and": ";",
+    "or": "|",
+    "value_delimiter": ",",
+    "sort_descending_suffix": "-",
+    "pattern": "Name__operator:=value[,value][;|]..."
+  },
+  "services": [
+    {
+      "name": "Catalog",
+      "repository": "store-catalog",
+      "default_base_url": "http://127.0.0.1:8765/catalog/v1/",
+      "filter_sort_builders": true,
+      "endpoints": [
+        {
+          "id": "f76aeb49ca37",
+          "service": "Catalog",
+          "controller": "Product",
+          "action": "GetAllProducts",
+          "method": "GET",
+          "path": "/Product",
+          "parameters": [
+            {
+              "name": "Filter",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            },
+            {
+              "name": "Sort",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            },
+            {
+              "name": "Fields",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            },
+            {
+              "name": "PageSize",
+              "source": "query",
+              "type": "int",
+              "required": false,
+              "sample": 25
+            },
+            {
+              "name": "ContinuationToken",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            }
+          ],
+          "payload": null,
+          "payload_type": null,
+          "payload_schema": null,
+          "response_schema": "ProductListResponse",
+          "form_schema": null,
+          "filter_entity": "Product",
+          "expected_status": "200-299",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "fa32a625a196",
+          "service": "Catalog",
+          "controller": "Product",
+          "action": "CountProducts",
+          "method": "HEAD",
+          "path": "/Product",
+          "parameters": [
+            {
+              "name": "Filter",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            },
+            {
+              "name": "Sort",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            },
+            {
+              "name": "Fields",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            },
+            {
+              "name": "PageSize",
+              "source": "query",
+              "type": "int",
+              "required": false,
+              "sample": 25
+            },
+            {
+              "name": "ContinuationToken",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            }
+          ],
+          "payload": null,
+          "payload_type": null,
+          "payload_schema": null,
+          "response_schema": null,
+          "form_schema": null,
+          "filter_entity": "Product",
+          "expected_status": "200-299",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "870dcc89426b",
+          "service": "Catalog",
+          "controller": "Product",
+          "action": "GetProductById",
+          "method": "GET",
+          "path": "/Product/{id}",
+          "parameters": [
+            {
+              "name": "id",
+              "source": "path",
+              "type": "int",
+              "required": true,
+              "sample": 1
+            }
+          ],
+          "payload": null,
+          "payload_type": null,
+          "payload_schema": null,
+          "response_schema": "ProductResponse",
+          "form_schema": null,
+          "filter_entity": null,
+          "expected_status": "200-299",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "a31051c8dfa2",
+          "service": "Catalog",
+          "controller": "Product",
+          "action": "CreateProduct",
+          "method": "POST",
+          "path": "/Product",
+          "parameters": [],
+          "payload": {
+            "Name": "Wireless Headphones 5",
+            "Sku": "SKU-2048",
+            "Description": "Over-ear, 30 h battery.",
+            "CategoryId": 1,
+            "Price": 129.0,
+            "Stock": 40,
+            "Status": "Draft",
+            "IsFeatured": false,
+            "ReleaseDate": "2025-01-15T00:00:00Z",
+            "Tags": [
+              "new",
+              "bestseller"
+            ],
+            "Dimensions": {
+              "WidthCm": 18,
+              "HeightCm": 20,
+              "DepthCm": 8,
+              "WeightKg": 0.3
+            }
+          },
+          "payload_type": "ProductPayload",
+          "payload_schema": "ProductPayload",
+          "response_schema": "ProductResponse",
+          "form_schema": null,
+          "filter_entity": null,
+          "expected_status": "201",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "4b3ea73969cc",
+          "service": "Catalog",
+          "controller": "Product",
+          "action": "UpdateProduct",
+          "method": "PUT",
+          "path": "/Product/{id}",
+          "parameters": [
+            {
+              "name": "id",
+              "source": "path",
+              "type": "int",
+              "required": true,
+              "sample": 1
+            }
+          ],
+          "payload": {
+            "Name": "Wireless Headphones 5",
+            "Sku": "SKU-2048",
+            "Description": "Over-ear, 30 h battery.",
+            "CategoryId": 1,
+            "Price": 129.0,
+            "Stock": 40,
+            "Status": "Draft",
+            "IsFeatured": false,
+            "ReleaseDate": "2025-01-15T00:00:00Z",
+            "Tags": [
+              "new",
+              "bestseller"
+            ],
+            "Dimensions": {
+              "WidthCm": 18,
+              "HeightCm": 20,
+              "DepthCm": 8,
+              "WeightKg": 0.3
+            }
+          },
+          "payload_type": "ProductPayload",
+          "payload_schema": "ProductPayload",
+          "response_schema": "ProductResponse",
+          "form_schema": null,
+          "filter_entity": null,
+          "expected_status": "200-299",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "81ef2e2170c3",
+          "service": "Catalog",
+          "controller": "Product",
+          "action": "PatchProduct",
+          "method": "PATCH",
+          "path": "/Product/{id}",
+          "parameters": [
+            {
+              "name": "id",
+              "source": "path",
+              "type": "int",
+              "required": true,
+              "sample": 1
+            }
+          ],
+          "payload": [
+            {
+              "op": "replace",
+              "path": "/name",
+              "value": "Updated via PATCH"
+            }
+          ],
+          "payload_type": "JsonPatchDocument<Product>",
+          "payload_schema": null,
+          "response_schema": "ProductResponse",
+          "form_schema": null,
+          "filter_entity": null,
+          "expected_status": "200-299",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "5aedafc7c6b3",
+          "service": "Catalog",
+          "controller": "Product",
+          "action": "DeleteProduct",
+          "method": "DELETE",
+          "path": "/Product/{id}",
+          "parameters": [
+            {
+              "name": "id",
+              "source": "path",
+              "type": "int",
+              "required": true,
+              "sample": 1
+            }
+          ],
+          "payload": null,
+          "payload_type": null,
+          "payload_schema": null,
+          "response_schema": null,
+          "form_schema": null,
+          "filter_entity": null,
+          "expected_status": "204",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "8aa41dd4aea2",
+          "service": "Catalog",
+          "controller": "Category",
+          "action": "GetAllCategorys",
+          "method": "GET",
+          "path": "/Category",
+          "parameters": [
+            {
+              "name": "Filter",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            },
+            {
+              "name": "Sort",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            },
+            {
+              "name": "Fields",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            },
+            {
+              "name": "PageSize",
+              "source": "query",
+              "type": "int",
+              "required": false,
+              "sample": 25
+            },
+            {
+              "name": "ContinuationToken",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            }
+          ],
+          "payload": null,
+          "payload_type": null,
+          "payload_schema": null,
+          "response_schema": "CategoryListResponse",
+          "form_schema": null,
+          "filter_entity": "Category",
+          "expected_status": "200-299",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "a886b9d5536d",
+          "service": "Catalog",
+          "controller": "Category",
+          "action": "CountCategorys",
+          "method": "HEAD",
+          "path": "/Category",
+          "parameters": [
+            {
+              "name": "Filter",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            },
+            {
+              "name": "Sort",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            },
+            {
+              "name": "Fields",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            },
+            {
+              "name": "PageSize",
+              "source": "query",
+              "type": "int",
+              "required": false,
+              "sample": 25
+            },
+            {
+              "name": "ContinuationToken",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            }
+          ],
+          "payload": null,
+          "payload_type": null,
+          "payload_schema": null,
+          "response_schema": null,
+          "form_schema": null,
+          "filter_entity": "Category",
+          "expected_status": "200-299",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "c3fe0e2daaf7",
+          "service": "Catalog",
+          "controller": "Category",
+          "action": "GetCategoryById",
+          "method": "GET",
+          "path": "/Category/{id}",
+          "parameters": [
+            {
+              "name": "id",
+              "source": "path",
+              "type": "int",
+              "required": true,
+              "sample": 1
+            }
+          ],
+          "payload": null,
+          "payload_type": null,
+          "payload_schema": null,
+          "response_schema": "CategoryResponse",
+          "form_schema": null,
+          "filter_entity": null,
+          "expected_status": "200-299",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "5fe27475559b",
+          "service": "Catalog",
+          "controller": "Category",
+          "action": "CreateCategory",
+          "method": "POST",
+          "path": "/Category",
+          "parameters": [],
+          "payload": {
+            "Name": "Wireless Headphones 5",
+            "ParentId": 1,
+            "IsVisible": true,
+            "SortOrder": 10
+          },
+          "payload_type": "CategoryPayload",
+          "payload_schema": "CategoryPayload",
+          "response_schema": "CategoryResponse",
+          "form_schema": null,
+          "filter_entity": null,
+          "expected_status": "201",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "a955616cf99a",
+          "service": "Catalog",
+          "controller": "Category",
+          "action": "UpdateCategory",
+          "method": "PUT",
+          "path": "/Category/{id}",
+          "parameters": [
+            {
+              "name": "id",
+              "source": "path",
+              "type": "int",
+              "required": true,
+              "sample": 1
+            }
+          ],
+          "payload": {
+            "Name": "Wireless Headphones 5",
+            "ParentId": 1,
+            "IsVisible": true,
+            "SortOrder": 10
+          },
+          "payload_type": "CategoryPayload",
+          "payload_schema": "CategoryPayload",
+          "response_schema": "CategoryResponse",
+          "form_schema": null,
+          "filter_entity": null,
+          "expected_status": "200-299",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "4601bdebdc46",
+          "service": "Catalog",
+          "controller": "Category",
+          "action": "PatchCategory",
+          "method": "PATCH",
+          "path": "/Category/{id}",
+          "parameters": [
+            {
+              "name": "id",
+              "source": "path",
+              "type": "int",
+              "required": true,
+              "sample": 1
+            }
+          ],
+          "payload": [
+            {
+              "op": "replace",
+              "path": "/name",
+              "value": "Updated via PATCH"
+            }
+          ],
+          "payload_type": "JsonPatchDocument<Category>",
+          "payload_schema": null,
+          "response_schema": "CategoryResponse",
+          "form_schema": null,
+          "filter_entity": null,
+          "expected_status": "200-299",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "e3b82c470113",
+          "service": "Catalog",
+          "controller": "Category",
+          "action": "DeleteCategory",
+          "method": "DELETE",
+          "path": "/Category/{id}",
+          "parameters": [
+            {
+              "name": "id",
+              "source": "path",
+              "type": "int",
+              "required": true,
+              "sample": 1
+            }
+          ],
+          "payload": null,
+          "payload_type": null,
+          "payload_schema": null,
+          "response_schema": null,
+          "form_schema": null,
+          "filter_entity": null,
+          "expected_status": "204",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "c1d6e2bd0ee7",
+          "service": "Catalog",
+          "controller": "Product",
+          "action": "GetProductImage",
+          "method": "GET",
+          "path": "/Product/{id}/image",
+          "parameters": [
+            {
+              "name": "id",
+              "source": "path",
+              "type": "int",
+              "required": true,
+              "sample": 1
+            },
+            {
+              "name": "size",
+              "source": "query",
+              "type": "string",
+              "required": false,
+              "sample": "medium"
+            }
+          ],
+          "payload": null,
+          "payload_type": null,
+          "payload_schema": null,
+          "response_schema": null,
+          "form_schema": null,
+          "filter_entity": null,
+          "expected_status": "200-299",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        }
+      ]
+    },
+    {
+      "name": "Orders",
+      "repository": "store-orders",
+      "default_base_url": "http://127.0.0.1:8765/orders/v1/",
+      "filter_sort_builders": true,
+      "endpoints": [
+        {
+          "id": "de0553f627bf",
+          "service": "Orders",
+          "controller": "Order",
+          "action": "GetAllOrders",
+          "method": "GET",
+          "path": "/Order",
+          "parameters": [
+            {
+              "name": "Filter",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            },
+            {
+              "name": "Sort",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            },
+            {
+              "name": "Fields",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            },
+            {
+              "name": "PageSize",
+              "source": "query",
+              "type": "int",
+              "required": false,
+              "sample": 25
+            },
+            {
+              "name": "ContinuationToken",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            }
+          ],
+          "payload": null,
+          "payload_type": null,
+          "payload_schema": null,
+          "response_schema": "OrderListResponse",
+          "form_schema": null,
+          "filter_entity": "Order",
+          "expected_status": "200-299",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "816e4deed1ae",
+          "service": "Orders",
+          "controller": "Order",
+          "action": "CountOrders",
+          "method": "HEAD",
+          "path": "/Order",
+          "parameters": [
+            {
+              "name": "Filter",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            },
+            {
+              "name": "Sort",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            },
+            {
+              "name": "Fields",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            },
+            {
+              "name": "PageSize",
+              "source": "query",
+              "type": "int",
+              "required": false,
+              "sample": 25
+            },
+            {
+              "name": "ContinuationToken",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            }
+          ],
+          "payload": null,
+          "payload_type": null,
+          "payload_schema": null,
+          "response_schema": null,
+          "form_schema": null,
+          "filter_entity": "Order",
+          "expected_status": "200-299",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "dcca57302373",
+          "service": "Orders",
+          "controller": "Order",
+          "action": "GetOrderById",
+          "method": "GET",
+          "path": "/Order/{id}",
+          "parameters": [
+            {
+              "name": "id",
+              "source": "path",
+              "type": "int",
+              "required": true,
+              "sample": 1
+            }
+          ],
+          "payload": null,
+          "payload_type": null,
+          "payload_schema": null,
+          "response_schema": "OrderResponse",
+          "form_schema": null,
+          "filter_entity": null,
+          "expected_status": "200-299",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "329f4dccfcdc",
+          "service": "Orders",
+          "controller": "Order",
+          "action": "CreateOrder",
+          "method": "POST",
+          "path": "/Order",
+          "parameters": [],
+          "payload": {
+            "CustomerId": 1,
+            "PaymentMethod": "Card",
+            "CouponCode": "SPRING10",
+            "Notes": "Leave at the front desk.",
+            "ShippingAddress": {
+              "Line1": "221 Market Street",
+              "Line2": "Suite 4",
+              "City": "Austin",
+              "PostalCode": "78701",
+              "Country": "US"
+            },
+            "Lines": [
+              {
+                "ProductId": 3,
+                "Quantity": 2
+              }
+            ]
+          },
+          "payload_type": "OrderPayload",
+          "payload_schema": "OrderPayload",
+          "response_schema": "OrderResponse",
+          "form_schema": null,
+          "filter_entity": null,
+          "expected_status": "201",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "d2c6be9cfe15",
+          "service": "Orders",
+          "controller": "Order",
+          "action": "UpdateOrder",
+          "method": "PUT",
+          "path": "/Order/{id}",
+          "parameters": [
+            {
+              "name": "id",
+              "source": "path",
+              "type": "int",
+              "required": true,
+              "sample": 1
+            }
+          ],
+          "payload": {
+            "CustomerId": 1,
+            "PaymentMethod": "Card",
+            "CouponCode": "SPRING10",
+            "Notes": "Leave at the front desk.",
+            "ShippingAddress": {
+              "Line1": "221 Market Street",
+              "Line2": "Suite 4",
+              "City": "Austin",
+              "PostalCode": "78701",
+              "Country": "US"
+            },
+            "Lines": [
+              {
+                "ProductId": 3,
+                "Quantity": 2
+              }
+            ]
+          },
+          "payload_type": "OrderPayload",
+          "payload_schema": "OrderPayload",
+          "response_schema": "OrderResponse",
+          "form_schema": null,
+          "filter_entity": null,
+          "expected_status": "200-299",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "7c07a5db07ce",
+          "service": "Orders",
+          "controller": "Order",
+          "action": "PatchOrder",
+          "method": "PATCH",
+          "path": "/Order/{id}",
+          "parameters": [
+            {
+              "name": "id",
+              "source": "path",
+              "type": "int",
+              "required": true,
+              "sample": 1
+            }
+          ],
+          "payload": [
+            {
+              "op": "replace",
+              "path": "/notes",
+              "value": "Updated via PATCH"
+            }
+          ],
+          "payload_type": "JsonPatchDocument<Order>",
+          "payload_schema": null,
+          "response_schema": "OrderResponse",
+          "form_schema": null,
+          "filter_entity": null,
+          "expected_status": "200-299",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "f107e675316d",
+          "service": "Orders",
+          "controller": "Order",
+          "action": "DeleteOrder",
+          "method": "DELETE",
+          "path": "/Order/{id}",
+          "parameters": [
+            {
+              "name": "id",
+              "source": "path",
+              "type": "int",
+              "required": true,
+              "sample": 1
+            }
+          ],
+          "payload": null,
+          "payload_type": null,
+          "payload_schema": null,
+          "response_schema": null,
+          "form_schema": null,
+          "filter_entity": null,
+          "expected_status": "204",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "c2cd32c2e8fc",
+          "service": "Orders",
+          "controller": "Order",
+          "action": "UpdateOrderStatus",
+          "method": "PUT",
+          "path": "/Order/{id}/status",
+          "parameters": [
+            {
+              "name": "id",
+              "source": "path",
+              "type": "int",
+              "required": true,
+              "sample": 1
+            }
+          ],
+          "payload": {
+            "Status": "Pending",
+            "TrackingNumber": "1Z999AA10123456784"
+          },
+          "payload_type": "OrderStatusPayload",
+          "payload_schema": "OrderStatusPayload",
+          "response_schema": "OrderResponse",
+          "form_schema": null,
+          "filter_entity": null,
+          "expected_status": "200-299",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "93bbb3ad4b15",
+          "service": "Orders",
+          "controller": "Order",
+          "action": "GetInvoice",
+          "method": "GET",
+          "path": "/Order/{id}/invoice",
+          "parameters": [
+            {
+              "name": "id",
+              "source": "path",
+              "type": "int",
+              "required": true,
+              "sample": 1
+            },
+            {
+              "name": "format",
+              "source": "query",
+              "type": "string",
+              "required": false,
+              "sample": "pdf"
+            }
+          ],
+          "payload": null,
+          "payload_type": null,
+          "payload_schema": null,
+          "response_schema": null,
+          "form_schema": null,
+          "filter_entity": null,
+          "expected_status": "200-299",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        }
+      ]
+    },
+    {
+      "name": "Customers",
+      "repository": "store-customers",
+      "default_base_url": "http://127.0.0.1:8765/customers/v1/",
+      "filter_sort_builders": true,
+      "endpoints": [
+        {
+          "id": "e2e737b18d37",
+          "service": "Customers",
+          "controller": "Customer",
+          "action": "GetAllCustomers",
+          "method": "GET",
+          "path": "/Customer",
+          "parameters": [
+            {
+              "name": "Filter",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            },
+            {
+              "name": "Sort",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            },
+            {
+              "name": "Fields",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            },
+            {
+              "name": "PageSize",
+              "source": "query",
+              "type": "int",
+              "required": false,
+              "sample": 25
+            },
+            {
+              "name": "ContinuationToken",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            }
+          ],
+          "payload": null,
+          "payload_type": null,
+          "payload_schema": null,
+          "response_schema": "CustomerListResponse",
+          "form_schema": null,
+          "filter_entity": "Customer",
+          "expected_status": "200-299",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "6f96202f6d57",
+          "service": "Customers",
+          "controller": "Customer",
+          "action": "CountCustomers",
+          "method": "HEAD",
+          "path": "/Customer",
+          "parameters": [
+            {
+              "name": "Filter",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            },
+            {
+              "name": "Sort",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            },
+            {
+              "name": "Fields",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            },
+            {
+              "name": "PageSize",
+              "source": "query",
+              "type": "int",
+              "required": false,
+              "sample": 25
+            },
+            {
+              "name": "ContinuationToken",
+              "source": "query",
+              "type": "string?",
+              "required": false
+            }
+          ],
+          "payload": null,
+          "payload_type": null,
+          "payload_schema": null,
+          "response_schema": null,
+          "form_schema": null,
+          "filter_entity": "Customer",
+          "expected_status": "200-299",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "e883efa5971a",
+          "service": "Customers",
+          "controller": "Customer",
+          "action": "GetCustomerById",
+          "method": "GET",
+          "path": "/Customer/{id}",
+          "parameters": [
+            {
+              "name": "id",
+              "source": "path",
+              "type": "int",
+              "required": true,
+              "sample": 1
+            }
+          ],
+          "payload": null,
+          "payload_type": null,
+          "payload_schema": null,
+          "response_schema": "CustomerResponse",
+          "form_schema": null,
+          "filter_entity": null,
+          "expected_status": "200-299",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "fcc77fd10360",
+          "service": "Customers",
+          "controller": "Customer",
+          "action": "CreateCustomer",
+          "method": "POST",
+          "path": "/Customer",
+          "parameters": [],
+          "payload": {
+            "FirstName": "Ada",
+            "LastName": "Lovelace",
+            "Email": "ada@example.com",
+            "Phone": "+1-555-0100",
+            "Tier": "Standard",
+            "IsSubscribed": false,
+            "BirthDate": "2025-01-15T00:00:00Z"
+          },
+          "payload_type": "CustomerPayload",
+          "payload_schema": "CustomerPayload",
+          "response_schema": "CustomerResponse",
+          "form_schema": null,
+          "filter_entity": null,
+          "expected_status": "201",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "69db3fa5f822",
+          "service": "Customers",
+          "controller": "Customer",
+          "action": "UpdateCustomer",
+          "method": "PUT",
+          "path": "/Customer/{id}",
+          "parameters": [
+            {
+              "name": "id",
+              "source": "path",
+              "type": "int",
+              "required": true,
+              "sample": 1
+            }
+          ],
+          "payload": {
+            "FirstName": "Ada",
+            "LastName": "Lovelace",
+            "Email": "ada@example.com",
+            "Phone": "+1-555-0100",
+            "Tier": "Standard",
+            "IsSubscribed": false,
+            "BirthDate": "2025-01-15T00:00:00Z"
+          },
+          "payload_type": "CustomerPayload",
+          "payload_schema": "CustomerPayload",
+          "response_schema": "CustomerResponse",
+          "form_schema": null,
+          "filter_entity": null,
+          "expected_status": "200-299",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "d6d86fb7d1bf",
+          "service": "Customers",
+          "controller": "Customer",
+          "action": "PatchCustomer",
+          "method": "PATCH",
+          "path": "/Customer/{id}",
+          "parameters": [
+            {
+              "name": "id",
+              "source": "path",
+              "type": "int",
+              "required": true,
+              "sample": 1
+            }
+          ],
+          "payload": [
+            {
+              "op": "replace",
+              "path": "/phone",
+              "value": "Updated via PATCH"
+            }
+          ],
+          "payload_type": "JsonPatchDocument<Customer>",
+          "payload_schema": null,
+          "response_schema": "CustomerResponse",
+          "form_schema": null,
+          "filter_entity": null,
+          "expected_status": "200-299",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "2143827c78de",
+          "service": "Customers",
+          "controller": "Customer",
+          "action": "DeleteCustomer",
+          "method": "DELETE",
+          "path": "/Customer/{id}",
+          "parameters": [
+            {
+              "name": "id",
+              "source": "path",
+              "type": "int",
+              "required": true,
+              "sample": 1
+            }
+          ],
+          "payload": null,
+          "payload_type": null,
+          "payload_schema": null,
+          "response_schema": null,
+          "form_schema": null,
+          "filter_entity": null,
+          "expected_status": "204",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "f27f378057a6",
+          "service": "Customers",
+          "controller": "Customer",
+          "action": "GetAddresses",
+          "method": "GET",
+          "path": "/Customer/{id}/addresses",
+          "parameters": [
+            {
+              "name": "id",
+              "source": "path",
+              "type": "int",
+              "required": true,
+              "sample": 1
+            }
+          ],
+          "payload": null,
+          "payload_type": null,
+          "payload_schema": null,
+          "response_schema": null,
+          "form_schema": null,
+          "filter_entity": null,
+          "expected_status": "200-299",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        },
+        {
+          "id": "9d2c6f1b18d1",
+          "service": "Customers",
+          "controller": "Customer",
+          "action": "AddAddress",
+          "method": "POST",
+          "path": "/Customer/{id}/addresses",
+          "parameters": [
+            {
+              "name": "id",
+              "source": "path",
+              "type": "int",
+              "required": true,
+              "sample": 1
+            }
+          ],
+          "payload": {
+            "Line1": "221 Market Street",
+            "Line2": "Suite 4",
+            "City": "Austin",
+            "PostalCode": "78701",
+            "Country": "US"
+          },
+          "payload_type": "AddressPayload",
+          "payload_schema": "AddressPayload",
+          "response_schema": "AddressResponse",
+          "form_schema": null,
+          "filter_entity": null,
+          "expected_status": "201",
+          "source_file": "examples/demo_store_server.py",
+          "source_line": 1
+        }
+      ]
+    }
+  ],
+  "filter_schemas": {
+    "Product": {
+      "name": "Product",
+      "fields": [
+        {
+          "name": "Id",
+          "display_name": "Id",
+          "data_type": "Number",
+          "clr_type": "int",
+          "nullable": false,
+          "sortable": true,
+          "lov": [],
+          "operators": [
+            {
+              "label": "Equals to",
+              "value": "eq"
+            },
+            {
+              "label": "Not equals to",
+              "value": "neq"
+            },
+            {
+              "label": "Greater than",
+              "value": "gt"
+            },
+            {
+              "label": "Less than",
+              "value": "lt"
+            },
+            {
+              "label": "Greater than or equals to",
+              "value": "gte"
+            },
+            {
+              "label": "Less than or equals to",
+              "value": "lte"
+            },
+            {
+              "label": "In",
+              "value": "in"
+            },
+            {
+              "label": "Not in",
+              "value": "nin"
+            },
+            {
+              "label": "Between",
+              "value": "bt"
+            }
+          ]
+        },
+        {
+          "name": "Name",
+          "display_name": "Name",
+          "data_type": "Text",
+          "clr_type": "string",
+          "nullable": false,
+          "sortable": true,
+          "lov": [],
+          "operators": [
+            {
+              "label": "Equals to",
+              "value": "eq"
+            },
+            {
+              "label": "Not equals to",
+              "value": "neq"
+            },
+            {
+              "label": "Contains",
+              "value": "ct"
+            },
+            {
+              "label": "Not contains",
+              "value": "nct"
+            },
+            {
+              "label": "Starts with",
+              "value": "sw"
+            },
+            {
+              "label": "Ends with",
+              "value": "ew"
+            },
+            {
+              "label": "In",
+              "value": "in"
+            },
+            {
+              "label": "Not in",
+              "value": "nin"
+            }
+          ]
+        },
+        {
+          "name": "Sku",
+          "display_name": "Sku",
+          "data_type": "Text",
+          "clr_type": "string",
+          "nullable": false,
+          "sortable": true,
+          "lov": [],
+          "operators": [
+            {
+              "label": "Equals to",
+              "value": "eq"
+            },
+            {
+              "label": "Not equals to",
+              "value": "neq"
+            },
+            {
+              "label": "Contains",
+              "value": "ct"
+            },
+            {
+              "label": "Not contains",
+              "value": "nct"
+            },
+            {
+              "label": "Starts with",
+              "value": "sw"
+            },
+            {
+              "label": "Ends with",
+              "value": "ew"
+            },
+            {
+              "label": "In",
+              "value": "in"
+            },
+            {
+              "label": "Not in",
+              "value": "nin"
+            }
+          ]
+        },
+        {
+          "name": "CategoryId",
+          "display_name": "Category Id",
+          "data_type": "Number",
+          "clr_type": "int",
+          "nullable": false,
+          "sortable": true,
+          "lov": [],
+          "operators": [
+            {
+              "label": "Equals to",
+              "value": "eq"
+            },
+            {
+              "label": "Not equals to",
+              "value": "neq"
+            },
+            {
+              "label": "Greater than",
+              "value": "gt"
+            },
+            {
+              "label": "Less than",
+              "value": "lt"
+            },
+            {
+              "label": "Greater than or equals to",
+              "value": "gte"
+            },
+            {
+              "label": "Less than or equals to",
+              "value": "lte"
+            },
+            {
+              "label": "In",
+              "value": "in"
+            },
+            {
+              "label": "Not in",
+              "value": "nin"
+            },
+            {
+              "label": "Between",
+              "value": "bt"
+            }
+          ]
+        },
+        {
+          "name": "Price",
+          "display_name": "Price",
+          "data_type": "Number",
+          "clr_type": "decimal",
+          "nullable": false,
+          "sortable": true,
+          "lov": [],
+          "operators": [
+            {
+              "label": "Equals to",
+              "value": "eq"
+            },
+            {
+              "label": "Not equals to",
+              "value": "neq"
+            },
+            {
+              "label": "Greater than",
+              "value": "gt"
+            },
+            {
+              "label": "Less than",
+              "value": "lt"
+            },
+            {
+              "label": "Greater than or equals to",
+              "value": "gte"
+            },
+            {
+              "label": "Less than or equals to",
+              "value": "lte"
+            },
+            {
+              "label": "In",
+              "value": "in"
+            },
+            {
+              "label": "Not in",
+              "value": "nin"
+            },
+            {
+              "label": "Between",
+              "value": "bt"
+            }
+          ]
+        },
+        {
+          "name": "Stock",
+          "display_name": "Stock",
+          "data_type": "Number",
+          "clr_type": "int",
+          "nullable": false,
+          "sortable": true,
+          "lov": [],
+          "operators": [
+            {
+              "label": "Equals to",
+              "value": "eq"
+            },
+            {
+              "label": "Not equals to",
+              "value": "neq"
+            },
+            {
+              "label": "Greater than",
+              "value": "gt"
+            },
+            {
+              "label": "Less than",
+              "value": "lt"
+            },
+            {
+              "label": "Greater than or equals to",
+              "value": "gte"
+            },
+            {
+              "label": "Less than or equals to",
+              "value": "lte"
+            },
+            {
+              "label": "In",
+              "value": "in"
+            },
+            {
+              "label": "Not in",
+              "value": "nin"
+            },
+            {
+              "label": "Between",
+              "value": "bt"
+            }
+          ]
+        },
+        {
+          "name": "Status",
+          "display_name": "Status",
+          "data_type": "LOV",
+          "clr_type": "ProductStatus",
+          "nullable": false,
+          "sortable": true,
+          "lov": [
+            "Draft",
+            "Active",
+            "Discontinued"
+          ],
+          "operators": [
+            {
+              "label": "Equals to",
+              "value": "eq"
+            },
+            {
+              "label": "Not equals to",
+              "value": "neq"
+            }
+          ]
+        },
+        {
+          "name": "IsFeatured",
+          "display_name": "Is Featured",
+          "data_type": "Flag",
+          "clr_type": "bool",
+          "nullable": false,
+          "sortable": true,
+          "lov": [],
+          "operators": [
+            {
+              "label": "Equals to",
+              "value": "eq"
+            },
+            {
+              "label": "Not equals to",
+              "value": "neq"
+            }
+          ]
+        },
+        {
+          "name": "CreatedDate",
+          "display_name": "Created Date",
+          "data_type": "Date",
+          "clr_type": "DateTime",
+          "nullable": false,
+          "sortable": true,
+          "lov": [],
+          "operators": [
+            {
+              "label": "Equals to",
+              "value": "eq"
+            },
+            {
+              "label": "Not equals to",
+              "value": "neq"
+            },
+            {
+              "label": "Greater than",
+              "value": "gt"
+            },
+            {
+              "label": "Less than",
+              "value": "lt"
+            },
+            {
+              "label": "Greater than or equals to",
+              "value": "gte"
+            },
+            {
+              "label": "Less than or equals to",
+              "value": "lte"
+            },
+            {
+              "label": "Between",
+              "value": "bt"
+            }
+          ]
+        }
+      ]
+    },
+    "Category": {
+      "name": "Category",
+      "fields": [
+        {
+          "name": "Id",
+          "display_name": "Id",
+          "data_type": "Number",
+          "clr_type": "int",
+          "nullable": false,
+          "sortable": true,
+          "lov": [],
+          "operators": [
+            {
+              "label": "Equals to",
+              "value": "eq"
+            },
+            {
+              "label": "Not equals to",
+              "value": "neq"
+            },
+            {
+              "label": "Greater than",
+              "value": "gt"
+            },
+            {
+              "label": "Less than",
+              "value": "lt"
+            },
+            {
+              "label": "Greater than or equals to",
+              "value": "gte"
+            },
+            {
+              "label": "Less than or equals to",
+              "value": "lte"
+            },
+            {
+              "label": "In",
+              "value": "in"
+            },
+            {
+              "label": "Not in",
+              "value": "nin"
+            },
+            {
+              "label": "Between",
+              "value": "bt"
+            }
+          ]
+        },
+        {
+          "name": "Name",
+          "display_name": "Name",
+          "data_type": "Text",
+          "clr_type": "string",
+          "nullable": false,
+          "sortable": true,
+          "lov": [],
+          "operators": [
+            {
+              "label": "Equals to",
+              "value": "eq"
+            },
+            {
+              "label": "Not equals to",
+              "value": "neq"
+            },
+            {
+              "label": "Contains",
+              "value": "ct"
+            },
+            {
+              "label": "Not contains",
+              "value": "nct"
+            },
+            {
+              "label": "Starts with",
+              "value": "sw"
+            },
+            {
+              "label": "Ends with",
+              "value": "ew"
+            },
+            {
+              "label": "In",
+              "value": "in"
+            },
+            {
+              "label": "Not in",
+              "value": "nin"
+            }
+          ]
+        },
+        {
+          "name": "ParentId",
+          "display_name": "Parent Id",
+          "data_type": "Number",
+          "clr_type": "int?",
+          "nullable": true,
+          "sortable": true,
+          "lov": [],
+          "operators": [
+            {
+              "label": "Equals to",
+              "value": "eq"
+            },
+            {
+              "label": "Not equals to",
+              "value": "neq"
+            },
+            {
+              "label": "Greater than",
+              "value": "gt"
+            },
+            {
+              "label": "Less than",
+              "value": "lt"
+            },
+            {
+              "label": "Greater than or equals to",
+              "value": "gte"
+            },
+            {
+              "label": "Less than or equals to",
+              "value": "lte"
+            },
+            {
+              "label": "In",
+              "value": "in"
+            },
+            {
+              "label": "Not in",
+              "value": "nin"
+            },
+            {
+              "label": "Between",
+              "value": "bt"
+            }
+          ]
+        },
+        {
+          "name": "IsVisible",
+          "display_name": "Is Visible",
+          "data_type": "Flag",
+          "clr_type": "bool",
+          "nullable": false,
+          "sortable": true,
+          "lov": [],
+          "operators": [
+            {
+              "label": "Equals to",
+              "value": "eq"
+            },
+            {
+              "label": "Not equals to",
+              "value": "neq"
+            }
+          ]
+        }
+      ]
+    },
+    "Order": {
+      "name": "Order",
+      "fields": [
+        {
+          "name": "Id",
+          "display_name": "Id",
+          "data_type": "Number",
+          "clr_type": "int",
+          "nullable": false,
+          "sortable": true,
+          "lov": [],
+          "operators": [
+            {
+              "label": "Equals to",
+              "value": "eq"
+            },
+            {
+              "label": "Not equals to",
+              "value": "neq"
+            },
+            {
+              "label": "Greater than",
+              "value": "gt"
+            },
+            {
+              "label": "Less than",
+              "value": "lt"
+            },
+            {
+              "label": "Greater than or equals to",
+              "value": "gte"
+            },
+            {
+              "label": "Less than or equals to",
+              "value": "lte"
+            },
+            {
+              "label": "In",
+              "value": "in"
+            },
+            {
+              "label": "Not in",
+              "value": "nin"
+            },
+            {
+              "label": "Between",
+              "value": "bt"
+            }
+          ]
+        },
+        {
+          "name": "Number",
+          "display_name": "Number",
+          "data_type": "Text",
+          "clr_type": "string",
+          "nullable": false,
+          "sortable": true,
+          "lov": [],
+          "operators": [
+            {
+              "label": "Equals to",
+              "value": "eq"
+            },
+            {
+              "label": "Not equals to",
+              "value": "neq"
+            },
+            {
+              "label": "Contains",
+              "value": "ct"
+            },
+            {
+              "label": "Not contains",
+              "value": "nct"
+            },
+            {
+              "label": "Starts with",
+              "value": "sw"
+            },
+            {
+              "label": "Ends with",
+              "value": "ew"
+            },
+            {
+              "label": "In",
+              "value": "in"
+            },
+            {
+              "label": "Not in",
+              "value": "nin"
+            }
+          ]
+        },
+        {
+          "name": "CustomerId",
+          "display_name": "Customer Id",
+          "data_type": "Number",
+          "clr_type": "int",
+          "nullable": false,
+          "sortable": true,
+          "lov": [],
+          "operators": [
+            {
+              "label": "Equals to",
+              "value": "eq"
+            },
+            {
+              "label": "Not equals to",
+              "value": "neq"
+            },
+            {
+              "label": "Greater than",
+              "value": "gt"
+            },
+            {
+              "label": "Less than",
+              "value": "lt"
+            },
+            {
+              "label": "Greater than or equals to",
+              "value": "gte"
+            },
+            {
+              "label": "Less than or equals to",
+              "value": "lte"
+            },
+            {
+              "label": "In",
+              "value": "in"
+            },
+            {
+              "label": "Not in",
+              "value": "nin"
+            },
+            {
+              "label": "Between",
+              "value": "bt"
+            }
+          ]
+        },
+        {
+          "name": "Status",
+          "display_name": "Status",
+          "data_type": "LOV",
+          "clr_type": "OrderStatus",
+          "nullable": false,
+          "sortable": true,
+          "lov": [
+            "Pending",
+            "Paid",
+            "Shipped",
+            "Delivered",
+            "Cancelled"
+          ],
+          "operators": [
+            {
+              "label": "Equals to",
+              "value": "eq"
+            },
+            {
+              "label": "Not equals to",
+              "value": "neq"
+            }
+          ]
+        },
+        {
+          "name": "Total",
+          "display_name": "Total",
+          "data_type": "Number",
+          "clr_type": "decimal",
+          "nullable": false,
+          "sortable": true,
+          "lov": [],
+          "operators": [
+            {
+              "label": "Equals to",
+              "value": "eq"
+            },
+            {
+              "label": "Not equals to",
+              "value": "neq"
+            },
+            {
+              "label": "Greater than",
+              "value": "gt"
+            },
+            {
+              "label": "Less than",
+              "value": "lt"
+            },
+            {
+              "label": "Greater than or equals to",
+              "value": "gte"
+            },
+            {
+              "label": "Less than or equals to",
+              "value": "lte"
+            },
+            {
+              "label": "In",
+              "value": "in"
+            },
+            {
+              "label": "Not in",
+              "value": "nin"
+            },
+            {
+              "label": "Between",
+              "value": "bt"
+            }
+          ]
+        },
+        {
+          "name": "PaymentMethod",
+          "display_name": "Payment Method",
+          "data_type": "LOV",
+          "clr_type": "PaymentMethod",
+          "nullable": false,
+          "sortable": true,
+          "lov": [
+            "Card",
+            "PayPal",
+            "BankTransfer",
+            "GiftCard"
+          ],
+          "operators": [
+            {
+              "label": "Equals to",
+              "value": "eq"
+            },
+            {
+              "label": "Not equals to",
+              "value": "neq"
+            }
+          ]
+        },
+        {
+          "name": "PlacedDate",
+          "display_name": "Placed Date",
+          "data_type": "Date",
+          "clr_type": "DateTime",
+          "nullable": false,
+          "sortable": true,
+          "lov": [],
+          "operators": [
+            {
+              "label": "Equals to",
+              "value": "eq"
+            },
+            {
+              "label": "Not equals to",
+              "value": "neq"
+            },
+            {
+              "label": "Greater than",
+              "value": "gt"
+            },
+            {
+              "label": "Less than",
+              "value": "lt"
+            },
+            {
+              "label": "Greater than or equals to",
+              "value": "gte"
+            },
+            {
+              "label": "Less than or equals to",
+              "value": "lte"
+            },
+            {
+              "label": "Between",
+              "value": "bt"
+            }
+          ]
+        },
+        {
+          "name": "ShippedDate",
+          "display_name": "Shipped Date",
+          "data_type": "Date",
+          "clr_type": "DateTime?",
+          "nullable": true,
+          "sortable": true,
+          "lov": [],
+          "operators": [
+            {
+              "label": "Equals to",
+              "value": "eq"
+            },
+            {
+              "label": "Not equals to",
+              "value": "neq"
+            },
+            {
+              "label": "Greater than",
+              "value": "gt"
+            },
+            {
+              "label": "Less than",
+              "value": "lt"
+            },
+            {
+              "label": "Greater than or equals to",
+              "value": "gte"
+            },
+            {
+              "label": "Less than or equals to",
+              "value": "lte"
+            },
+            {
+              "label": "Between",
+              "value": "bt"
+            }
+          ]
+        }
+      ]
+    },
+    "Customer": {
+      "name": "Customer",
+      "fields": [
+        {
+          "name": "Id",
+          "display_name": "Id",
+          "data_type": "Number",
+          "clr_type": "int",
+          "nullable": false,
+          "sortable": true,
+          "lov": [],
+          "operators": [
+            {
+              "label": "Equals to",
+              "value": "eq"
+            },
+            {
+              "label": "Not equals to",
+              "value": "neq"
+            },
+            {
+              "label": "Greater than",
+              "value": "gt"
+            },
+            {
+              "label": "Less than",
+              "value": "lt"
+            },
+            {
+              "label": "Greater than or equals to",
+              "value": "gte"
+            },
+            {
+              "label": "Less than or equals to",
+              "value": "lte"
+            },
+            {
+              "label": "In",
+              "value": "in"
+            },
+            {
+              "label": "Not in",
+              "value": "nin"
+            },
+            {
+              "label": "Between",
+              "value": "bt"
+            }
+          ]
+        },
+        {
+          "name": "FirstName",
+          "display_name": "First Name",
+          "data_type": "Text",
+          "clr_type": "string",
+          "nullable": false,
+          "sortable": true,
+          "lov": [],
+          "operators": [
+            {
+              "label": "Equals to",
+              "value": "eq"
+            },
+            {
+              "label": "Not equals to",
+              "value": "neq"
+            },
+            {
+              "label": "Contains",
+              "value": "ct"
+            },
+            {
+              "label": "Not contains",
+              "value": "nct"
+            },
+            {
+              "label": "Starts with",
+              "value": "sw"
+            },
+            {
+              "label": "Ends with",
+              "value": "ew"
+            },
+            {
+              "label": "In",
+              "value": "in"
+            },
+            {
+              "label": "Not in",
+              "value": "nin"
+            }
+          ]
+        },
+        {
+          "name": "LastName",
+          "display_name": "Last Name",
+          "data_type": "Text",
+          "clr_type": "string",
+          "nullable": false,
+          "sortable": true,
+          "lov": [],
+          "operators": [
+            {
+              "label": "Equals to",
+              "value": "eq"
+            },
+            {
+              "label": "Not equals to",
+              "value": "neq"
+            },
+            {
+              "label": "Contains",
+              "value": "ct"
+            },
+            {
+              "label": "Not contains",
+              "value": "nct"
+            },
+            {
+              "label": "Starts with",
+              "value": "sw"
+            },
+            {
+              "label": "Ends with",
+              "value": "ew"
+            },
+            {
+              "label": "In",
+              "value": "in"
+            },
+            {
+              "label": "Not in",
+              "value": "nin"
+            }
+          ]
+        },
+        {
+          "name": "Email",
+          "display_name": "Email",
+          "data_type": "Text",
+          "clr_type": "string",
+          "nullable": false,
+          "sortable": true,
+          "lov": [],
+          "operators": [
+            {
+              "label": "Equals to",
+              "value": "eq"
+            },
+            {
+              "label": "Not equals to",
+              "value": "neq"
+            },
+            {
+              "label": "Contains",
+              "value": "ct"
+            },
+            {
+              "label": "Not contains",
+              "value": "nct"
+            },
+            {
+              "label": "Starts with",
+              "value": "sw"
+            },
+            {
+              "label": "Ends with",
+              "value": "ew"
+            },
+            {
+              "label": "In",
+              "value": "in"
+            },
+            {
+              "label": "Not in",
+              "value": "nin"
+            }
+          ]
+        },
+        {
+          "name": "Tier",
+          "display_name": "Tier",
+          "data_type": "LOV",
+          "clr_type": "CustomerTier",
+          "nullable": false,
+          "sortable": true,
+          "lov": [
+            "Standard",
+            "Silver",
+            "Gold",
+            "Platinum"
+          ],
+          "operators": [
+            {
+              "label": "Equals to",
+              "value": "eq"
+            },
+            {
+              "label": "Not equals to",
+              "value": "neq"
+            }
+          ]
+        },
+        {
+          "name": "IsSubscribed",
+          "display_name": "Is Subscribed",
+          "data_type": "Flag",
+          "clr_type": "bool",
+          "nullable": false,
+          "sortable": true,
+          "lov": [],
+          "operators": [
+            {
+              "label": "Equals to",
+              "value": "eq"
+            },
+            {
+              "label": "Not equals to",
+              "value": "neq"
+            }
+          ]
+        },
+        {
+          "name": "CreatedDate",
+          "display_name": "Created Date",
+          "data_type": "Date",
+          "clr_type": "DateTime",
+          "nullable": false,
+          "sortable": true,
+          "lov": [],
+          "operators": [
+            {
+              "label": "Equals to",
+              "value": "eq"
+            },
+            {
+              "label": "Not equals to",
+              "value": "neq"
+            },
+            {
+              "label": "Greater than",
+              "value": "gt"
+            },
+            {
+              "label": "Less than",
+              "value": "lt"
+            },
+            {
+              "label": "Greater than or equals to",
+              "value": "gte"
+            },
+            {
+              "label": "Less than or equals to",
+              "value": "lte"
+            },
+            {
+              "label": "Between",
+              "value": "bt"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "payload_schemas": {
+    "ProductPayload": {
+      "kind": "object",
+      "name": "ProductPayload",
+      "clr_type": "ProductPayload",
+      "fields": [
+        {
+          "name": "Name",
+          "clr_type": "string",
+          "nullable": false,
+          "required": true,
+          "display_name": "Name",
+          "kind": "text",
+          "constraints": {
+            "max_length": 120
+          }
+        },
+        {
+          "name": "Sku",
+          "clr_type": "string",
+          "nullable": false,
+          "required": true,
+          "display_name": "Sku",
+          "kind": "text",
+          "constraints": {
+            "max_length": 32
+          }
+        },
+        {
+          "name": "Description",
+          "clr_type": "string?",
+          "nullable": true,
+          "required": false,
+          "display_name": "Description",
+          "kind": "text"
+        },
+        {
+          "name": "CategoryId",
+          "clr_type": "int",
+          "nullable": false,
+          "required": true,
+          "display_name": "Category Id",
+          "kind": "integer",
+          "constraints": {
+            "minimum": 1
+          }
+        },
+        {
+          "name": "Price",
+          "clr_type": "decimal",
+          "nullable": false,
+          "required": true,
+          "display_name": "Price",
+          "kind": "number",
+          "constraints": {
+            "minimum": 0.0
+          }
+        },
+        {
+          "name": "Stock",
+          "clr_type": "int",
+          "nullable": false,
+          "required": false,
+          "display_name": "Stock",
+          "kind": "integer",
+          "constraints": {
+            "minimum": 0
+          }
+        },
+        {
+          "name": "Status",
+          "clr_type": "ProductStatus",
+          "nullable": false,
+          "required": true,
+          "display_name": "Status",
+          "kind": "enum",
+          "lov": [
+            "Draft",
+            "Active",
+            "Discontinued"
+          ],
+          "enum": "ProductStatus"
+        },
+        {
+          "name": "IsFeatured",
+          "clr_type": "bool",
+          "nullable": false,
+          "required": false,
+          "display_name": "Is Featured",
+          "kind": "boolean"
+        },
+        {
+          "name": "ReleaseDate",
+          "clr_type": "DateTime?",
+          "nullable": true,
+          "required": false,
+          "display_name": "Release Date",
+          "kind": "date"
+        },
+        {
+          "name": "Tags",
+          "clr_type": "List<string>?",
+          "nullable": true,
+          "required": false,
+          "display_name": "Tags",
+          "kind": "array",
+          "item": {
+            "kind": "text",
+            "clr_type": "string",
+            "lov": []
+          }
+        },
+        {
+          "name": "Dimensions",
+          "clr_type": "DimensionsPayload?",
+          "nullable": true,
+          "required": false,
+          "display_name": "Dimensions",
+          "kind": "object",
+          "fields": [
+            {
+              "name": "WidthCm",
+              "clr_type": "decimal",
+              "nullable": false,
+              "required": false,
+              "display_name": "Width Cm",
+              "kind": "number"
+            },
+            {
+              "name": "HeightCm",
+              "clr_type": "decimal",
+              "nullable": false,
+              "required": false,
+              "display_name": "Height Cm",
+              "kind": "number"
+            },
+            {
+              "name": "DepthCm",
+              "clr_type": "decimal",
+              "nullable": false,
+              "required": false,
+              "display_name": "Depth Cm",
+              "kind": "number"
+            },
+            {
+              "name": "WeightKg",
+              "clr_type": "decimal",
+              "nullable": false,
+              "required": false,
+              "display_name": "Weight Kg",
+              "kind": "number"
+            }
+          ]
+        }
+      ]
+    },
+    "CategoryPayload": {
+      "kind": "object",
+      "name": "CategoryPayload",
+      "clr_type": "CategoryPayload",
+      "fields": [
+        {
+          "name": "Name",
+          "clr_type": "string",
+          "nullable": false,
+          "required": true,
+          "display_name": "Name",
+          "kind": "text",
+          "constraints": {
+            "max_length": 80
+          }
+        },
+        {
+          "name": "ParentId",
+          "clr_type": "int?",
+          "nullable": true,
+          "required": false,
+          "display_name": "Parent Id",
+          "kind": "integer"
+        },
+        {
+          "name": "IsVisible",
+          "clr_type": "bool",
+          "nullable": false,
+          "required": false,
+          "display_name": "Is Visible",
+          "kind": "boolean"
+        },
+        {
+          "name": "SortOrder",
+          "clr_type": "int",
+          "nullable": false,
+          "required": false,
+          "display_name": "Sort Order",
+          "kind": "integer",
+          "constraints": {
+            "minimum": 0,
+            "maximum": 999
+          }
+        }
+      ]
+    },
+    "OrderPayload": {
+      "kind": "object",
+      "name": "OrderPayload",
+      "clr_type": "OrderPayload",
+      "fields": [
+        {
+          "name": "CustomerId",
+          "clr_type": "int",
+          "nullable": false,
+          "required": true,
+          "display_name": "Customer Id",
+          "kind": "integer"
+        },
+        {
+          "name": "PaymentMethod",
+          "clr_type": "PaymentMethod",
+          "nullable": false,
+          "required": true,
+          "display_name": "Payment Method",
+          "kind": "enum",
+          "lov": [
+            "Card",
+            "PayPal",
+            "BankTransfer",
+            "GiftCard"
+          ],
+          "enum": "PaymentMethod"
+        },
+        {
+          "name": "CouponCode",
+          "clr_type": "string?",
+          "nullable": true,
+          "required": false,
+          "display_name": "Coupon Code",
+          "kind": "text"
+        },
+        {
+          "name": "Notes",
+          "clr_type": "string?",
+          "nullable": true,
+          "required": false,
+          "display_name": "Notes",
+          "kind": "text"
+        },
+        {
+          "name": "ShippingAddress",
+          "clr_type": "AddressPayload",
+          "nullable": false,
+          "required": true,
+          "display_name": "Shipping Address",
+          "kind": "object",
+          "fields": [
+            {
+              "name": "Line1",
+              "clr_type": "string",
+              "nullable": false,
+              "required": true,
+              "display_name": "Line1",
+              "kind": "text",
+              "constraints": {
+                "max_length": 120
+              }
+            },
+            {
+              "name": "Line2",
+              "clr_type": "string?",
+              "nullable": true,
+              "required": false,
+              "display_name": "Line2",
+              "kind": "text"
+            },
+            {
+              "name": "City",
+              "clr_type": "string",
+              "nullable": false,
+              "required": true,
+              "display_name": "City",
+              "kind": "text"
+            },
+            {
+              "name": "PostalCode",
+              "clr_type": "string",
+              "nullable": false,
+              "required": true,
+              "display_name": "Postal Code",
+              "kind": "text",
+              "constraints": {
+                "max_length": 12
+              }
+            },
+            {
+              "name": "Country",
+              "clr_type": "string",
+              "nullable": false,
+              "required": true,
+              "display_name": "Country",
+              "kind": "text",
+              "lov": [
+                "US",
+                "CA",
+                "GB",
+                "DE",
+                "FR",
+                "IN",
+                "AU"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Lines",
+          "clr_type": "List<OrderLinePayload>",
+          "nullable": false,
+          "required": true,
+          "display_name": "Lines",
+          "kind": "array",
+          "item": {
+            "kind": "object",
+            "name": "OrderLinePayload",
+            "clr_type": "OrderLinePayload",
+            "fields": [
+              {
+                "name": "ProductId",
+                "clr_type": "int",
+                "nullable": false,
+                "required": true,
+                "display_name": "Product Id",
+                "kind": "integer"
+              },
+              {
+                "name": "Quantity",
+                "clr_type": "int",
+                "nullable": false,
+                "required": true,
+                "display_name": "Quantity",
+                "kind": "integer",
+                "constraints": {
+                  "minimum": 1
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "OrderStatusPayload": {
+      "kind": "object",
+      "name": "OrderStatusPayload",
+      "clr_type": "OrderStatusPayload",
+      "fields": [
+        {
+          "name": "Status",
+          "clr_type": "OrderStatus",
+          "nullable": false,
+          "required": true,
+          "display_name": "Status",
+          "kind": "enum",
+          "lov": [
+            "Pending",
+            "Paid",
+            "Shipped",
+            "Delivered",
+            "Cancelled"
+          ],
+          "enum": "OrderStatus"
+        },
+        {
+          "name": "TrackingNumber",
+          "clr_type": "string?",
+          "nullable": true,
+          "required": false,
+          "display_name": "Tracking Number",
+          "kind": "text"
+        }
+      ]
+    },
+    "CustomerPayload": {
+      "kind": "object",
+      "name": "CustomerPayload",
+      "clr_type": "CustomerPayload",
+      "fields": [
+        {
+          "name": "FirstName",
+          "clr_type": "string",
+          "nullable": false,
+          "required": true,
+          "display_name": "First Name",
+          "kind": "text"
+        },
+        {
+          "name": "LastName",
+          "clr_type": "string",
+          "nullable": false,
+          "required": true,
+          "display_name": "Last Name",
+          "kind": "text"
+        },
+        {
+          "name": "Email",
+          "clr_type": "string",
+          "nullable": false,
+          "required": true,
+          "display_name": "Email",
+          "kind": "text",
+          "constraints": {
+            "max_length": 254
+          }
+        },
+        {
+          "name": "Phone",
+          "clr_type": "string?",
+          "nullable": true,
+          "required": false,
+          "display_name": "Phone",
+          "kind": "text"
+        },
+        {
+          "name": "Tier",
+          "clr_type": "CustomerTier",
+          "nullable": false,
+          "required": false,
+          "display_name": "Tier",
+          "kind": "enum",
+          "lov": [
+            "Standard",
+            "Silver",
+            "Gold",
+            "Platinum"
+          ],
+          "enum": "CustomerTier"
+        },
+        {
+          "name": "IsSubscribed",
+          "clr_type": "bool",
+          "nullable": false,
+          "required": false,
+          "display_name": "Is Subscribed",
+          "kind": "boolean"
+        },
+        {
+          "name": "BirthDate",
+          "clr_type": "DateTime?",
+          "nullable": true,
+          "required": false,
+          "display_name": "Birth Date",
+          "kind": "date"
+        }
+      ]
+    },
+    "AddressPayload": {
+      "kind": "object",
+      "name": "AddressPayload",
+      "clr_type": "AddressPayload",
+      "fields": [
+        {
+          "name": "Line1",
+          "clr_type": "string",
+          "nullable": false,
+          "required": true,
+          "display_name": "Line1",
+          "kind": "text",
+          "constraints": {
+            "max_length": 120
+          }
+        },
+        {
+          "name": "Line2",
+          "clr_type": "string?",
+          "nullable": true,
+          "required": false,
+          "display_name": "Line2",
+          "kind": "text"
+        },
+        {
+          "name": "City",
+          "clr_type": "string",
+          "nullable": false,
+          "required": true,
+          "display_name": "City",
+          "kind": "text"
+        },
+        {
+          "name": "PostalCode",
+          "clr_type": "string",
+          "nullable": false,
+          "required": true,
+          "display_name": "Postal Code",
+          "kind": "text",
+          "constraints": {
+            "max_length": 12
+          }
+        },
+        {
+          "name": "Country",
+          "clr_type": "string",
+          "nullable": false,
+          "required": true,
+          "display_name": "Country",
+          "kind": "text",
+          "lov": [
+            "US",
+            "CA",
+            "GB",
+            "DE",
+            "FR",
+            "IN",
+            "AU"
+          ]
+        }
+      ]
+    }
+  },
+  "form_schemas": {},
+  "response_schemas": {
+    "ProductResponse": {
+      "kind": "object",
+      "name": "ProductResponse",
+      "clr_type": "ProductResponse",
+      "fields": [
+        {
+          "name": "Id",
+          "clr_type": "int",
+          "nullable": false,
+          "required": false,
+          "display_name": "Id",
+          "kind": "integer"
+        },
+        {
+          "name": "Name",
+          "clr_type": "string",
+          "nullable": false,
+          "required": false,
+          "display_name": "Name",
+          "kind": "text",
+          "constraints": {
+            "max_length": 120
+          }
+        },
+        {
+          "name": "Sku",
+          "clr_type": "string",
+          "nullable": false,
+          "required": false,
+          "display_name": "Sku",
+          "kind": "text",
+          "constraints": {
+            "max_length": 32
+          }
+        },
+        {
+          "name": "Description",
+          "clr_type": "string?",
+          "nullable": true,
+          "required": false,
+          "display_name": "Description",
+          "kind": "text"
+        },
+        {
+          "name": "CategoryId",
+          "clr_type": "int",
+          "nullable": false,
+          "required": false,
+          "display_name": "Category Id",
+          "kind": "integer",
+          "constraints": {
+            "minimum": 1
+          }
+        },
+        {
+          "name": "Price",
+          "clr_type": "decimal",
+          "nullable": false,
+          "required": false,
+          "display_name": "Price",
+          "kind": "number",
+          "constraints": {
+            "minimum": 0.0
+          }
+        },
+        {
+          "name": "Stock",
+          "clr_type": "int",
+          "nullable": false,
+          "required": false,
+          "display_name": "Stock",
+          "kind": "integer",
+          "constraints": {
+            "minimum": 0
+          }
+        },
+        {
+          "name": "Status",
+          "clr_type": "ProductStatus",
+          "nullable": false,
+          "required": false,
+          "display_name": "Status",
+          "kind": "enum",
+          "lov": [
+            "Draft",
+            "Active",
+            "Discontinued"
+          ],
+          "enum": "ProductStatus"
+        },
+        {
+          "name": "IsFeatured",
+          "clr_type": "bool",
+          "nullable": false,
+          "required": false,
+          "display_name": "Is Featured",
+          "kind": "boolean"
+        },
+        {
+          "name": "ReleaseDate",
+          "clr_type": "DateTime?",
+          "nullable": true,
+          "required": false,
+          "display_name": "Release Date",
+          "kind": "date"
+        },
+        {
+          "name": "Tags",
+          "clr_type": "List<string>?",
+          "nullable": true,
+          "required": false,
+          "display_name": "Tags",
+          "kind": "array",
+          "item": {
+            "kind": "text",
+            "clr_type": "string",
+            "lov": []
+          }
+        },
+        {
+          "name": "Dimensions",
+          "clr_type": "DimensionsPayload?",
+          "nullable": true,
+          "required": false,
+          "display_name": "Dimensions",
+          "kind": "object",
+          "fields": [
+            {
+              "name": "WidthCm",
+              "clr_type": "decimal",
+              "nullable": false,
+              "required": false,
+              "display_name": "Width Cm",
+              "kind": "number"
+            },
+            {
+              "name": "HeightCm",
+              "clr_type": "decimal",
+              "nullable": false,
+              "required": false,
+              "display_name": "Height Cm",
+              "kind": "number"
+            },
+            {
+              "name": "DepthCm",
+              "clr_type": "decimal",
+              "nullable": false,
+              "required": false,
+              "display_name": "Depth Cm",
+              "kind": "number"
+            },
+            {
+              "name": "WeightKg",
+              "clr_type": "decimal",
+              "nullable": false,
+              "required": false,
+              "display_name": "Weight Kg",
+              "kind": "number"
+            }
+          ]
+        },
+        {
+          "name": "CreatedDate",
+          "clr_type": "DateTime",
+          "nullable": false,
+          "required": false,
+          "display_name": "Created Date",
+          "kind": "date"
+        },
+        {
+          "name": "ModifiedDate",
+          "clr_type": "DateTime",
+          "nullable": false,
+          "required": false,
+          "display_name": "Modified Date",
+          "kind": "date"
+        }
+      ]
+    },
+    "CategoryResponse": {
+      "kind": "object",
+      "name": "CategoryResponse",
+      "clr_type": "CategoryResponse",
+      "fields": [
+        {
+          "name": "Id",
+          "clr_type": "int",
+          "nullable": false,
+          "required": false,
+          "display_name": "Id",
+          "kind": "integer"
+        },
+        {
+          "name": "Name",
+          "clr_type": "string",
+          "nullable": false,
+          "required": false,
+          "display_name": "Name",
+          "kind": "text",
+          "constraints": {
+            "max_length": 80
+          }
+        },
+        {
+          "name": "ParentId",
+          "clr_type": "int?",
+          "nullable": true,
+          "required": false,
+          "display_name": "Parent Id",
+          "kind": "integer"
+        },
+        {
+          "name": "IsVisible",
+          "clr_type": "bool",
+          "nullable": false,
+          "required": false,
+          "display_name": "Is Visible",
+          "kind": "boolean"
+        },
+        {
+          "name": "SortOrder",
+          "clr_type": "int",
+          "nullable": false,
+          "required": false,
+          "display_name": "Sort Order",
+          "kind": "integer",
+          "constraints": {
+            "minimum": 0,
+            "maximum": 999
+          }
+        },
+        {
+          "name": "CreatedDate",
+          "clr_type": "DateTime",
+          "nullable": false,
+          "required": false,
+          "display_name": "Created Date",
+          "kind": "date"
+        },
+        {
+          "name": "ModifiedDate",
+          "clr_type": "DateTime",
+          "nullable": false,
+          "required": false,
+          "display_name": "Modified Date",
+          "kind": "date"
+        }
+      ]
+    },
+    "OrderResponse": {
+      "kind": "object",
+      "name": "OrderResponse",
+      "clr_type": "OrderResponse",
+      "fields": [
+        {
+          "name": "Id",
+          "clr_type": "int",
+          "nullable": false,
+          "required": false,
+          "display_name": "Id",
+          "kind": "integer"
+        },
+        {
+          "name": "Number",
+          "clr_type": "string",
+          "nullable": false,
+          "required": false,
+          "display_name": "Number",
+          "kind": "text"
+        },
+        {
+          "name": "Status",
+          "clr_type": "OrderStatus",
+          "nullable": false,
+          "required": false,
+          "display_name": "Status",
+          "kind": "enum",
+          "lov": [
+            "Pending",
+            "Paid",
+            "Shipped",
+            "Delivered",
+            "Cancelled"
+          ]
+        },
+        {
+          "name": "Total",
+          "clr_type": "decimal",
+          "nullable": false,
+          "required": false,
+          "display_name": "Total",
+          "kind": "number"
+        },
+        {
+          "name": "CustomerId",
+          "clr_type": "int",
+          "nullable": false,
+          "required": false,
+          "display_name": "Customer Id",
+          "kind": "integer"
+        },
+        {
+          "name": "PaymentMethod",
+          "clr_type": "PaymentMethod",
+          "nullable": false,
+          "required": false,
+          "display_name": "Payment Method",
+          "kind": "enum",
+          "lov": [
+            "Card",
+            "PayPal",
+            "BankTransfer",
+            "GiftCard"
+          ],
+          "enum": "PaymentMethod"
+        },
+        {
+          "name": "CouponCode",
+          "clr_type": "string?",
+          "nullable": true,
+          "required": false,
+          "display_name": "Coupon Code",
+          "kind": "text"
+        },
+        {
+          "name": "Notes",
+          "clr_type": "string?",
+          "nullable": true,
+          "required": false,
+          "display_name": "Notes",
+          "kind": "text"
+        },
+        {
+          "name": "ShippingAddress",
+          "clr_type": "AddressPayload",
+          "nullable": false,
+          "required": false,
+          "display_name": "Shipping Address",
+          "kind": "object",
+          "fields": [
+            {
+              "name": "Line1",
+              "clr_type": "string",
+              "nullable": false,
+              "required": true,
+              "display_name": "Line1",
+              "kind": "text",
+              "constraints": {
+                "max_length": 120
+              }
+            },
+            {
+              "name": "Line2",
+              "clr_type": "string?",
+              "nullable": true,
+              "required": false,
+              "display_name": "Line2",
+              "kind": "text"
+            },
+            {
+              "name": "City",
+              "clr_type": "string",
+              "nullable": false,
+              "required": true,
+              "display_name": "City",
+              "kind": "text"
+            },
+            {
+              "name": "PostalCode",
+              "clr_type": "string",
+              "nullable": false,
+              "required": true,
+              "display_name": "Postal Code",
+              "kind": "text",
+              "constraints": {
+                "max_length": 12
+              }
+            },
+            {
+              "name": "Country",
+              "clr_type": "string",
+              "nullable": false,
+              "required": true,
+              "display_name": "Country",
+              "kind": "text",
+              "lov": [
+                "US",
+                "CA",
+                "GB",
+                "DE",
+                "FR",
+                "IN",
+                "AU"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Lines",
+          "clr_type": "List<OrderLinePayload>",
+          "nullable": false,
+          "required": false,
+          "display_name": "Lines",
+          "kind": "array",
+          "item": {
+            "kind": "object",
+            "name": "OrderLinePayload",
+            "clr_type": "OrderLinePayload",
+            "fields": [
+              {
+                "name": "ProductId",
+                "clr_type": "int",
+                "nullable": false,
+                "required": true,
+                "display_name": "Product Id",
+                "kind": "integer"
+              },
+              {
+                "name": "Quantity",
+                "clr_type": "int",
+                "nullable": false,
+                "required": true,
+                "display_name": "Quantity",
+                "kind": "integer",
+                "constraints": {
+                  "minimum": 1
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "CreatedDate",
+          "clr_type": "DateTime",
+          "nullable": false,
+          "required": false,
+          "display_name": "Created Date",
+          "kind": "date"
+        },
+        {
+          "name": "ModifiedDate",
+          "clr_type": "DateTime",
+          "nullable": false,
+          "required": false,
+          "display_name": "Modified Date",
+          "kind": "date"
+        }
+      ]
+    },
+    "CustomerResponse": {
+      "kind": "object",
+      "name": "CustomerResponse",
+      "clr_type": "CustomerResponse",
+      "fields": [
+        {
+          "name": "Id",
+          "clr_type": "int",
+          "nullable": false,
+          "required": false,
+          "display_name": "Id",
+          "kind": "integer"
+        },
+        {
+          "name": "FirstName",
+          "clr_type": "string",
+          "nullable": false,
+          "required": false,
+          "display_name": "First Name",
+          "kind": "text"
+        },
+        {
+          "name": "LastName",
+          "clr_type": "string",
+          "nullable": false,
+          "required": false,
+          "display_name": "Last Name",
+          "kind": "text"
+        },
+        {
+          "name": "Email",
+          "clr_type": "string",
+          "nullable": false,
+          "required": false,
+          "display_name": "Email",
+          "kind": "text",
+          "constraints": {
+            "max_length": 254
+          }
+        },
+        {
+          "name": "Phone",
+          "clr_type": "string?",
+          "nullable": true,
+          "required": false,
+          "display_name": "Phone",
+          "kind": "text"
+        },
+        {
+          "name": "Tier",
+          "clr_type": "CustomerTier",
+          "nullable": false,
+          "required": false,
+          "display_name": "Tier",
+          "kind": "enum",
+          "lov": [
+            "Standard",
+            "Silver",
+            "Gold",
+            "Platinum"
+          ],
+          "enum": "CustomerTier"
+        },
+        {
+          "name": "IsSubscribed",
+          "clr_type": "bool",
+          "nullable": false,
+          "required": false,
+          "display_name": "Is Subscribed",
+          "kind": "boolean"
+        },
+        {
+          "name": "BirthDate",
+          "clr_type": "DateTime?",
+          "nullable": true,
+          "required": false,
+          "display_name": "Birth Date",
+          "kind": "date"
+        },
+        {
+          "name": "CreatedDate",
+          "clr_type": "DateTime",
+          "nullable": false,
+          "required": false,
+          "display_name": "Created Date",
+          "kind": "date"
+        },
+        {
+          "name": "ModifiedDate",
+          "clr_type": "DateTime",
+          "nullable": false,
+          "required": false,
+          "display_name": "Modified Date",
+          "kind": "date"
+        }
+      ]
+    },
+    "AddressResponse": {
+      "kind": "object",
+      "name": "AddressResponse",
+      "clr_type": "AddressResponse",
+      "fields": [
+        {
+          "name": "Id",
+          "clr_type": "int",
+          "nullable": false,
+          "required": false,
+          "display_name": "Id",
+          "kind": "integer"
+        },
+        {
+          "name": "Line1",
+          "clr_type": "string",
+          "nullable": false,
+          "required": false,
+          "display_name": "Line1",
+          "kind": "text",
+          "constraints": {
+            "max_length": 120
+          }
+        },
+        {
+          "name": "Line2",
+          "clr_type": "string?",
+          "nullable": true,
+          "required": false,
+          "display_name": "Line2",
+          "kind": "text"
+        },
+        {
+          "name": "City",
+          "clr_type": "string",
+          "nullable": false,
+          "required": false,
+          "display_name": "City",
+          "kind": "text"
+        },
+        {
+          "name": "PostalCode",
+          "clr_type": "string",
+          "nullable": false,
+          "required": false,
+          "display_name": "Postal Code",
+          "kind": "text",
+          "constraints": {
+            "max_length": 12
+          }
+        },
+        {
+          "name": "Country",
+          "clr_type": "string",
+          "nullable": false,
+          "required": false,
+          "display_name": "Country",
+          "kind": "text",
+          "lov": [
+            "US",
+            "CA",
+            "GB",
+            "DE",
+            "FR",
+            "IN",
+            "AU"
+          ]
+        },
+        {
+          "name": "CreatedDate",
+          "clr_type": "DateTime",
+          "nullable": false,
+          "required": false,
+          "display_name": "Created Date",
+          "kind": "date"
+        },
+        {
+          "name": "ModifiedDate",
+          "clr_type": "DateTime",
+          "nullable": false,
+          "required": false,
+          "display_name": "Modified Date",
+          "kind": "date"
+        }
+      ]
+    },
+    "ProductListResponse": {
+      "kind": "object",
+      "name": "ProductListResponse",
+      "clr_type": "ProductListResponse",
+      "fields": [
+        {
+          "name": "Values",
+          "clr_type": "List<ProductResponse>",
+          "nullable": false,
+          "required": false,
+          "display_name": "Values",
+          "kind": "array",
+          "item": {
+            "kind": "object",
+            "name": "ProductResponse",
+            "clr_type": "ProductResponse",
+            "fields": [
+              {
+                "name": "Id",
+                "clr_type": "int",
+                "nullable": false,
+                "required": false,
+                "display_name": "Id",
+                "kind": "integer"
+              },
+              {
+                "name": "Name",
+                "clr_type": "string",
+                "nullable": false,
+                "required": false,
+                "display_name": "Name",
+                "kind": "text",
+                "constraints": {
+                  "max_length": 120
+                }
+              },
+              {
+                "name": "Sku",
+                "clr_type": "string",
+                "nullable": false,
+                "required": false,
+                "display_name": "Sku",
+                "kind": "text",
+                "constraints": {
+                  "max_length": 32
+                }
+              },
+              {
+                "name": "Description",
+                "clr_type": "string?",
+                "nullable": true,
+                "required": false,
+                "display_name": "Description",
+                "kind": "text"
+              },
+              {
+                "name": "CategoryId",
+                "clr_type": "int",
+                "nullable": false,
+                "required": false,
+                "display_name": "Category Id",
+                "kind": "integer",
+                "constraints": {
+                  "minimum": 1
+                }
+              },
+              {
+                "name": "Price",
+                "clr_type": "decimal",
+                "nullable": false,
+                "required": false,
+                "display_name": "Price",
+                "kind": "number",
+                "constraints": {
+                  "minimum": 0.0
+                }
+              },
+              {
+                "name": "Stock",
+                "clr_type": "int",
+                "nullable": false,
+                "required": false,
+                "display_name": "Stock",
+                "kind": "integer",
+                "constraints": {
+                  "minimum": 0
+                }
+              },
+              {
+                "name": "Status",
+                "clr_type": "ProductStatus",
+                "nullable": false,
+                "required": false,
+                "display_name": "Status",
+                "kind": "enum",
+                "lov": [
+                  "Draft",
+                  "Active",
+                  "Discontinued"
+                ],
+                "enum": "ProductStatus"
+              },
+              {
+                "name": "IsFeatured",
+                "clr_type": "bool",
+                "nullable": false,
+                "required": false,
+                "display_name": "Is Featured",
+                "kind": "boolean"
+              },
+              {
+                "name": "ReleaseDate",
+                "clr_type": "DateTime?",
+                "nullable": true,
+                "required": false,
+                "display_name": "Release Date",
+                "kind": "date"
+              },
+              {
+                "name": "Tags",
+                "clr_type": "List<string>?",
+                "nullable": true,
+                "required": false,
+                "display_name": "Tags",
+                "kind": "array",
+                "item": {
+                  "kind": "text",
+                  "clr_type": "string",
+                  "lov": []
+                }
+              },
+              {
+                "name": "Dimensions",
+                "clr_type": "DimensionsPayload?",
+                "nullable": true,
+                "required": false,
+                "display_name": "Dimensions",
+                "kind": "object",
+                "fields": [
+                  {
+                    "name": "WidthCm",
+                    "clr_type": "decimal",
+                    "nullable": false,
+                    "required": false,
+                    "display_name": "Width Cm",
+                    "kind": "number"
+                  },
+                  {
+                    "name": "HeightCm",
+                    "clr_type": "decimal",
+                    "nullable": false,
+                    "required": false,
+                    "display_name": "Height Cm",
+                    "kind": "number"
+                  },
+                  {
+                    "name": "DepthCm",
+                    "clr_type": "decimal",
+                    "nullable": false,
+                    "required": false,
+                    "display_name": "Depth Cm",
+                    "kind": "number"
+                  },
+                  {
+                    "name": "WeightKg",
+                    "clr_type": "decimal",
+                    "nullable": false,
+                    "required": false,
+                    "display_name": "Weight Kg",
+                    "kind": "number"
+                  }
+                ]
+              },
+              {
+                "name": "CreatedDate",
+                "clr_type": "DateTime",
+                "nullable": false,
+                "required": false,
+                "display_name": "Created Date",
+                "kind": "date"
+              },
+              {
+                "name": "ModifiedDate",
+                "clr_type": "DateTime",
+                "nullable": false,
+                "required": false,
+                "display_name": "Modified Date",
+                "kind": "date"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ContinuationToken",
+          "clr_type": "string?",
+          "nullable": true,
+          "required": false,
+          "display_name": "Continuation Token",
+          "kind": "text"
+        },
+        {
+          "name": "Count",
+          "clr_type": "int",
+          "nullable": false,
+          "required": false,
+          "display_name": "Count",
+          "kind": "integer"
+        }
+      ]
+    },
+    "CategoryListResponse": {
+      "kind": "object",
+      "name": "CategoryListResponse",
+      "clr_type": "CategoryListResponse",
+      "fields": [
+        {
+          "name": "Values",
+          "clr_type": "List<CategoryResponse>",
+          "nullable": false,
+          "required": false,
+          "display_name": "Values",
+          "kind": "array",
+          "item": {
+            "kind": "object",
+            "name": "CategoryResponse",
+            "clr_type": "CategoryResponse",
+            "fields": [
+              {
+                "name": "Id",
+                "clr_type": "int",
+                "nullable": false,
+                "required": false,
+                "display_name": "Id",
+                "kind": "integer"
+              },
+              {
+                "name": "Name",
+                "clr_type": "string",
+                "nullable": false,
+                "required": false,
+                "display_name": "Name",
+                "kind": "text",
+                "constraints": {
+                  "max_length": 80
+                }
+              },
+              {
+                "name": "ParentId",
+                "clr_type": "int?",
+                "nullable": true,
+                "required": false,
+                "display_name": "Parent Id",
+                "kind": "integer"
+              },
+              {
+                "name": "IsVisible",
+                "clr_type": "bool",
+                "nullable": false,
+                "required": false,
+                "display_name": "Is Visible",
+                "kind": "boolean"
+              },
+              {
+                "name": "SortOrder",
+                "clr_type": "int",
+                "nullable": false,
+                "required": false,
+                "display_name": "Sort Order",
+                "kind": "integer",
+                "constraints": {
+                  "minimum": 0,
+                  "maximum": 999
+                }
+              },
+              {
+                "name": "CreatedDate",
+                "clr_type": "DateTime",
+                "nullable": false,
+                "required": false,
+                "display_name": "Created Date",
+                "kind": "date"
+              },
+              {
+                "name": "ModifiedDate",
+                "clr_type": "DateTime",
+                "nullable": false,
+                "required": false,
+                "display_name": "Modified Date",
+                "kind": "date"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ContinuationToken",
+          "clr_type": "string?",
+          "nullable": true,
+          "required": false,
+          "display_name": "Continuation Token",
+          "kind": "text"
+        },
+        {
+          "name": "Count",
+          "clr_type": "int",
+          "nullable": false,
+          "required": false,
+          "display_name": "Count",
+          "kind": "integer"
+        }
+      ]
+    },
+    "OrderListResponse": {
+      "kind": "object",
+      "name": "OrderListResponse",
+      "clr_type": "OrderListResponse",
+      "fields": [
+        {
+          "name": "Values",
+          "clr_type": "List<OrderResponse>",
+          "nullable": false,
+          "required": false,
+          "display_name": "Values",
+          "kind": "array",
+          "item": {
+            "kind": "object",
+            "name": "OrderResponse",
+            "clr_type": "OrderResponse",
+            "fields": [
+              {
+                "name": "Id",
+                "clr_type": "int",
+                "nullable": false,
+                "required": false,
+                "display_name": "Id",
+                "kind": "integer"
+              },
+              {
+                "name": "Number",
+                "clr_type": "string",
+                "nullable": false,
+                "required": false,
+                "display_name": "Number",
+                "kind": "text"
+              },
+              {
+                "name": "Status",
+                "clr_type": "OrderStatus",
+                "nullable": false,
+                "required": false,
+                "display_name": "Status",
+                "kind": "enum",
+                "lov": [
+                  "Pending",
+                  "Paid",
+                  "Shipped",
+                  "Delivered",
+                  "Cancelled"
+                ]
+              },
+              {
+                "name": "Total",
+                "clr_type": "decimal",
+                "nullable": false,
+                "required": false,
+                "display_name": "Total",
+                "kind": "number"
+              },
+              {
+                "name": "CustomerId",
+                "clr_type": "int",
+                "nullable": false,
+                "required": false,
+                "display_name": "Customer Id",
+                "kind": "integer"
+              },
+              {
+                "name": "PaymentMethod",
+                "clr_type": "PaymentMethod",
+                "nullable": false,
+                "required": false,
+                "display_name": "Payment Method",
+                "kind": "enum",
+                "lov": [
+                  "Card",
+                  "PayPal",
+                  "BankTransfer",
+                  "GiftCard"
+                ],
+                "enum": "PaymentMethod"
+              },
+              {
+                "name": "CouponCode",
+                "clr_type": "string?",
+                "nullable": true,
+                "required": false,
+                "display_name": "Coupon Code",
+                "kind": "text"
+              },
+              {
+                "name": "Notes",
+                "clr_type": "string?",
+                "nullable": true,
+                "required": false,
+                "display_name": "Notes",
+                "kind": "text"
+              },
+              {
+                "name": "ShippingAddress",
+                "clr_type": "AddressPayload",
+                "nullable": false,
+                "required": false,
+                "display_name": "Shipping Address",
+                "kind": "object",
+                "fields": [
+                  {
+                    "name": "Line1",
+                    "clr_type": "string",
+                    "nullable": false,
+                    "required": true,
+                    "display_name": "Line1",
+                    "kind": "text",
+                    "constraints": {
+                      "max_length": 120
+                    }
+                  },
+                  {
+                    "name": "Line2",
+                    "clr_type": "string?",
+                    "nullable": true,
+                    "required": false,
+                    "display_name": "Line2",
+                    "kind": "text"
+                  },
+                  {
+                    "name": "City",
+                    "clr_type": "string",
+                    "nullable": false,
+                    "required": true,
+                    "display_name": "City",
+                    "kind": "text"
+                  },
+                  {
+                    "name": "PostalCode",
+                    "clr_type": "string",
+                    "nullable": false,
+                    "required": true,
+                    "display_name": "Postal Code",
+                    "kind": "text",
+                    "constraints": {
+                      "max_length": 12
+                    }
+                  },
+                  {
+                    "name": "Country",
+                    "clr_type": "string",
+                    "nullable": false,
+                    "required": true,
+                    "display_name": "Country",
+                    "kind": "text",
+                    "lov": [
+                      "US",
+                      "CA",
+                      "GB",
+                      "DE",
+                      "FR",
+                      "IN",
+                      "AU"
+                    ]
+                  }
+                ]
+              },
+              {
+                "name": "Lines",
+                "clr_type": "List<OrderLinePayload>",
+                "nullable": false,
+                "required": false,
+                "display_name": "Lines",
+                "kind": "array",
+                "item": {
+                  "kind": "object",
+                  "name": "OrderLinePayload",
+                  "clr_type": "OrderLinePayload",
+                  "fields": [
+                    {
+                      "name": "ProductId",
+                      "clr_type": "int",
+                      "nullable": false,
+                      "required": true,
+                      "display_name": "Product Id",
+                      "kind": "integer"
+                    },
+                    {
+                      "name": "Quantity",
+                      "clr_type": "int",
+                      "nullable": false,
+                      "required": true,
+                      "display_name": "Quantity",
+                      "kind": "integer",
+                      "constraints": {
+                        "minimum": 1
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "CreatedDate",
+                "clr_type": "DateTime",
+                "nullable": false,
+                "required": false,
+                "display_name": "Created Date",
+                "kind": "date"
+              },
+              {
+                "name": "ModifiedDate",
+                "clr_type": "DateTime",
+                "nullable": false,
+                "required": false,
+                "display_name": "Modified Date",
+                "kind": "date"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ContinuationToken",
+          "clr_type": "string?",
+          "nullable": true,
+          "required": false,
+          "display_name": "Continuation Token",
+          "kind": "text"
+        },
+        {
+          "name": "Count",
+          "clr_type": "int",
+          "nullable": false,
+          "required": false,
+          "display_name": "Count",
+          "kind": "integer"
+        }
+      ]
+    },
+    "CustomerListResponse": {
+      "kind": "object",
+      "name": "CustomerListResponse",
+      "clr_type": "CustomerListResponse",
+      "fields": [
+        {
+          "name": "Values",
+          "clr_type": "List<CustomerResponse>",
+          "nullable": false,
+          "required": false,
+          "display_name": "Values",
+          "kind": "array",
+          "item": {
+            "kind": "object",
+            "name": "CustomerResponse",
+            "clr_type": "CustomerResponse",
+            "fields": [
+              {
+                "name": "Id",
+                "clr_type": "int",
+                "nullable": false,
+                "required": false,
+                "display_name": "Id",
+                "kind": "integer"
+              },
+              {
+                "name": "FirstName",
+                "clr_type": "string",
+                "nullable": false,
+                "required": false,
+                "display_name": "First Name",
+                "kind": "text"
+              },
+              {
+                "name": "LastName",
+                "clr_type": "string",
+                "nullable": false,
+                "required": false,
+                "display_name": "Last Name",
+                "kind": "text"
+              },
+              {
+                "name": "Email",
+                "clr_type": "string",
+                "nullable": false,
+                "required": false,
+                "display_name": "Email",
+                "kind": "text",
+                "constraints": {
+                  "max_length": 254
+                }
+              },
+              {
+                "name": "Phone",
+                "clr_type": "string?",
+                "nullable": true,
+                "required": false,
+                "display_name": "Phone",
+                "kind": "text"
+              },
+              {
+                "name": "Tier",
+                "clr_type": "CustomerTier",
+                "nullable": false,
+                "required": false,
+                "display_name": "Tier",
+                "kind": "enum",
+                "lov": [
+                  "Standard",
+                  "Silver",
+                  "Gold",
+                  "Platinum"
+                ],
+                "enum": "CustomerTier"
+              },
+              {
+                "name": "IsSubscribed",
+                "clr_type": "bool",
+                "nullable": false,
+                "required": false,
+                "display_name": "Is Subscribed",
+                "kind": "boolean"
+              },
+              {
+                "name": "BirthDate",
+                "clr_type": "DateTime?",
+                "nullable": true,
+                "required": false,
+                "display_name": "Birth Date",
+                "kind": "date"
+              },
+              {
+                "name": "CreatedDate",
+                "clr_type": "DateTime",
+                "nullable": false,
+                "required": false,
+                "display_name": "Created Date",
+                "kind": "date"
+              },
+              {
+                "name": "ModifiedDate",
+                "clr_type": "DateTime",
+                "nullable": false,
+                "required": false,
+                "display_name": "Modified Date",
+                "kind": "date"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ContinuationToken",
+          "clr_type": "string?",
+          "nullable": true,
+          "required": false,
+          "display_name": "Continuation Token",
+          "kind": "text"
+        },
+        {
+          "name": "Count",
+          "clr_type": "int",
+          "nullable": false,
+          "required": false,
+          "display_name": "Count",
+          "kind": "integer"
+        }
+      ]
+    }
+  },
+  "enums": {
+    "ProductStatus": [
+      "Draft",
+      "Active",
+      "Discontinued"
+    ],
+    "OrderStatus": [
+      "Pending",
+      "Paid",
+      "Shipped",
+      "Delivered",
+      "Cancelled"
+    ],
+    "PaymentMethod": [
+      "Card",
+      "PayPal",
+      "BankTransfer",
+      "GiftCard"
+    ],
+    "CustomerTier": [
+      "Standard",
+      "Silver",
+      "Gold",
+      "Platinum"
+    ]
+  }
+}
