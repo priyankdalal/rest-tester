@@ -19,6 +19,7 @@ from PyQt6.QtCore import (
     QTimer,
     QUrl,
     pyqtSignal,
+    pyqtSlot,
 )
 from PyQt6.QtGui import QColor, QDesktopServices, QKeySequence, QMouseEvent, QShortcut
 from PyQt6.QtWidgets import (
@@ -59,7 +60,8 @@ from PyQt6.QtWidgets import (
 )
 
 from . import theme
-from .branding import APP_NAME, display_name
+from .about import AboutDialog
+from .branding import APP_NAME, APP_VERSION, display_name
 from .catalog import Catalog, Endpoint, Service, load_catalog
 from .client import (
     ApiResult,
@@ -391,7 +393,9 @@ class MainWindow(QMainWindow):
         self._refresh_header_buttons()
         help_button = QPushButton("?")
         help_button.setObjectName("iconButton")
-        help_button.setToolTip("Help and keyboard shortcuts")
+        help_button.setToolTip(f"About {APP_NAME}: version, shortcuts, system details and licenses")
+        help_button.setAccessibleName(f"About {APP_NAME}")
+        self.help_button = help_button
         help_button.clicked.connect(self._show_help)
         header_layout.addWidget(help_button)
         layout.addWidget(header)
@@ -554,12 +558,39 @@ class MainWindow(QMainWindow):
         self.save_request_button.setIcon(icon("save"))
         self.save_request_button.clicked.connect(self._save_current_request)
         endpoint_header.addWidget(self.save_request_button)
-        self.add_to_suite_button = QPushButton("Add to Test Suite")
+        self.add_to_suite_button = QToolButton()
+        self.add_to_suite_button.setObjectName("endpointSplitButton")
+        self.add_to_suite_button.setText("Add to Test Suite")
         self.add_to_suite_button.setToolTip(
             "Adds this endpoint, with the values currently entered, as a case in the open suite"
         )
         self.add_to_suite_button.setIcon(icon("add-to-suite", theme.TEXT_MUTED))
+        self.add_to_suite_button.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+        )
         self.add_to_suite_button.clicked.connect(self._add_to_suite)
+        self.add_to_suite_button.setPopupMode(
+            QToolButton.ToolButtonPopupMode.MenuButtonPopup
+        )
+        add_to_suite_menu = QMenu(self.add_to_suite_button)
+        self.open_in_load_studio_action = add_to_suite_menu.addAction(
+            icon("load-testing", theme.PRIMARY),
+            "Open in Load Studio",
+            self._open_in_load_studio,
+        )
+        self.open_in_load_studio_action.setToolTip(
+            "Loads this endpoint, its parameter values and payload into Load Studio"
+        )
+        self.open_in_data_runner_action = add_to_suite_menu.addAction(
+            icon("data-runner", theme.PRIMARY),
+            "Open in Data Runner",
+            self._open_in_data_runner,
+        )
+        self.open_in_data_runner_action.setToolTip(
+            "Opens this endpoint in Data Runner with its parameter values and payload "
+            "as the base request for every CSV row"
+        )
+        self.add_to_suite_button.setMenu(add_to_suite_menu)
         endpoint_header.addWidget(self.add_to_suite_button)
         self.favorite_button = QPushButton("Favorite")
         self.favorite_button.setObjectName("favoriteButton")
@@ -925,7 +956,7 @@ class MainWindow(QMainWindow):
         version_row_layout.setContentsMargins(0, 0, 0, 0)
         version_row_layout.setSpacing(4)
         version_row_layout.addStretch()
-        self.navigation_version = QLabel("v2.1.0")
+        self.navigation_version = QLabel(f"v{APP_VERSION}")
         self.navigation_version.setObjectName("navigationVersion")
         self.navigation_version.setAlignment(Qt.AlignmentFlag.AlignCenter)
         version_row_layout.addWidget(self.navigation_version)
@@ -1331,6 +1362,52 @@ class MainWindow(QMainWindow):
             self.suite_tab.current_case.authentication = self.request_authentication.currentData() or "inherit"
             self.suite_tab.refresh_authentication_choices()
         self.workspace_tabs.setCurrentWidget(self.suite_tab)
+
+    def _open_in_load_studio(self) -> None:
+        endpoint = self.current_endpoint
+        if endpoint is None:
+            QMessageBox.information(self, "Select endpoint", "Select an endpoint first.")
+            return
+        try:
+            payload = (
+                json.loads(self.payload.toPlainText())
+                if self.payload.toPlainText().strip()
+                else None
+            )
+        except json.JSONDecodeError as exc:
+            QMessageBox.warning(self, "Invalid payload", f"Payload is not valid JSON: {exc}")
+            return
+        if not self.load_testing_tab.load_request(endpoint, self._current_values(), payload):
+            QMessageBox.warning(
+                self,
+                "Endpoint unavailable",
+                "This endpoint is not part of the catalog loaded in Load Studio.",
+            )
+            return
+        self.workspace_tabs.setCurrentWidget(self.load_testing_tab)
+
+    def _open_in_data_runner(self) -> None:
+        endpoint = self.current_endpoint
+        if endpoint is None:
+            QMessageBox.information(self, "Select endpoint", "Select an endpoint first.")
+            return
+        try:
+            payload = (
+                json.loads(self.payload.toPlainText())
+                if self.payload.toPlainText().strip()
+                else None
+            )
+        except json.JSONDecodeError as exc:
+            QMessageBox.warning(self, "Invalid payload", f"Payload is not valid JSON: {exc}")
+            return
+        if not self.data_runner_tab.load_request(endpoint, self._current_values(), payload):
+            QMessageBox.warning(
+                self,
+                "Endpoint unavailable",
+                "This endpoint is not part of the catalog loaded in Data Runner.",
+            )
+            return
+        self.workspace_tabs.setCurrentWidget(self.data_runner_tab)
 
     def _current_values(self) -> dict[str, str]:
         return self.request_editor.values()
@@ -2315,14 +2392,17 @@ class MainWindow(QMainWindow):
             dict(self.app_settings.active.custom_headers), self,
         )
         probe.resolved.connect(self._connection_resolved)
-        probe.finished.connect(lambda probe=probe: self._connection_probe_finished(probe))
+        probe.finished.connect(self._connection_probe_finished)
         self._connection_probes.add(probe)
         probe.start()
 
-    def _connection_probe_finished(self, probe: ConnectionProbe) -> None:
+    @pyqtSlot()
+    def _connection_probe_finished(self) -> None:
         """Releases a finished probe so no reference outlives its C++ object."""
-        self._connection_probes.discard(probe)
-        probe.deleteLater()
+        probe = self.sender()
+        if isinstance(probe, ConnectionProbe):
+            self._connection_probes.discard(probe)
+            probe.deleteLater()
 
     def _connection_resolved(self, token: int, state: object) -> None:
         if token != self._connection_token or not isinstance(state, ConnectionState):
@@ -2600,13 +2680,18 @@ class MainWindow(QMainWindow):
                 highlighter.rehighlight()
 
     def _show_help(self) -> None:
-        QMessageBox.information(
-            self,
-            "Rest Tester API Tester",
-            "Use API Explorer to configure and execute an endpoint. "
-            "Ctrl+Enter sends and verifies the current request. "
-            "Environment settings apply to explorer and suite runs.",
+        self.about_dialog = AboutDialog(
+            self, data_dir=ROOT / "data", catalog_summary=self._catalog_summary()
         )
+        self.about_dialog.exec()
+
+    def _catalog_summary(self) -> str:
+        catalog = getattr(self, "catalog", None)
+        if catalog is None or not catalog.services:
+            return "No catalog loaded"
+        endpoints = sum(len(service.endpoints) for service in catalog.services)
+        name = str(getattr(catalog, "name", "") or "").strip() or "Unnamed catalog"
+        return f"{name} · {len(catalog.services)} services · {endpoints} endpoints"
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt signature
         self._save_settings()
@@ -2662,6 +2747,7 @@ def run() -> int:
     migrate_workspace_data()
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
+    app.setApplicationVersion(APP_VERSION)
     app.setWindowIcon(app_icon())
     theme.apply_theme(app)
 

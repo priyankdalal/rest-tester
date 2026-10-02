@@ -123,6 +123,8 @@ def build_plan(
     *,
     default_expected_status: str = "200-299",
     environment_variables: dict[str, str] | None = None,
+    template_values: dict[str, str] | None = None,
+    template_payload: Any = None,
     progress: Callable[[int, int], None] | None = None,
     cancellation: CancellationController | None = None,
     max_issue_rows: int = DEFAULT_MAX_ISSUE_ROWS,
@@ -159,6 +161,8 @@ def build_plan(
             mappings,
             default_expected_status=default_expected_status,
             environment_variables=environment_variables,
+            template_values=template_values,
+            template_payload=template_payload,
         )
     except ValueError as exc:
         issues.append(PlanIssue("error", str(exc)))

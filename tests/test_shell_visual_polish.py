@@ -20,39 +20,28 @@ def window(qt_app, monkeypatch, tmp_path):
     value = main_module.MainWindow()
     yield value
     value.close()
+    value.deleteLater()
 
 
-def test_authentication_row_keeps_selector_status_and_edit_on_one_band(window):
-    """The environment toolbar was replaced by a single authentication line.
+def test_connection_status_and_environment_edit_share_the_header_pill(window):
+    from PyQt6.QtWidgets import QWidget
 
-    Selector, connection pill and edit button must share one row and one
-    height so the band reads as a single control strip.
-    """
     assert window.request_authentication.count() > 0
-    assert window.connection_indicator.objectName() == "connectionIndicator"
+    assert window.connection_indicator is window.connection_pill
+    assert window.connection_indicator.objectName() == "headerStatusPill"
     assert window.connection_indicator.property("state") in {
         "connected",
         "disconnected",
     }
-    assert window.edit_environment_button.objectName() == "editEnvironmentButton"
-
-    row = window.request_authentication.parentWidget().layout()
-    widgets = [
-        row.itemAt(index).widget() for index in range(row.count())
-    ]
-    assert window.request_authentication in widgets
-    assert window.connection_indicator in widgets
-    assert window.edit_environment_button in widgets
-    assert widgets.index(window.request_authentication) < widgets.index(
-        window.connection_indicator
-    )
-    assert widgets.index(window.connection_indicator) < widgets.index(
-        window.edit_environment_button
-    )
-    assert window.connection_indicator.height() == max(
-        window.request_authentication.sizeHint().height(),
-        window.edit_environment_button.sizeHint().height(),
-    )
+    assert window.edit_environment_button.objectName() == "headerStatusEdit"
+    assert window.edit_environment_button is window.connection_pill.edit_button
+    assert window.edit_environment_button.accessibleName() == "Edit environment"
+    assert not window.edit_environment_button.icon().isNull()
+    header = window.findChild(QWidget, "appHeader")
+    assert header.layout().indexOf(window.connection_pill) >= 0
+    assert window.connection_pill.layout().indexOf(window.edit_environment_button) >= 0
+    assert window.edit_environment_button.parentWidget() is window.connection_pill
+    assert window.request_authentication.parentWidget() is not header
 
 
 def test_shell_workspace_pages_expose_compact_title_hierarchy(window):

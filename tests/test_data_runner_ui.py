@@ -121,7 +121,7 @@ def test_load_preview_populates_tables(app: QApplication, tmp_path: Path) -> Non
     tab._load_preview()
 
     assert tab.preview is not None
-    assert tab.column_profile_table.rowCount() == 2
+    assert "2 columns" in tab.preview_summary_label.text()
     assert tab.sample_rows_table.columnCount() == 2
     assert tab.sample_rows_table.rowCount() == 1
 
@@ -206,7 +206,8 @@ def test_validate_builds_an_executable_plan(app: QApplication, tmp_path: Path) -
     assert tab.plan is not None
     assert tab.plan.is_executable is True
     assert tab.run_button.isEnabled() is True
-    assert tab.preview_rows_table.rowCount() == 1
+    assert tab.preview_rows_table.rowCount() == 0
+    assert tab.validate_summary_label.text().startswith("Ready to run")
 
 
 def test_validate_reports_blocking_issues(app: QApplication, tmp_path: Path) -> None:
@@ -221,7 +222,8 @@ def test_validate_reports_blocking_issues(app: QApplication, tmp_path: Path) -> 
 
     assert tab.plan is not None
     assert tab.plan.is_executable is False
-    assert tab.plan_issues_list.count() >= 1
+    assert tab.preview_rows_table.rowCount() >= 1
+    assert tab.validate_summary_label.text().startswith("1 blocking issue")
     assert tab.run_button.isEnabled() is False
 
 
@@ -308,19 +310,18 @@ def test_run_updates_outcome_chart_and_latency_summary(
     assert "p50" in tab.latency_summary_label.text()
 
 
-def test_run_populates_status_code_percentile_and_timeline_charts(
+def test_run_populates_outcome_latency_and_throughput_charts(
     app: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Regression test for the Charts tab's status-code, percentile-bar,
-    cumulative-completed, and latency-timeline panels added to fill the
-    previously-empty space below each chart (see load-testing-and-data-runner.md)."""
+    """Regression coverage for the current Charts tab metrics."""
     _install_fake_transport(monkeypatch)
     tab = _prepare_validated_tab(app, tmp_path)
 
     _run_to_completion(tab, app)
 
-    assert tab._status_code_counts, "status-code counts should have been recorded"
-    assert tab.status_code_chart._entries, "status-code chart should have entries"
+    assert tab.outcome_chart._counts["passed"] == 1
+    assert tab.latency_chart._values, "latency chart should have received a sample"
+    assert "p50" in tab.latency_summary_label.text()
     assert [label for label, _value, _color in tab.latency_percentile_chart._entries] == [
         "p50",
         "p90",
@@ -548,9 +549,11 @@ def test_results_table_only_materialises_the_current_page(
     # Live-tailing should land on the last (partial) page: rows 11-12.
     assert tab.results_table.rowCount() == 2
     assert tab.results_table.item(0, 0).text() == "11"
-    assert "Page 3 of 3" in tab.results_page_label.text()
-    assert tab.results_prev_page_button.isEnabled() is True
-    assert tab.results_next_page_button.isEnabled() is False
+    assert tab.results_pager.page == 2
+    assert tab.results_pager.page_count == 3
+    assert tab.results_pager.total_label.text() == "of 3"
+    assert tab.results_pager.prev_button.isEnabled() is True
+    assert tab.results_pager.next_button.isEnabled() is False
 
 
 def test_previous_page_button_stops_following_the_latest_page(
@@ -561,12 +564,13 @@ def test_previous_page_button_stops_following_the_latest_page(
     tab._on_page_size_changed("5")
 
     _run_to_completion(tab, app)
-    tab._go_to_previous_page()
+    tab.results_pager.prev_button.click()
 
     assert tab._follow_latest_page is False
+    assert tab.results_pager.page == 1
     assert tab.results_table.rowCount() == 5
     assert tab.results_table.item(0, 0).text() == "6"
-    assert tab.results_jump_latest_button.isEnabled() is True
+    assert tab.results_pager.next_button.isEnabled() is True
 
 
 def test_jump_to_latest_restores_live_tailing(
@@ -576,11 +580,12 @@ def test_jump_to_latest_restores_live_tailing(
     tab = _prepare_validated_tab_with_rows(app, tmp_path, 12)
     tab._on_page_size_changed("5")
     _run_to_completion(tab, app)
-    tab._go_to_previous_page()
+    tab.results_pager.prev_button.click()
 
-    tab._jump_to_latest_page()
+    tab.results_pager.next_button.click()
 
     assert tab._follow_latest_page is True
+    assert tab.results_pager.page == 2
     assert tab.results_table.rowCount() == 2
     assert tab.results_table.item(0, 0).text() == "11"
 
@@ -592,12 +597,14 @@ def test_changing_page_size_re_renders_and_keeps_roughly_the_same_place(
     tab = _prepare_validated_tab_with_rows(app, tmp_path, 12)
     tab._on_page_size_changed("5")
     _run_to_completion(tab, app)
-    tab._go_to_previous_page()  # now viewing rows 6-10
+    tab.results_pager.prev_button.click()  # now viewing rows 6-10
 
     tab._on_page_size_changed("100")
 
     assert tab.results_table.rowCount() == 12
-    assert tab.results_page_label.text().startswith("Page 1 of 1")
+    assert tab.results_pager.page == 0
+    assert tab.results_pager.page_count == 1
+    assert tab.results_pager.total_label.text() == "of 1"
 
 
 def test_load_history_run_paginates_large_runs(
@@ -626,7 +633,8 @@ def test_load_history_run_paginates_large_runs(
 def test_results_tabs_include_the_expected_sub_tabs(app: QApplication) -> None:
     tab = _make_tab(app)
     titles = [tab.results_tabs.tabText(i) for i in range(tab.results_tabs.count())]
-    assert titles == ["Live results", "Input validation", "Errors", "Charts", "Mapping", "Export"]
+    assert titles == ["Live results", "Input validation", "Errors", "Charts", "Mapping"]
+    assert tab.results_tabs.cornerWidget() is not None
 
 
 def test_selecting_a_passed_row_shows_a_placeholder_instead_of_the_response_body(
@@ -796,13 +804,11 @@ def _brightest_icon_pixel(button, mode) -> str:
 @pytest.mark.parametrize(
     ("attribute", "label"),
     [
-        ("load_preview_button", "Load preview"),
-        ("validate_button", "Validate"),
         ("history_load_button", "Load"),
         ("history_export_button", "Export"),
     ],
 )
-def test_primary_actions_show_a_label_beside_their_icon(app, attribute, label) -> None:
+def test_history_actions_show_a_label_beside_their_icon(app, attribute, label) -> None:
     from PyQt6.QtWidgets import QSizePolicy
 
     button = getattr(_make_tab(app), attribute)
@@ -812,12 +818,47 @@ def test_primary_actions_show_a_label_beside_their_icon(app, attribute, label) -
     assert button.sizePolicy().horizontalPolicy() == QSizePolicy.Policy.Fixed
 
 
-def test_mapping_rows_are_five_pixels_taller(app) -> None:
+def test_entering_validate_step_builds_plan_without_a_validate_button(
+    app: QApplication, tmp_path: Path
+) -> None:
+    tab = _make_tab(app)
+    csv_path = _write_csv(tmp_path, [{"Id": "", "Status": "Active"}], ["Id", "Status"])
+    tab.csv_path.setText(csv_path)
+    tab._load_preview()
+    tab._add_mapping_row("Id", "path:Id")
+    tab._add_mapping_row("Status", "query:Status")
+
+    assert not hasattr(tab, "validate_button")
+    tab.steps.setCurrentIndex(2)
+
+    assert tab.plan is not None
+    assert tab.plan.invalid_count == 1
+    assert tab.preview_rows_table.rowCount() == 1
+    assert tab.preview_rows_table.item(0, 2).text() == "Invalid"
+    assert tab.validate_summary_label.text().startswith("1 invalid rows")
+
+
+def test_export_corner_action_is_enabled_only_after_a_run_produces_rows(
+    app: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _install_fake_transport(monkeypatch)
+    tab = _prepare_validated_tab(app, tmp_path)
+
+    assert tab.results_tabs.cornerWidget().isAncestorOf(tab.export_button)
+    assert tab.export_button.isEnabled() is False
+
+    _run_to_completion(tab, app)
+
+    assert tab.results_table.rowCount() == 1
+    assert tab.export_button.isEnabled() is True
+
+
+def test_mapping_rows_use_the_roomy_theme_height(app) -> None:
     from api_tester import theme
 
     tab = _make_tab(app)
     assert tab.mapping_table.objectName() == "roomyEditorTable"
-    assert tab.mapping_table.verticalHeader().defaultSectionSize() == theme.ROOMY_ROW_HEIGHT == 35
+    assert tab.mapping_table.verticalHeader().defaultSectionSize() == theme.ROOMY_ROW_HEIGHT
 
 
 @pytest.mark.parametrize("mode", ["Light", "Dark"])
@@ -834,3 +875,134 @@ def test_run_icon_stays_white_on_the_accent_button(app, mode) -> None:
             assert _brightest_icon_pixel(tab.run_button, icon_mode) == theme.TEXT_INVERSE
     finally:
         theme.apply_theme(app, "Light")
+
+
+# ------------------------------------------------------------------ request template (API Explorer)
+
+
+def _two_endpoint_catalog() -> Catalog:
+    other = Endpoint(
+        id="teams.get",
+        service="TrialAuth",
+        controller="Teams",
+        action="Get",
+        method="GET",
+        path="/Teams/{Id}",
+        parameters=(Parameter(name="Id", source="path", type="int", required=True),),
+    )
+    return Catalog(
+        services=(Service("TrialAuth", "TrialAuth", "https://example.test", (other, _endpoint())),),
+        filter_schemas={},
+        payload_schemas={},
+        enums={},
+    )
+
+
+def test_load_request_selects_endpoint_and_shows_template_banner(app: QApplication) -> None:
+    tab = _make_tab(app, _two_endpoint_catalog())
+    tab.steps.setCurrentIndex(1)
+    assert tab.current_endpoint.id == "teams.get"
+
+    assert tab.load_request(
+        _endpoint(),
+        {"path:Id": "9", "query:Status": "Off", "enabled:query:Status": "false"},
+        {"Name": "X"},
+    )
+
+    assert tab.current_endpoint.id == "brands.update"
+    assert tab.steps.currentIndex() == 0
+    assert tab.has_request_template()
+    assert tab._template_values == {"path:Id": "9"}  # unticked optional dropped
+    assert tab._template_payload == {"Name": "X"}
+    assert not tab.template_banner.isHidden()
+    assert "1 value · payload" in tab.template_banner_label.text()
+
+
+def test_load_request_rejects_unknown_endpoint(app: QApplication) -> None:
+    tab = _make_tab(app)
+    unknown = Endpoint(
+        id="x.get", service="Other", controller="X", action="Get", method="GET", path="/X"
+    )
+    assert not tab.load_request(unknown, {}, None)
+    assert not tab.has_request_template()
+    assert tab.template_banner.isHidden()
+
+
+def test_template_is_cleared_by_button_or_endpoint_change(app: QApplication) -> None:
+    tab = _make_tab(app, _two_endpoint_catalog())
+    assert tab.load_request(_endpoint(), {"path:Id": "9"}, None)
+    tab.template_clear_button.click()
+    assert not tab.has_request_template()
+    assert tab.template_banner.isHidden()
+
+    assert tab.load_request(_endpoint(), {"path:Id": "9"}, None)
+    tab.endpoint_combo.setCurrentIndex(0)  # user picks another endpoint
+    assert not tab.has_request_template()
+
+
+def test_validate_uses_template_for_unmapped_required_values(app: QApplication, tmp_path: Path) -> None:
+    tab = _make_tab(app)
+    csv_path = _write_csv(tmp_path, [{"Status": "Active"}], ["Status"])
+    tab.csv_path.setText(csv_path)
+    tab._load_preview()
+    tab._add_mapping_row("Status", "query:Status")
+
+    tab._validate()
+    assert tab.plan is not None and tab.plan.invalid_count == 1  # Id unmapped
+
+    assert tab.load_request(_endpoint(), {"path:Id": "42"}, None)
+    tab._validate()
+    assert tab.plan is not None and tab.plan.is_executable
+    assert tab.plan.invalid_count == 0
+    assert tab.plan.mapper.template_values == {"path:Id": "42"}
+
+
+# ------------------------------------------------------------------ searchable selectors
+
+
+def test_service_and_endpoint_selectors_are_searchable(app: QApplication) -> None:
+    from api_tester.widgets import SEARCH_TEXT_ROLE, SearchableComboBox
+
+    tab = _make_tab(app, _two_endpoint_catalog())
+    for combo in (tab.service_combo, tab.endpoint_combo):
+        assert isinstance(combo, SearchableComboBox)
+        assert combo.isEditable()
+    assert "Brands" in tab.endpoint_combo.itemData(1, SEARCH_TEXT_ROLE)
+
+
+def test_endpoint_search_selects_the_real_endpoint(app: QApplication) -> None:
+    tab = _make_tab(app, _two_endpoint_catalog())
+    combo = tab.endpoint_combo
+    combo.lineEdit().setText("patch brands")
+    combo.lineEdit().textEdited.emit("patch brands")
+    assert tab.current_endpoint.id == "teams.get"  # typing alone changes nothing
+    combo.flush_search()
+    assert combo.suggestion_texts() == ["PATCH /Brands/{Id}"]
+    combo.choose_suggestion(0)
+    assert tab.current_endpoint.id == "brands.update"
+    assert combo.currentData().id == "brands.update"
+
+
+def test_service_search_does_not_repopulate_endpoints_while_typing(app: QApplication) -> None:
+    other = Endpoint(
+        id="crops.get", service="TrialLibrary", controller="Crops", action="Get",
+        method="GET", path="/Crops/{Id}",
+    )
+    catalog = Catalog(
+        services=(
+            Service("TrialAuth", "TrialAuth", "https://a.test", (_endpoint(),)),
+            Service("TrialLibrary", "TrialLibrary", "https://l.test", (other,)),
+        ),
+        filter_schemas={}, payload_schemas={}, enums={},
+    )
+    tab = _make_tab(app, catalog)
+    combo = tab.service_combo
+    combo.lineEdit().setText("lib")
+    combo.lineEdit().textEdited.emit("lib")
+    assert tab.current_endpoint.id == "brands.update"
+    combo.flush_search()
+    combo.choose_suggestion(0)
+    assert combo.itemText(combo.currentIndex()) == "TrialLibrary"
+    assert tab.current_endpoint.id == "crops.get"
+    assert tab.load_request(_endpoint(), {"path:Id": "1"}, None)  # still switches back
+    assert tab.current_endpoint.id == "brands.update"

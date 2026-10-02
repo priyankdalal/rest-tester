@@ -191,6 +191,15 @@ class ThresholdDefinition:
             "label": self.label,
         }
 
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "ThresholdDefinition":
+        return cls(
+            metric=value["metric"],
+            operator=value["operator"],
+            target=float(value["target"]),
+            label=value.get("label", ""),
+        )
+
 
 @dataclass(frozen=True)
 class LoadScenario:

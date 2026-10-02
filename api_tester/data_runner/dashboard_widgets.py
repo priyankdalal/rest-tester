@@ -7,7 +7,7 @@ dependency).
 from __future__ import annotations
 
 from PyQt6.QtCore import QRectF, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QMouseEvent, QPainter, QPainterPath, QPaintEvent, QPen
+from PyQt6.QtGui import QColor, QFont, QMouseEvent, QPainter, QPainterPath, QPaintEvent, QPen
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from api_tester import theme
@@ -64,6 +64,9 @@ class WizardStepper(QWidget):
         centers = self._step_centers()
         if not centers:
             return
+        # Each step derives its fonts from this snapshot; mutating
+        # painter.font() in place compounded the size change per step.
+        base_font = QFont(painter.font())
         y = 14.0
         radius = _CIRCLE_DIAMETER / 2.0
 
@@ -105,19 +108,23 @@ class WizardStepper(QWidget):
                 painter.drawPath(path)
             else:
                 painter.setPen(QColor(theme.TEXT_INVERSE if is_current else theme.TEXT_MUTED))
-                font = painter.font()
-                font.setPointSize(max(7, font.pointSize() - 1))
+                font = QFont(base_font)
+                font.setPointSize(max(7, base_font.pointSize() - 1))
                 font.setBold(is_current)
                 painter.setFont(font)
                 painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, str(index + 1))
 
             label = self._labels[index]
-            label_rect = QRectF(center_x - 70.0, y + radius + 4.0, 140.0, 16.0)
             painter.setPen(QColor(theme.TEXT if (is_current or is_done) else theme.TEXT_MUTED))
-            font = painter.font()
+            font = QFont(base_font)
             font.setBold(is_current)
-            font.setPointSize(max(7, font.pointSize()))
+            font.setPointSize(max(7, base_font.pointSize()))
             painter.setFont(font)
+            # Centre the label under its circle, but keep the first and last
+            # labels inside the widget instead of letting them run off an edge.
+            label_width = painter.fontMetrics().horizontalAdvance(label) + 8.0
+            left = min(max(0.0, center_x - label_width / 2.0), max(0.0, self.width() - label_width))
+            label_rect = QRectF(left, y + radius + 4.0, label_width, 18.0)
             painter.drawText(label_rect, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, label)
 
 
@@ -136,6 +143,7 @@ class StatCard(QFrame):
         title_label = QLabel(title.upper())
         title_label.setObjectName("dataRunnerStatCardTitle")
         layout.addWidget(title_label)
+        self.title_label = title_label
 
         self.value_label = QLabel("–")
         self.value_label.setObjectName("dataRunnerStatCardValue")
@@ -144,6 +152,9 @@ class StatCard(QFrame):
         self.subtitle_label = QLabel("")
         self.subtitle_label.setObjectName("dataRunnerStatCardSubtitle")
         layout.addWidget(self.subtitle_label)
+
+    def set_title(self, title: str) -> None:
+        self.title_label.setText(title.upper())
 
     def set_value(self, text: str, *, color: str | None = None) -> None:
         self.value_label.setText(text)

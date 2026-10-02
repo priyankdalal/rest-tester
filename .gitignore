@@ -18,3 +18,4 @@ dist/*
 data/*
 build/*
 *.md
+!README.md

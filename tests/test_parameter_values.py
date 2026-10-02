@@ -35,6 +35,18 @@ def quiet_dialogs(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
 
+@pytest.fixture
+def window(app, quiet_dialogs, monkeypatch, tmp_path):
+    import api_tester.main as main_module
+
+    monkeypatch.setattr(main_module, "SETTINGS_PATH", tmp_path / "settings.json")
+    monkeypatch.setattr(main_module, "WORKSPACE_DB_PATH", tmp_path / "workspace.db")
+    value = main_module.MainWindow()
+    yield value
+    value.close()
+    value.deleteLater()
+
+
 def document_with_a_parameter(parameter: dict) -> CatalogDocument:
     document = CatalogDocument()
     service = ServiceDraft(name="Demo", default_base_url="https://localhost:7001")
@@ -343,20 +355,17 @@ def catalog_with_a_constrained_query_parameter(tmp_path: Path) -> tuple[Path, st
 
 
 def test_a_constrained_parameter_renders_a_dropdown_in_the_request_grid(
-    app: QApplication, quiet_dialogs: None, tmp_path: Path
+    window, tmp_path: Path
 ) -> None:
-    from api_tester.main import MainWindow
-
     path, endpoint_id, name = catalog_with_a_constrained_query_parameter(tmp_path)
-    window = MainWindow()
     assert window._load_catalog_from(path)
     item = window.endpoint_items[endpoint_id]
     item.setSelected(True)
     window._endpoint_selected()
     row = next(
-        index for index, item in enumerate(window._table_parameters) if item.name == name
+        index for index, item in enumerate(window.request_editor._query_parameter_list) if item.name == name
     )
-    picker = window.parameters.cellWidget(row, 4)
+    picker = window.request_editor.query_parameters.cellWidget(row, 3)
     assert isinstance(picker, ValuePicker)
     assert [
         picker.combo.itemText(index) for index in range(picker.combo.count())
@@ -364,56 +373,49 @@ def test_a_constrained_parameter_renders_a_dropdown_in_the_request_grid(
 
 
 def test_the_dropdown_value_reaches_the_request(
-    app: QApplication, quiet_dialogs: None, tmp_path: Path
+    window, tmp_path: Path
 ) -> None:
-    from api_tester.main import MainWindow
-
     path, endpoint_id, name = catalog_with_a_constrained_query_parameter(tmp_path)
-    window = MainWindow()
     assert window._load_catalog_from(path)
     window.endpoint_items[endpoint_id].setSelected(True)
     window._endpoint_selected()
     row = next(
-        index for index, item in enumerate(window._table_parameters) if item.name == name
+        index for index, item in enumerate(window.request_editor._query_parameter_list) if item.name == name
     )
-    window.parameters.cellWidget(row, 4).setText("Harvest")
+    window.request_editor.query_parameters.cellWidget(row, 3).setText("Harvest")
     assert window._current_values()[f"query:{name}"] == "Harvest"
 
 
 def test_seeding_updates_the_dropdown_and_not_just_the_hidden_cell(
-    app: QApplication, quiet_dialogs: None, tmp_path: Path
+    window, tmp_path: Path
 ) -> None:
     """The cell is covered by the widget, so writing only the cell would leave
     the user looking at a stale value."""
-    from api_tester.main import MainWindow
-
     path, endpoint_id, name = catalog_with_a_constrained_query_parameter(tmp_path)
-    window = MainWindow()
     assert window._load_catalog_from(path)
     window.endpoint_items[endpoint_id].setSelected(True)
     window._endpoint_selected()
     row = next(
-        index for index, item in enumerate(window._table_parameters) if item.name == name
+        index for index, item in enumerate(window.request_editor._query_parameter_list) if item.name == name
     )
     window._seed_parameters()
-    assert window.parameters.cellWidget(row, 4).text() == "Agronomic"
-    assert window.parameters.item(row, 4).text() == "Agronomic"
+    assert window.request_editor.query_parameters.cellWidget(row, 3).text() == "Agronomic"
+    assert window.request_editor.query_parameters.item(row, 3).text() == "Agronomic"
 
 
 def test_an_unconstrained_parameter_still_uses_a_plain_cell(
-    app: QApplication, quiet_dialogs: None, tmp_path: Path
+    window, tmp_path: Path
 ) -> None:
-    from api_tester.main import MainWindow
-
     path, endpoint_id, _ = catalog_with_a_constrained_query_parameter(tmp_path)
-    window = MainWindow()
     assert window._load_catalog_from(path)
     window.endpoint_items[endpoint_id].setSelected(True)
     window._endpoint_selected()
     row = next(
-        index for index, item in enumerate(window._table_parameters) if not item.values
+        index for index, item in enumerate(window.request_editor._query_parameter_list)
+        if not item.values and item.name not in window.request_editor._builder_parameters
     )
-    assert window.parameters.cellWidget(row, 4) is None
+    assert window.request_editor.query_parameters.cellWidget(row, 3) is None
+    assert window.request_editor.query_parameters.item(row, 3).flags() & Qt.ItemFlag.ItemIsEditable
 
 
 def test_the_picker_stays_editable_so_invalid_values_can_be_tested(

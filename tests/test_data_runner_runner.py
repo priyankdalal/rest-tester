@@ -312,3 +312,17 @@ def test_export_rows_csv_writes_reserved_columns(tmp_path, monkeypatch) -> None:
         rows = list(csv.reader(handle))
     assert rows[0][:3] == ["_run_id", "_row_number", "_outcome"]
     assert rows[1][2] == "passed"
+
+
+def test_run_definition_records_template_keys_but_never_values() -> None:
+    from types import SimpleNamespace
+
+    from api_tester.data_runner.runner import DataRunner
+
+    mapper = SimpleNamespace(template_values={"header:X-Tenant": "secret", "path:Id": "1"}, template_payload=None)
+    definition = DataRunner._request_template_definition(SimpleNamespace(mapper=mapper))
+    assert definition == {"request_template": {"keys": ["header:X-Tenant", "path:Id"], "payload": False}}
+    assert "secret" not in repr(definition)
+    empty = SimpleNamespace(template_values={}, template_payload=None)
+    assert DataRunner._request_template_definition(SimpleNamespace(mapper=empty)) == {}
+    assert DataRunner._request_template_definition(SimpleNamespace(mapper=None)) == {}

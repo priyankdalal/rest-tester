@@ -7,10 +7,10 @@ import pytest
 
 pytest.importorskip("PyQt6.QtWidgets")
 
-from PyQt6.QtWidgets import QApplication, QMessageBox
+from PyQt6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from api_tester.catalog import load_catalog
-from api_tester.catalog_builder import CatalogDocument
+from api_tester.catalog_builder import CatalogDocument, EndpointDraft
 from api_tester.catalog_builder_ui import CatalogBuilderWindow
 from api_tester.schema_editor import (
     AllowedValuesWidget,
@@ -309,6 +309,52 @@ def test_the_bundled_schemas_still_round_trip_losslessly(
     assert mismatches == []
 
 
+@pytest.mark.parametrize("kind", ["payload", "form", "response"])
+def test_field_details_apply_and_save_keep_values_and_constraints(
+    app: QApplication,
+    quiet_dialogs: None,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
+) -> None:
+    window = CatalogBuilderWindow()
+    window.document.enums.update(ENUMS)
+    service = window.document.add_service("Demo")
+    service.endpoints.append(
+        EndpointDraft(service="Demo", controller="Items", action="Get", method="GET", path="/Items")
+    )
+    schema = window.document.add_schema(kind, "Authored")
+    schema["fields"] = [text_field()]
+    window._populate()
+    window._select_schema_item(kind, "Authored")
+
+    def edit_details(dialog: FieldDetailsDialog) -> QDialog.DialogCode:
+        dialog.values_widget.mode.setCurrentText(AllowedValuesWidget.ENUM)
+        dialog.values_widget.enum_combo.setCurrentText("Status")
+        dialog.maximum.setText("40")
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(FieldDetailsDialog, "exec", edit_details)
+    button_in_cell(window.payload_fields.table, 0, 6).click()
+    window._apply_payload_schema()
+    target = tmp_path / f"{kind}.json"
+    assert window._write(target)
+    assert not window.dirty
+
+    reloaded = CatalogDocument.load(target)
+    field = reloaded.schema(kind, "Authored")["fields"][0]
+    assert field["enum"] == "Status"
+    assert field["lov"] == ["Draft", "Active"]
+    assert field["constraints"] == {"maximum": 40}
+    assert getattr(load_catalog(target), f"{kind}_schema")("Authored")["fields"][0] == field
+
+    window.open_catalog(target)
+    window._select_schema_item(kind, "Authored")
+    assert window.payload_fields.fields() == [field]
+    assert button_in_cell(window.payload_fields.table, 0, 6).text() == "Status, constrained"
+    window.close()
+
+
 # ---------------------------------------------------------- enum lifecycle
 
 
@@ -424,4 +470,3 @@ def test_a_deleted_node_is_dropped_from_the_history(
     assert window.editor.currentIndex() >= 0, "a missing node must not strand the user"
     assert ("schema", ("filter", name)) not in window._history
     window.close()
-

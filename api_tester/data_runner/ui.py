@@ -58,7 +58,13 @@ from api_tester.execution.models import ExecutionEnvironmentSnapshot
 from api_tester.execution.persistence import RunStore
 from api_tester.icons import icon, solid_icon
 from api_tester.viewers import JsonTextEdit
-from api_tester.widgets import EmptyStateWidget, Pager, attach_table_empty_state
+from api_tester.widgets import (
+    SEARCH_TEXT_ROLE,
+    EmptyStateWidget,
+    Pager,
+    SearchableComboBox,
+    attach_table_empty_state,
+)
 
 from .charts import (
     LabeledBarChart,
@@ -70,7 +76,7 @@ from .charts import (
 )
 from .csv_source import CsvImportSettings, CsvPreview, CsvSource
 from .dashboard_widgets import ContextCard, StatCard, WizardStepper
-from .mapping import ColumnMapping, MappingTarget, Transform, mapping_targets
+from .mapping import ColumnMapping, MappingTarget, Transform, mapping_targets, template_request_values
 from .planner import DataRunPlan, PlanIssue, build_plan
 from .runner import DataRunner, DataRunnerOptions, RunSummary
 
@@ -469,15 +475,43 @@ class DataRunnerTab(QWidget):
 
         endpoint_bar = QHBoxLayout()
         endpoint_bar.addWidget(QLabel("Service"))
-        self.service_combo = QComboBox()
-        self.service_combo.currentTextChanged.connect(self._service_changed)
+        self.service_combo = SearchableComboBox(placeholder="Search services…")
+        self.service_combo.setToolTip("Type to filter services")
+        self.service_combo.setMinimumWidth(200)
+        # currentIndexChanged, not currentTextChanged: on an editable combo
+        # the latter fires on every keystroke of a search.
+        self.service_combo.currentIndexChanged.connect(self._service_index_changed)
         endpoint_bar.addWidget(self.service_combo)
         endpoint_bar.addWidget(QLabel("Endpoint"))
-        self.endpoint_combo = QComboBox()
+        self.endpoint_combo = SearchableComboBox(
+            placeholder="Search by method, route, controller or action…"
+        )
+        self.endpoint_combo.setToolTip("Type to filter endpoints, e.g. 'get brand'")
         self.endpoint_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.endpoint_combo.currentIndexChanged.connect(self._endpoint_changed)
         endpoint_bar.addWidget(self.endpoint_combo, 1)
         layout.addLayout(endpoint_bar)
+
+        # Request template handed over from API Explorer ("Open in Data
+        # Runner"); every row starts from it and mapped CSV columns override.
+        self._template_endpoint_id: str | None = None
+        self._template_values: dict[str, str] = {}
+        self._template_payload: Any = None
+        self.template_banner = QFrame()
+        self.template_banner.setObjectName("dataRunnerTemplateBanner")
+        banner_layout = QHBoxLayout(self.template_banner)
+        banner_layout.setContentsMargins(10, 6, 6, 6)
+        self.template_banner_label = QLabel()
+        self.template_banner_label.setWordWrap(True)
+        banner_layout.addWidget(self.template_banner_label, 1)
+        self.template_clear_button = QPushButton("Clear template")
+        self.template_clear_button.setToolTip(
+            "Stop using the API Explorer request as the base of every row."
+        )
+        self.template_clear_button.clicked.connect(self.clear_request_template)
+        banner_layout.addWidget(self.template_clear_button)
+        self.template_banner.hide()
+        layout.addWidget(self.template_banner)
 
         self._step_labels = ["Source", "Mapping", "Validate", "Execute & review", "History"]
         self.stepper = WizardStepper(self._step_labels)
@@ -1048,6 +1082,9 @@ class DataRunnerTab(QWidget):
 
     # ------------------------------------------------------------------ endpoint selection
 
+    def _service_index_changed(self, index: int) -> None:
+        self._service_changed(self.service_combo.itemText(index) if index >= 0 else "")
+
     def _service_changed(self, service_name: str) -> None:
         self.endpoint_combo.blockSignals(True)
         self.endpoint_combo.clear()
@@ -1055,16 +1092,97 @@ class DataRunnerTab(QWidget):
         if service is not None:
             for endpoint in service.endpoints:
                 self.endpoint_combo.addItem(f"{endpoint.method} {endpoint.path}", endpoint)
+                self.endpoint_combo.setItemData(
+                    self.endpoint_combo.count() - 1,
+                    f"{endpoint.method} {endpoint.path} {endpoint.controller} {endpoint.action}",
+                    SEARCH_TEXT_ROLE,
+                )
+        if self.endpoint_combo.count():
+            self.endpoint_combo.setCurrentIndex(0)
         self.endpoint_combo.blockSignals(False)
         self._endpoint_changed(self.endpoint_combo.currentIndex())
 
     def _endpoint_changed(self, index: int) -> None:
         endpoint = self.endpoint_combo.itemData(index) if index >= 0 else None
         self.current_endpoint = endpoint
+        if self._template_endpoint_id is not None and (
+            endpoint is None or endpoint.id != self._template_endpoint_id
+        ):
+            self.clear_request_template()
         self.current_targets = mapping_targets(endpoint, self.catalog) if endpoint is not None else []
         for widgets in getattr(self, "_mapping_rows", {}).values():
             selected = widgets.target.currentData()
             self._populate_target_combo(widgets.target, selected)
+
+    # ------------------------------------------------------------------ request template
+
+    def load_request(self, endpoint: Endpoint, values: dict[str, str], payload: Any) -> bool:
+        """Selects ``endpoint`` and makes the given request the base template
+        for every row. Returns False when the endpoint is not in the catalog."""
+        service_index = self.service_combo.findText(endpoint.service)
+        if service_index < 0:
+            return False
+        if self.service_combo.currentIndex() != service_index:
+            self.service_combo.setCurrentIndex(service_index)
+        endpoint_index = next(
+            (
+                i
+                for i in range(self.endpoint_combo.count())
+                if getattr(self.endpoint_combo.itemData(i), "id", None) == endpoint.id
+            ),
+            -1,
+        )
+        if endpoint_index < 0:
+            return False
+        if self.endpoint_combo.currentIndex() != endpoint_index:
+            self.endpoint_combo.setCurrentIndex(endpoint_index)
+        self._template_endpoint_id = endpoint.id
+        self._template_values = template_request_values(values)
+        self._template_payload = json.loads(json.dumps(payload)) if payload is not None else None
+        self._template_changed()
+        self.steps.setCurrentIndex(0)
+        return True
+
+    def clear_request_template(self) -> None:
+        had_template = self._template_endpoint_id is not None
+        self._template_endpoint_id = None
+        self._template_values = {}
+        self._template_payload = None
+        if had_template:
+            self._template_changed()
+
+    def has_request_template(self) -> bool:
+        return self._template_endpoint_id is not None
+
+    def _template_plan_kwargs(self) -> dict[str, Any]:
+        if self._template_endpoint_id is None:
+            return {}
+        return {
+            "template_values": dict(self._template_values),
+            "template_payload": self._template_payload,
+        }
+
+    def _template_summary(self) -> str:
+        count = len(self._template_values)
+        parts = [f"{count} value{'s' if count != 1 else ''}"]
+        if self._template_payload is not None:
+            parts.append("payload")
+        return " · ".join(parts)
+
+    def _template_changed(self) -> None:
+        self.plan = None
+        if self._template_endpoint_id is None:
+            self.template_banner.hide()
+        else:
+            self.template_banner_label.setText(
+                "<b>Request template from API Explorer</b> · "
+                f"{self._template_summary()} — every row starts from this request; "
+                "mapped CSV columns override it."
+            )
+            self.template_banner.show()
+        self._refresh_stepper_progress()
+        if self.steps.currentIndex() == 3:
+            self._refresh_run_context_panel()
 
     # ------------------------------------------------------------------ validate
 
@@ -1160,6 +1278,7 @@ class DataRunnerTab(QWidget):
             return
         mappings = self._current_mappings()
         expected_status = self.default_expected_status.text().strip() or "200-299"
+        template_kwargs = self._template_plan_kwargs()
 
         def build(
             progress: Callable[[int, int], None] | None,
@@ -1174,6 +1293,7 @@ class DataRunnerTab(QWidget):
                 default_expected_status=expected_status,
                 progress=progress,
                 cancellation=cancellation,
+                **template_kwargs,
             )
 
         if self._should_validate_inline():
@@ -1849,9 +1969,14 @@ class DataRunnerTab(QWidget):
             )
             self.context_card_template.body.addWidget(method_label)
             self.context_card_template.body.addWidget(QLabel(self.current_endpoint.path))
-            service_caption = QLabel(self.service_combo.currentText())
+            service_caption = QLabel(self.service_combo.itemText(self.service_combo.currentIndex()))
             service_caption.setObjectName("dataRunnerStatCardSubtitle")
             self.context_card_template.body.addWidget(service_caption)
+            if self.has_request_template():
+                template_caption = QLabel(f"From API Explorer · {self._template_summary()}")
+                template_caption.setObjectName("dataRunnerStatCardSubtitle")
+                template_caption.setWordWrap(True)
+                self.context_card_template.body.addWidget(template_caption)
         else:
             self.context_card_template.body.addWidget(QLabel("No endpoint selected."))
 
@@ -1969,6 +2094,7 @@ class DataRunnerTab(QWidget):
             self._current_mappings(),
             environment,
             default_expected_status=self.default_expected_status.text().strip() or "200-299",
+            **self._template_plan_kwargs(),
         )
         if not plan.is_executable:
             self._render_plan(plan)

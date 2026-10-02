@@ -35,6 +35,18 @@ _REQUEST_SAMPLE_COLUMNS = (
 )
 
 
+def store_file_size(path: str | Path) -> int:
+    """Bytes used by a SQLite store, including its ``-wal``/``-journal`` side files."""
+    base = Path(path)
+    total = 0
+    for candidate in (base, Path(f"{base}-wal"), Path(f"{base}-journal")):
+        try:
+            total += candidate.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
 class RunStore:
     def __init__(self, path: str | Path) -> None:
         self._path = Path(path)
@@ -113,6 +125,19 @@ class RunStore:
                     row_number INTEGER,
                     detail_json TEXT,
                     PRIMARY KEY (run_id, row_number)
+                );
+
+                CREATE TABLE IF NOT EXISTS run_snapshots(
+                    run_id TEXT,
+                    seq INTEGER,
+                    elapsed_seconds REAL,
+                    snapshot_json TEXT,
+                    PRIMARY KEY (run_id, seq)
+                );
+
+                CREATE TABLE IF NOT EXISTS run_reports(
+                    run_id TEXT PRIMARY KEY,
+                    report_json TEXT
                 );
                 """
             )
@@ -243,6 +268,45 @@ class RunStore:
             ).fetchone()
         return None if row is None else json.loads(row[0])
 
+    def record_snapshot(self, run_id: str, seq: int, elapsed_seconds: float, snapshot: dict) -> None:
+        """Stores one periodic metrics snapshot (load tests publish ~1/s)."""
+        with self._lock:
+            self._connection.execute(
+                "INSERT OR REPLACE INTO run_snapshots(run_id, seq, elapsed_seconds, snapshot_json) VALUES (?, ?, ?, ?)",
+                (run_id, seq, float(elapsed_seconds), json.dumps(snapshot)),
+            )
+            self._connection.commit()
+
+    def list_snapshots(self, run_id: str) -> list[dict]:
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT snapshot_json FROM run_snapshots WHERE run_id = ? ORDER BY seq ASC",
+                (run_id,),
+            ).fetchall()
+        return [json.loads(row[0]) for row in rows]
+
+    def save_report(self, run_id: str, report: dict) -> None:
+        with self._lock:
+            self._connection.execute(
+                "INSERT OR REPLACE INTO run_reports(run_id, report_json) VALUES (?, ?)",
+                (run_id, json.dumps(report)),
+            )
+            self._connection.commit()
+
+    def get_report(self, run_id: str) -> dict | None:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT report_json FROM run_reports WHERE run_id = ?", (run_id,)
+            ).fetchone()
+        return None if row is None else json.loads(row[0])
+
+    @property
+    def path(self) -> Path:
+        return self._path
+
+    def size_bytes(self) -> int:
+        return store_file_size(self._path)
+
     def close(self) -> None:
         with self._lock:
             self._connection.close()
@@ -287,6 +351,96 @@ class RunStore:
         with self._lock:
             rows = self._connection.execute(query, params).fetchall()
         return [dict(zip(_REQUEST_SAMPLE_COLUMNS, row)) for row in rows]
+
+    def sample_aggregates(
+        self,
+        run_id: str,
+        latency_edges_ms: tuple[float, ...] = (100, 250, 500, 1000, 2000, 5000),
+        *,
+        error_sample_limit: int = 50,
+    ) -> dict | None:
+        """Report aggregates computed in SQL, so large runs are never loaded into memory.
+
+        Returns ``None`` when the run recorded no request samples. Offsets are
+        seconds from the start of the run.
+        """
+        with self._lock:
+            connection = self._connection
+            total = connection.execute(
+                "SELECT COUNT(*) FROM request_samples WHERE run_id = ?", (run_id,)
+            ).fetchone()[0]
+            if not total:
+                return None
+            edges = [float(edge) for edge in latency_edges_ms]
+            bucket_columns = [
+                f"SUM(CASE WHEN http_ms >= {low} AND http_ms < {high} THEN 1 ELSE 0 END)"
+                for low, high in zip([0.0, *edges], edges)
+            ]
+            bucket_columns.append(f"SUM(CASE WHEN http_ms >= {edges[-1] if edges else 0.0} THEN 1 ELSE 0 END)")
+            bucket_row = connection.execute(
+                f"SELECT {', '.join(bucket_columns)} "
+                "FROM request_samples WHERE run_id = ? AND http_ms IS NOT NULL AND outcome != 'cancelled'",
+                (run_id,),
+            ).fetchone()
+            status_rows = connection.execute(
+                "SELECT status_code, COUNT(*), MIN(offset_ms), MAX(offset_ms) FROM request_samples "
+                "WHERE run_id = ? GROUP BY status_code ORDER BY COUNT(*) DESC",
+                (run_id,),
+            ).fetchall()
+            category_rows = connection.execute(
+                "SELECT error_category, COUNT(*), MIN(offset_ms), MAX(offset_ms) FROM request_samples "
+                "WHERE run_id = ? AND error_category IS NOT NULL AND error_category != '' "
+                "GROUP BY error_category ORDER BY COUNT(*) DESC",
+                (run_id,),
+            ).fetchall()
+            queue_row = connection.execute(
+                "SELECT MIN(queue_delay_ms), AVG(queue_delay_ms), MAX(queue_delay_ms) FROM request_samples "
+                "WHERE run_id = ? AND queue_delay_ms IS NOT NULL",
+                (run_id,),
+            ).fetchone()
+            size_row = connection.execute(
+                "SELECT MIN(response_bytes), AVG(response_bytes), MAX(response_bytes), SUM(response_bytes) "
+                "FROM request_samples WHERE run_id = ? AND response_bytes IS NOT NULL",
+                (run_id,),
+            ).fetchone()
+            retries = connection.execute(
+                "SELECT COALESCE(SUM(retry_count), 0) FROM request_samples WHERE run_id = ?", (run_id,)
+            ).fetchone()[0]
+            error_rows = connection.execute(
+                "SELECT offset_ms, status_code, error_category, error_message, http_ms FROM request_samples "
+                "WHERE run_id = ? AND outcome IN ('failed', 'error') ORDER BY id ASC LIMIT ?",
+                (run_id, int(error_sample_limit)),
+            ).fetchall()
+
+        def seconds(value: float | None) -> float | None:
+            return None if value is None else float(value) / 1000.0
+
+        return {
+            "total": int(total),
+            "latency_edges_ms": list(latency_edges_ms),
+            "latency_buckets": [int(value or 0) for value in bucket_row],
+            "status_counts": [
+                {"status_code": code, "count": int(count), "first_seconds": seconds(first), "last_seconds": seconds(last)}
+                for code, count, first, last in status_rows
+            ],
+            "categories": [
+                {"category": category, "count": int(count), "first_seconds": seconds(first), "last_seconds": seconds(last)}
+                for category, count, first, last in category_rows
+            ],
+            "queue_delay_ms": {"min": queue_row[0], "avg": queue_row[1], "max": queue_row[2]},
+            "response_bytes": {"min": size_row[0], "avg": size_row[1], "max": size_row[2], "total": size_row[3]},
+            "retries": int(retries or 0),
+            "error_samples": [
+                {
+                    "offset_seconds": seconds(offset),
+                    "status_code": status,
+                    "category": category or "",
+                    "message": message or "",
+                    "http_ms": http_ms,
+                }
+                for offset, status, category, message, http_ms in error_rows
+            ],
+        }
 
     def list_errors(self, run_id: str) -> list[dict]:
         with self._lock:

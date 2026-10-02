@@ -8,7 +8,7 @@ import pytest
 
 pytest.importorskip("PyQt6")
 
-from PyQt6.QtWidgets import QApplication, QMessageBox, QPushButton
+from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox, QPushButton
 
 from api_tester import environment_ui, main as main_module
 from api_tester.catalog_builder import CatalogDocument, EndpointDraft, ServiceDraft, new_response_schema
@@ -135,6 +135,108 @@ def test_builder_tree_renders_a_response_schema_group(
     window._populate()
     labels = [window._schema_root.child(index).text(0) for index in range(window._schema_root.childCount())]
     assert "Response schemas" in labels
+
+
+def test_builder_save_as_and_open_actions_round_trip_the_catalog(
+    app: QApplication, tmp_path: Path, quiet_dialogs: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    window = CatalogBuilderWindow()
+    window.document.add_service("Demo", default_base_url="https://localhost:7001")
+    window.document.merge_scan(
+        "Demo", scan_project(FIXTURES / "fastapi_app", "Demo", "fastapi")
+    )
+    window._populate()
+    window.catalog_name.setText("Authored catalog")
+    target = tmp_path / "authored.json"
+    monkeypatch.setattr(
+        QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: (str(target), ""))
+    )
+    saved = []
+    window.catalog_saved.connect(saved.append)
+
+    assert window.dirty
+    assert window.save() is True
+    assert window.document.path == target
+    assert not window.dirty
+    assert saved == [str(target)]
+    assert main_module.load_catalog(target).services[0].endpoints
+
+    window.new_catalog(confirm=False)
+    assert window.document.services == []
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName", staticmethod(lambda *a, **k: (str(target), ""))
+    )
+    window.open_catalog()
+    assert window.document.name == "Authored catalog"
+    assert window.document.path == target
+    assert window.tree.topLevelItem(0).child(0).text(0) == "Demo"
+    assert not window.dirty
+
+    window.catalog_name.setText("Updated catalog")
+    assert window.save() is True
+    assert CatalogDocument.load(target).name == "Updated catalog"
+    assert saved == [str(target), str(target)]
+    window.close()
+
+
+def test_builder_cancelled_save_preserves_unsaved_changes(
+    app: QApplication, quiet_dialogs: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    window = CatalogBuilderWindow()
+    window.catalog_name.setText("Unsaved")
+    monkeypatch.setattr(
+        QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: ("", ""))
+    )
+    saved = []
+    window.catalog_saved.connect(saved.append)
+    assert window.save() is False
+    assert window.dirty
+    assert window.document.path is None
+    assert window.document.name == "Unsaved"
+    assert saved == []
+    window.new_catalog(confirm=False)
+    window.close()
+
+
+def test_builder_invalid_save_does_not_overwrite_a_catalog(
+    app: QApplication, tmp_path: Path, quiet_dialogs: None
+) -> None:
+    window = CatalogBuilderWindow()
+    service = window.document.add_service("Demo")
+    service.endpoints.append(
+        EndpointDraft(service="Demo", controller="Items", action="Get", method="GET", path="/Items")
+    )
+    target = tmp_path / "catalog.json"
+    assert window._write(target)
+    before = target.read_bytes()
+    service.endpoints[0].response_schema = "MissingResponse"
+    window._mark_dirty()
+    saved = []
+    window.catalog_saved.connect(saved.append)
+
+    assert window.save() is False
+    assert target.read_bytes() == before
+    assert window.dirty
+    assert window.document.path == target
+    assert saved == []
+    window.new_catalog(confirm=False)
+    window.close()
+
+
+def test_builder_invalid_open_preserves_the_current_document(
+    app: QApplication, tmp_path: Path, quiet_dialogs: None
+) -> None:
+    window = CatalogBuilderWindow()
+    window.catalog_name.setText("Keep this")
+    document = window.document
+    target = tmp_path / "broken.json"
+    target.write_text("{not json", encoding="utf-8")
+    window.open_catalog(target)
+    assert window.document is document
+    assert window.document.name == "Keep this"
+    assert window.dirty
+    window.new_catalog(confirm=False)
+    window.close()
 
 
 # --------------------------------------------------------- settings loading

@@ -28,7 +28,15 @@ def _catalog_and_endpoint() -> tuple[Catalog, Endpoint]:
         expected_status="200-299",
     )
     catalog = Catalog(
-        services=(Service("TrialAuth", "TrialAuth", "https://example.test", (endpoint,)),),
+        services=(
+            Service(
+                "TrialAuth",
+                "TrialAuth",
+                "https://example.test",
+                (endpoint,),
+                filter_sort_builders=True,
+            ),
+        ),
         filter_schemas={
             "Brand": {
                 "name": "Brand",
@@ -372,3 +380,65 @@ def test_unknown_mapping_target_raises_value_error() -> None:
         assert "Unknown mapping target" in str(exc)
     else:
         raise AssertionError("Expected ValueError for unknown target")
+
+
+# ------------------------------------------------------------------ request template (API Explorer)
+
+
+def test_template_values_seed_rows_and_mapped_columns_override() -> None:
+    from api_tester.data_runner.mapping import template_request_values
+
+    catalog, endpoint = _catalog_and_endpoint()
+    mapper = RowMapper(
+        endpoint,
+        catalog,
+        [ColumnMapping(column="Status", target_key="query:Status")],
+        template_values={
+            "path:Id": "7",
+            "query:Status": "FromTemplate",
+            "enabled:query:Status": "true",
+            "query:Unticked": "x",
+            "enabled:query:Unticked": "false",
+        },
+        template_payload={"Name": "Template", "Address": {"Country": "IN"}},
+    )
+
+    resolved = mapper.resolve(1, {"Status": "FromCsv"})
+
+    assert resolved.is_valid  # required Id + Name satisfied by the template
+    assert resolved.path_values == {"Id": "7"}
+    assert resolved.query_values == {"Status": "FromCsv"}
+    assert resolved.payload == {"Name": "Template", "Address": {"Country": "IN"}}
+    assert template_request_values({"enabled:query:A": "false", "query:A": "1", "foo": "x"}) == {}
+
+
+def test_template_payload_is_deep_merged_with_mapped_payload_fields() -> None:
+    catalog, endpoint = _catalog_and_endpoint()
+    mapper = RowMapper(
+        endpoint,
+        catalog,
+        [
+            ColumnMapping(column="Id", target_key="path:Id"),
+            ColumnMapping(column="Country", target_key="payload:Address.Country"),
+        ],
+        template_payload={"Name": "Template", "Address": {"Country": "IN", "City": "Pune"}},
+    )
+
+    first = mapper.resolve(1, {"Id": "1", "Country": "US"})
+    second = mapper.resolve(2, {"Id": "2", "Country": "FR"})
+    template = mapper.build_request_template(
+        RequestTemplate("brands.update", "TrialAuth", "PATCH", "/Brands/{Id}"), first
+    )
+
+    assert first.payload == {"Name": "Template", "Address": {"Country": "US", "City": "Pune"}}
+    assert second.payload["Address"]["Country"] == "FR"  # rows never share state
+    assert mapper.template_payload["Address"]["Country"] == "IN"
+    assert template.payload == first.payload
+    assert template.values["path:Id"] == "1"
+
+
+def test_required_values_still_missing_without_template() -> None:
+    catalog, endpoint = _catalog_and_endpoint()
+    resolved = RowMapper(endpoint, catalog, []).resolve(1, {})
+    missing = {issue.target_key for issue in resolved.issues}
+    assert {"path:Id", "payload:Name"} <= missing

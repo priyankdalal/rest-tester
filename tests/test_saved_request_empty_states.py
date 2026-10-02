@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import pytest
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QPushButton
 
 from api_tester.saved_requests import (
     RequestCollection,
@@ -127,12 +126,9 @@ def test_empty_state_object_names_and_properties(saved_requests_page) -> None:
 
 
 def test_saved_request_actions_follow_visual_hierarchy(saved_requests_page) -> None:
-    buttons = {
-        button.text(): button
-        for button in saved_requests_page.findChildren(QPushButton)
-    }
-    assert buttons["Open"].property("primary") is True
-    assert buttons["Delete"].property("destructive") is True
+    buttons = saved_requests_page._buttons
+    assert buttons["Open"].property("accent") is True
+    assert buttons["Delete"].property("danger") is True
 
 
 # --- Page title/description consistency -----------------------------------
@@ -244,10 +240,8 @@ def test_collections_selection_and_order_preserved_with_empty_state_toggling(col
 
 
 def test_collection_actions_follow_visual_hierarchy(collections_page) -> None:
-    buttons = {
-        button.text(): button
-        for button in collections_page.findChildren(QPushButton)
-    }
-    assert buttons["Run Collection"].property("primary") is True
-    assert buttons["Delete"].property("destructive") is True
-    assert buttons["Remove"].property("destructive") is True
+    buttons = collections_page._buttons
+    assert buttons["New Collection"].property("accent") is True
+    assert not buttons["Run Collection"].property("accent")
+    assert buttons["Delete"].property("danger") is True
+    assert buttons["Remove"].property("danger") is True

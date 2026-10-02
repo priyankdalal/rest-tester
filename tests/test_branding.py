@@ -270,6 +270,7 @@ def window(qt_app, monkeypatch, tmp_path):
     value = main_module.MainWindow()
     yield value
     value.close()
+    value.deleteLater()
 
 
 def test_the_title_bar_always_shows_the_product_name(window) -> None:

@@ -27,6 +27,7 @@ def test_ssl_verification_is_enabled_by_default(qt_app, monkeypatch, tmp_path) -
         assert window._environment()["request_timeout"] == 30
     finally:
         window.close()
+        window.deleteLater()
 
 
 def test_local_dev_can_disable_and_persist_ssl_verification(
@@ -43,6 +44,7 @@ def test_local_dev_can_disable_and_persist_ssl_verification(
         window._save_settings()
     finally:
         window.close()
+        window.deleteLater()
 
     assert json.loads(settings_path.read_text(encoding="utf-8"))["verify_ssl"] is False
 
@@ -51,6 +53,7 @@ def test_local_dev_can_disable_and_persist_ssl_verification(
         assert not restored.verify_ssl.isChecked()
     finally:
         restored.close()
+        restored.deleteLater()
 
 
 def test_request_timeout_is_shared_and_persisted(qt_app, monkeypatch, tmp_path) -> None:
@@ -65,6 +68,7 @@ def test_request_timeout_is_shared_and_persisted(qt_app, monkeypatch, tmp_path) 
         window._save_settings()
     finally:
         window.close()
+        window.deleteLater()
 
     assert json.loads(settings_path.read_text(encoding="utf-8"))["request_timeout"] == 180
 
@@ -73,6 +77,7 @@ def test_request_timeout_is_shared_and_persisted(qt_app, monkeypatch, tmp_path) 
         assert restored.request_timeout.value() == 180
     finally:
         restored.close()
+        restored.deleteLater()
 
 
 def test_endpoint_search_and_method_filter_hide_non_matches(
@@ -113,6 +118,7 @@ def test_endpoint_search_and_method_filter_hide_non_matches(
         assert all(window.endpoints_by_id[item].method == "GET" for item in visible)
     finally:
         window.close()
+        window.deleteLater()
 
 
 def test_api_explorer_columns_are_resizable_and_persisted(
@@ -137,6 +143,7 @@ def test_api_explorer_columns_are_resizable_and_persisted(
         window._save_settings()
     finally:
         window.close()
+        window.deleteLater()
 
     document = json.loads(settings_path.read_text(encoding="utf-8"))
     assert document["endpoint_column_widths"][1] == 52
@@ -146,6 +153,7 @@ def test_api_explorer_columns_are_resizable_and_persisted(
         assert restored.endpoint_tree.columnWidth(1) == 52
     finally:
         restored.close()
+        restored.deleteLater()
 
 
 def test_request_response_accordions_are_scrollable_and_persisted(
@@ -174,6 +182,7 @@ def test_request_response_accordions_are_scrollable_and_persisted(
         window._save_settings()
     finally:
         window.close()
+        window.deleteLater()
 
     document = json.loads(settings_path.read_text(encoding="utf-8"))
     assert document["accordion_states"] == {
@@ -187,9 +196,10 @@ def test_request_response_accordions_are_scrollable_and_persisted(
         assert not restored.response_section.is_expanded()
     finally:
         restored.close()
+        restored.deleteLater()
 
 
-def test_parameters_and_request_builder_are_horizontally_resizable_and_persisted(
+def test_explorer_and_request_editor_are_horizontally_resizable_and_persisted(
     qt_app, monkeypatch, tmp_path
 ) -> None:
     import api_tester.main as main_module
@@ -202,7 +212,7 @@ def test_parameters_and_request_builder_are_horizontally_resizable_and_persisted
     window.show()
     qt_app.processEvents()
     try:
-        splitter = window.request_builder_splitter
+        splitter = window.main_splitter
         assert splitter.orientation() == Qt.Orientation.Horizontal
         assert splitter.count() == 2
         assert splitter.handleWidth() >= 7
@@ -214,16 +224,17 @@ def test_parameters_and_request_builder_are_horizontally_resizable_and_persisted
         window._save_settings()
     finally:
         window.close()
+        window.deleteLater()
 
     document = json.loads(settings_path.read_text(encoding="utf-8"))
-    assert document["request_builder_sizes"] == saved_sizes
+    assert document["splitter_sizes"] == saved_sizes
 
     restored = main_module.MainWindow()
     restored.resize(1600, 950)
     restored.show()
     qt_app.processEvents()
     try:
-        restored_sizes = restored.request_builder_splitter.sizes()
+        restored_sizes = restored.main_splitter.sizes()
         # Panes can now compress, so the restored split is checked by ratio
         # rather than by exact pixels, which depend on the surrounding layout.
         saved_ratio = saved_sizes[0] / sum(saved_sizes)
@@ -231,3 +242,4 @@ def test_parameters_and_request_builder_are_horizontally_resizable_and_persisted
         assert abs(saved_ratio - restored_ratio) < 0.02
     finally:
         restored.close()
+        restored.deleteLater()

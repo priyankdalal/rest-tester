@@ -51,6 +51,7 @@ from .widgets import (
     button_in_cell,
     cell_button,
     center_in_cell,
+    fit_combo_column,
     fit_last_column,
     set_text_glyph,
     settle_table_rows,
@@ -417,6 +418,7 @@ class FilterFieldTable(QWidget):
             lambda value, k=key: self._data_type_changed(k, value)
         )
         self.table.setCellWidget(index, 2, combo)
+        fit_combo_column(self.table, 2, combo)
 
         self.table.setItem(
             index,
@@ -810,6 +812,7 @@ class PayloadFieldTable(QWidget):
             lambda value, k=key: self._kind_changed(k, value)
         )
         self.table.setCellWidget(index, 2, combo)
+        fit_combo_column(self.table, 2, combo)
 
         self.table.setItem(
             index,

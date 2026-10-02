@@ -21,7 +21,7 @@ from typing import Any
 from api_tester.execution.cancellation import CancellationController
 from api_tester.execution.errors import ClassifiedError
 from api_tester.execution.events import EventBus
-from api_tester.execution.metrics import MetricsAggregator
+from api_tester.execution.metrics import LatencySketch, MetricsAggregator
 from api_tester.execution.models import ExecutionEvent, RequestSample, new_run_id
 from api_tester.execution.persistence import RunStore
 from api_tester.execution.transport import WorkerTransport
@@ -59,6 +59,21 @@ class ThresholdResult:
     observed_value: float
     passed: bool
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "definition": self.definition.to_dict(),
+            "observed_value": self.observed_value,
+            "passed": self.passed,
+        }
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "ThresholdResult":
+        return cls(
+            definition=ThresholdDefinition.from_dict(value["definition"]),
+            observed_value=float(value.get("observed_value", 0.0)),
+            passed=bool(value.get("passed", False)),
+        )
+
 
 @dataclass
 class LoadRunSummary:
@@ -73,6 +88,39 @@ class LoadRunSummary:
     peak_users: int
     stop_reason: str | None
     threshold_results: list[ThresholdResult] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "run_id": self.run_id,
+            "outcome": self.outcome,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+            "total_requests": self.total_requests,
+            "passed": self.passed,
+            "failed": self.failed,
+            "errored": self.errored,
+            "peak_users": self.peak_users,
+            "stop_reason": self.stop_reason,
+            "threshold_results": [result.to_dict() for result in self.threshold_results],
+        }
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "LoadRunSummary":
+        return cls(
+            run_id=str(value.get("run_id", "")),
+            outcome=str(value.get("outcome", "")),
+            started_at=str(value.get("started_at", "")),
+            finished_at=str(value.get("finished_at", "")),
+            total_requests=int(value.get("total_requests", 0)),
+            passed=int(value.get("passed", 0)),
+            failed=int(value.get("failed", 0)),
+            errored=int(value.get("errored", 0)),
+            peak_users=int(value.get("peak_users", 0)),
+            stop_reason=value.get("stop_reason"),
+            threshold_results=[
+                ThresholdResult.from_dict(item) for item in value.get("threshold_results", [])
+            ],
+        )
 
 
 def evaluate_thresholds(
@@ -152,8 +200,21 @@ class LoadEngine:
         self._http_500_count = 0
         self._total_requests = 0
         self._stop_reason: str | None = None
+        # Per-interval latency/throughput: reset at every metric snapshot so
+        # run statistics (min/avg/max of P99 etc.) describe each interval
+        # rather than the slowly-moving cumulative percentiles.
+        self._interval_latency = LatencySketch()
+        self._interval_completed = 0
+        self._interval_errors = 0
+        self._interval_started = 0.0
+        self._snapshot_seq = 0
+        self._warnings: list[dict[str, Any]] = []
+        #: Cumulative metrics at the end of the run (set once :meth:`run` returns).
+        self.final_snapshot: dict[str, Any] = {}
 
     def _publish(self, kind: str, payload: dict[str, Any]) -> None:
+        if kind == "warning":
+            self._warnings.append(dict(payload))
         if self.event_bus is not None:
             self.event_bus.publish(ExecutionEvent(kind=kind, run_id=self.run_id, payload=payload))
 
@@ -185,6 +246,10 @@ class LoadEngine:
             if classified is not None and classified.category == "authentication":
                 self._auth_failures += 1
             self.metrics.add_sample(sample)
+            self._interval_latency.add(sample.http_ms)
+            self._interval_completed += 1
+            if sample.outcome in ("failed", "error"):
+                self._interval_errors += 1
             self._pending_samples.append(sample)
             if len(self._pending_samples) >= self.options.batch_size:
                 flush = self._pending_samples
@@ -233,6 +298,38 @@ class LoadEngine:
                 if think_time_ms > 0:
                     self._sleep_cancellable(think_time_ms / 1000.0)
 
+    @property
+    def warnings(self) -> list[dict[str, Any]]:
+        """Warnings published so far (advisory plan issues, persistence failures)."""
+        with self._lock:
+            return list(self._warnings)
+
+    def run_definition(self) -> dict[str, Any]:
+        """The scenario as persisted with the run; enough to reopen or reuse it."""
+        scenario = self.plan.scenario
+        return {
+            "endpoint_id": scenario.endpoint.id,
+            "service": scenario.endpoint.service,
+            "method": scenario.endpoint.method,
+            "path": scenario.endpoint.path,
+            "base_url": scenario.environment.base_url(scenario.endpoint.service),
+            "scenario_name": scenario.name,
+            "peak_users": self.plan.peak_users,
+            "total_duration_seconds": scenario.total_duration_seconds,
+            # Header values may carry credentials, so they are never persisted.
+            "values": {
+                key: value
+                for key, value in scenario.template.values.items()
+                if not key.startswith("header:")
+            },
+            "payload": scenario.template.payload,
+            "expected_status": scenario.template.expected_status,
+            "workload_model": scenario.workload_model,
+            "stages": [stage.to_dict() for stage in scenario.stages],
+            "limits": scenario.limits.to_dict(),
+            "thresholds": [t.to_dict() for t in scenario.thresholds],
+        }
+
     def run(self) -> LoadRunSummary:
         scenario = self.plan.scenario
         started_at = _now_iso()
@@ -245,13 +342,7 @@ class LoadEngine:
                 environment_id=scenario.environment.environment_id,
                 environment_name=scenario.environment.environment_name,
                 started_at=started_at,
-                definition={
-                    "endpoint_id": scenario.endpoint.id,
-                    "workload_model": scenario.workload_model,
-                    "stages": [stage.to_dict() for stage in scenario.stages],
-                    "limits": scenario.limits.to_dict(),
-                    "thresholds": [t.to_dict() for t in scenario.thresholds],
-                },
+                definition=self.run_definition(),
             )
 
         if not self.plan.is_executable:
@@ -266,6 +357,7 @@ class LoadEngine:
         )
 
         run_started = time.monotonic()
+        self._interval_started = run_started
         threads = [
             threading.Thread(
                 target=self._vu_loop,
@@ -312,18 +404,63 @@ class LoadEngine:
             if self.cancellation.should_stop():
                 return False
             snapshot = self.metrics.snapshot((time.monotonic() - run_started) * 1000.0)
-            self._publish(
-                "metric_snapshot",
-                {
-                    "elapsed_seconds": time.monotonic() - run_started,
-                    "active_users": target_active_users(scenario, time.monotonic() - run_started),
-                    **snapshot,
-                },
-            )
+            payload = {
+                "elapsed_seconds": time.monotonic() - run_started,
+                "active_users": target_active_users(scenario, time.monotonic() - run_started),
+                **snapshot,
+                **self._take_interval_metrics(),
+            }
+            self._publish("metric_snapshot", payload)
+            self._persist_snapshot(payload)
             self._evaluate_stop_conditions(snapshot)
             if self.cancellation.should_stop():
                 return False
         return False
+
+    def _take_interval_metrics(self) -> dict[str, Any]:
+        """Returns metrics for requests completed since the previous snapshot, then resets them."""
+        now = time.monotonic()
+        with self._lock:
+            sketch, self._interval_latency = self._interval_latency, LatencySketch()
+            completed, self._interval_completed = self._interval_completed, 0
+            errors, self._interval_errors = self._interval_errors, 0
+            seconds = max(now - self._interval_started, 1e-6)
+            self._interval_started = now
+        return {
+            "interval_seconds": seconds,
+            "interval_completed": completed,
+            "interval_errors": errors,
+            "interval_throughput": completed / seconds,
+            "interval_mean_ms": sketch.mean,
+            "interval_p50_ms": sketch.percentile(50.0),
+            "interval_p95_ms": sketch.percentile(95.0),
+            "interval_p99_ms": sketch.percentile(99.0),
+        }
+
+    def _persist_snapshot(self, payload: dict[str, Any]) -> None:
+        if self.store is None:
+            return
+        stored = {key: value for key, value in payload.items() if key != "endpoints"}
+        try:
+            self.store.record_snapshot(self.run_id, self._snapshot_seq, float(payload["elapsed_seconds"]), stored)
+        except Exception as exc:  # persistence must never abort a running load test
+            self._publish("warning", {"severity": "warning", "message": f"Could not persist metrics snapshot: {exc}"})
+        self._snapshot_seq += 1
+
+    def _save_report(self, summary: "LoadRunSummary", final_snapshot: dict[str, Any]) -> None:
+        if self.store is None:
+            return
+        report = {
+            "summary": summary.to_dict(),
+            "final_snapshot": {key: value for key, value in final_snapshot.items() if key != "endpoints"},
+            "warnings": list(self._warnings),
+            "auth_failures": self._auth_failures,
+            "http_500_count": self._http_500_count,
+        }
+        try:
+            self.store.save_report(self.run_id, report)
+        except Exception:  # the run result is still returned to the caller
+            pass
 
     def _evaluate_stop_conditions(self, snapshot: dict[str, Any]) -> None:
         limits = self.plan.scenario.limits
@@ -355,7 +492,7 @@ class LoadEngine:
         if self.store is not None:
             self.store.finish_run(self.run_id, finished_at, "ABORTED")
         self._publish("run_finished", {"outcome": "ABORTED"})
-        return LoadRunSummary(
+        summary = LoadRunSummary(
             run_id=self.run_id,
             outcome="ABORTED",
             started_at=started_at,
@@ -368,6 +505,8 @@ class LoadEngine:
             stop_reason="Scenario failed validation.",
             threshold_results=[],
         )
+        self._save_report(summary, {})
+        return summary
 
     def _finish_after_running(
         self, started_at: str, run_started: float, completed_naturally: bool
@@ -394,11 +533,7 @@ class LoadEngine:
         )
 
         outcome = self._final_outcome(total_requests, stop_reason, threshold_results)
-        if self.store is not None:
-            self.store.finish_run(self.run_id, finished_at, outcome)
-        self._publish("run_finished", {"outcome": outcome, "stop_reason": stop_reason})
-
-        return LoadRunSummary(
+        summary = LoadRunSummary(
             run_id=self.run_id,
             outcome=outcome,
             started_at=started_at,
@@ -411,6 +546,12 @@ class LoadEngine:
             stop_reason=stop_reason,
             threshold_results=threshold_results,
         )
+        self.final_snapshot = {key: value for key, value in final_snapshot.items() if key != "endpoints"}
+        self._save_report(summary, final_snapshot)
+        if self.store is not None:
+            self.store.finish_run(self.run_id, finished_at, outcome)
+        self._publish("run_finished", {"outcome": outcome, "stop_reason": stop_reason})
+        return summary
 
     @staticmethod
     def _final_outcome(total_requests: int, stop_reason: str | None, threshold_results: list[ThresholdResult]) -> str:

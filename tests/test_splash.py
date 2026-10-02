@@ -94,3 +94,4 @@ def test_main_window_reports_real_startup_milestones(
         ]
     finally:
         window.close()
+        window.deleteLater()

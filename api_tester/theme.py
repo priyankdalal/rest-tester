@@ -738,6 +738,25 @@ QComboBox QAbstractItemView {{
     selection-background-color: {PRIMARY};
     selection-color: {TEXT_INVERSE};
 }}
+QListView#searchSuggestionPopup {{
+    background-color: {SURFACE};
+    color: {TEXT};
+    border: 1px solid {BORDER_STRONG};
+    border-radius: 6px;
+    padding: 4px;
+    outline: 0;
+}}
+QListView#searchSuggestionPopup::item {{
+    padding: 5px 8px;
+    border-radius: 4px;
+}}
+QListView#searchSuggestionPopup::item:hover {{
+    background-color: {SURFACE_ALT};
+}}
+QListView#searchSuggestionPopup::item:selected {{
+    background-color: {PRIMARY};
+    color: {TEXT_INVERSE};
+}}
 /* An editable combo's inner edit field must not inherit the global QLineEdit
    border and padding: the combo already draws both, and the extra padding
    scrolled short values such as "200-299" out of view. */
@@ -807,6 +826,44 @@ QToolButton#endpointSendButton::menu-button:hover {{
     background-color: {PRIMARY_HOVER};
 }}
 QToolButton#endpointSendButton::menu-indicator {{
+    image: url({COMBO_ARROW});
+    subcontrol-origin: padding;
+    subcontrol-position: right center;
+    width: 10px;
+    height: 7px;
+    right: 10px;
+}}
+QToolButton#endpointSplitButton {{
+    background-color: {SURFACE};
+    color: {TEXT};
+    border: 1px solid {BORDER_STRONG};
+    border-radius: 6px;
+    padding: 5px 36px 5px 13px;
+    min-height: 22px;
+    max-height: 22px;
+}}
+QToolButton#endpointSplitButton:hover {{
+    background-color: {SURFACE_ALT};
+}}
+QToolButton#endpointSplitButton:pressed,
+QToolButton#endpointSplitButton:open {{
+    background-color: {BORDER};
+}}
+QToolButton#endpointSplitButton:disabled {{
+    color: {TEXT_MUTED};
+}}
+QToolButton#endpointSplitButton::menu-button {{
+    subcontrol-origin: padding;
+    subcontrol-position: right center;
+    width: 30px;
+    border-left: 1px solid {BORDER_STRONG};
+    border-top-right-radius: 5px;
+    border-bottom-right-radius: 5px;
+}}
+QToolButton#endpointSplitButton::menu-button:hover {{
+    background-color: {SURFACE_ALT};
+}}
+QToolButton#endpointSplitButton::menu-indicator {{
     image: url({COMBO_ARROW});
     subcontrol-origin: padding;
     subcontrol-position: right center;
@@ -1679,35 +1736,163 @@ QLabel#loadTestingRunSubtitle {{
     color: {TEXT_MUTED};
     font-size: 8pt;
 }}
-QLabel#loadTestingStatusPill {{
+QFrame#loadTestingStatusPill {{
     background-color: {SURFACE_ALT};
-    color: {TEXT_MUTED};
     border: 1px solid {BORDER};
     border-radius: 10px;
-    padding: 3px 9px;
+}}
+QFrame#loadTestingStatusPill[status="running"],
+QFrame#loadTestingStatusPill[status="pass"] {{
+    border-color: {PASS};
+}}
+QFrame#loadTestingStatusPill[status="fail"],
+QFrame#loadTestingStatusPill[status="aborted"] {{
+    border-color: {FAIL};
+}}
+QFrame#loadTestingStatusPill[status="stopped"],
+QFrame#loadTestingStatusPill[status="inconclusive"] {{
+    border-color: {WARN};
+}}
+QLabel#loadTestingStatusPillText {{
+    background: transparent;
+    color: {TEXT_MUTED};
     font-size: 8pt;
     font-weight: 700;
 }}
-QLabel#loadTestingStatusPill[status="running"],
-QLabel#loadTestingStatusPill[status="pass"] {{
-    background-color: {SURFACE_ALT};
+QLabel#loadTestingStatusPillText[status="running"],
+QLabel#loadTestingStatusPillText[status="pass"] {{
     color: {PASS};
-    border-color: {PASS};
 }}
-QLabel#loadTestingStatusPill[status="fail"] {{
+QLabel#loadTestingStatusPillText[status="fail"],
+QLabel#loadTestingStatusPillText[status="aborted"] {{
+    color: {FAIL};
+}}
+QLabel#loadTestingStatusPillText[status="stopped"],
+QLabel#loadTestingStatusPillText[status="inconclusive"] {{
+    color: {WARN};
+}}
+QFrame#loadTestingFindingCard {{
     background-color: {SURFACE_ALT};
+    border: 1px solid {BORDER};
+    border-left: 3px solid {PRIMARY};
+    border-radius: 6px;
+}}
+QFrame#loadTestingFindingCard[severity="critical"],
+QFrame#loadTestingFindingCard[severity="high"] {{
+    border-left-color: {FAIL};
+}}
+QFrame#loadTestingFindingCard[severity="medium"] {{
+    border-left-color: {WARN};
+}}
+QFrame#loadTestingFindingCard QLabel {{
+    background: transparent;
+}}
+QLabel#loadTestingFindingTitle {{
+    color: {TEXT};
+    font-weight: 700;
+}}
+QLabel#loadTestingFindingHeading {{
+    color: {TEXT_MUTED};
+    font-size: 7.5pt;
+    font-weight: 700;
+}}
+QLabel#loadTestingSeverityPill {{
+    background-color: {SURFACE};
+    color: {PRIMARY};
+    border: 1px solid {PRIMARY};
+    border-radius: 9px;
+    padding: 1px 8px;
+    font-size: 7.5pt;
+    font-weight: 700;
+}}
+QLabel#loadTestingSeverityPill[severity="critical"],
+QLabel#loadTestingSeverityPill[severity="high"] {{
     color: {FAIL};
     border-color: {FAIL};
 }}
-QLabel#loadTestingStatusPill[status="stopped"] {{
-    background-color: {SURFACE_ALT};
+QLabel#loadTestingSeverityPill[severity="medium"] {{
     color: {WARN};
     border-color: {WARN};
+}}
+QLabel#pdfExportInfo,
+QLabel#pdfExportWarning {{
+    background-color: {SURFACE_ALT};
+    color: {TEXT};
+    border: 1px solid {BORDER};
+    border-left: 3px solid {PASS};
+    border-radius: 6px;
+    padding: 6px 8px;
+}}
+QLabel#pdfExportWarning {{
+    border-left-color: {WARN};
+}}
+QFrame#dataRunnerTemplateBanner {{
+    background-color: {SURFACE_ALT};
+    border: 1px solid {BORDER};
+    border-left: 3px solid {ACCENT};
+    border-radius: 6px;
+}}
+QFrame#dataRunnerTemplateBanner QLabel {{
+    background: transparent;
+    color: {TEXT};
+}}
+QLabel#aboutTitle {{
+    color: {TEXT};
+    font-size: 22px;
+    font-weight: 700;
+}}
+QLabel#aboutVersion,
+QLabel#aboutTagline,
+QLabel#aboutNote,
+QLabel#aboutFootnote {{
+    color: {TEXT_MUTED};
+}}
+QLabel#aboutFeatureName {{
+    color: {TEXT};
+    font-weight: 700;
+}}
+QLabel#aboutLicenseBadge {{
+    background-color: {ACCENT_SOFT};
+    color: {PRIMARY};
+    border-radius: 9px;
+    padding: 2px 10px;
+    font-weight: 600;
+}}
+QLabel#aboutNote {{
+    background-color: {SURFACE_ALT};
+    border: 1px solid {BORDER};
+    border-radius: 6px;
+    padding: 6px 8px;
 }}
 QLabel#loadTestingSectionTitle,
 QLabel#loadTestingContextValue {{
     color: {TEXT};
     font-weight: 700;
+}}
+QFrame#loadTestingSavedRunChip {{
+    background-color: {ACCENT_SOFT};
+    border: 1px solid {ACCENT};
+    border-radius: 12px;
+}}
+QLabel#loadTestingSavedRunChipText {{
+    background: transparent;
+    color: {PRIMARY};
+    font-size: 8pt;
+    font-weight: 600;
+}}
+QToolButton#loadTestingSavedRunChipClose {{
+    background: transparent;
+    border: none;
+    border-radius: 9px;
+    padding: 3px;
+}}
+QToolButton#loadTestingSavedRunChipClose:hover {{
+    background-color: {SURFACE};
+}}
+QTableWidget#loadTestingReportTable {{
+    background-color: {SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: 6px;
 }}
 QLabel#loadTestingEndpointMethod {{
     background-color: {ACCENT_SOFT};

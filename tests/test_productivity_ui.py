@@ -22,6 +22,7 @@ def window(qt_app, monkeypatch, tmp_path):
     value = main_module.MainWindow()
     yield value
     value.close()
+    value.deleteLater()
 
 
 def _first_endpoint(window):
@@ -57,7 +58,7 @@ def test_navigation_exposes_all_redesigned_workspaces(window) -> None:
         "API Explorer",
         "Test Suites",
         "Data Runner",
-        "Load Testing",
+        "Load Studio",
         "Saved Requests",
         "Collections",
         "Environments",
@@ -345,26 +346,28 @@ def test_suite_variable_actions_are_equal_width_theme_aware_icons(window) -> Non
 
 def test_request_builder_icons_preserve_text_policy_and_placement(window) -> None:
     from api_tester import theme
-    from api_tester.icons import icon
     from PyQt6.QtWidgets import QApplication
 
     groups = (
         (
-            window.parameters_seed_button,
+            window.request_editor.path_seed_button,
+            window.request_editor.query_seed_button,
             window.query_builder.action_buttons,
             window.sort_builder.action_buttons,
         ),
         (
-            window.suite_tab.parameters_seed_button,
+            window.suite_tab.request_editor.path_seed_button,
+            window.suite_tab.request_editor.query_seed_button,
             window.suite_tab.query_builder.action_buttons,
             window.suite_tab.sort_builder.action_buttons,
         ),
     )
     buttons = [
         button
-        for parameter_seed, query_actions, sort_actions in groups
+        for path_seed, query_seed, query_actions, sort_actions in groups
         for button in (
-            parameter_seed,
+            path_seed,
+            query_seed,
             *query_actions.values(),
             *sort_actions.values(),
         )
@@ -390,7 +393,7 @@ def test_request_builder_icons_preserve_text_policy_and_placement(window) -> Non
 
     app = QApplication.instance()
     theme.apply_theme(app, "Light")
-    window.parameters_seed_button.setIcon(icon("seed", theme.TEXT, 18))
+    window.request_editor.refresh_theme()
     window.query_builder.refresh_theme()
     window.sort_builder.refresh_theme()
     window.suite_tab.refresh_theme()
@@ -398,7 +401,7 @@ def test_request_builder_icons_preserve_text_policy_and_placement(window) -> Non
     assert all(not button.icon().isNull() for button in buttons)
 
     theme.apply_theme(app, "Dark")
-    window.parameters_seed_button.setIcon(icon("seed", theme.TEXT, 18))
+    window.request_editor.refresh_theme()
     window.query_builder.refresh_theme()
     window.sort_builder.refresh_theme()
     window.suite_tab.refresh_theme()
@@ -422,7 +425,7 @@ def test_request_builder_icons_preserve_text_policy_and_placement(window) -> Non
     )
     assert [button.icon().cacheKey() for button in buttons] != light_keys
     theme.apply_theme(app, "Light")
-    window.parameters_seed_button.setIcon(icon("seed", theme.TEXT, 18))
+    window.request_editor.refresh_theme()
     window.query_builder.refresh_theme()
     window.sort_builder.refresh_theme()
     window.suite_tab.refresh_theme()
@@ -465,10 +468,10 @@ def test_payload_field_page_actions_preserve_policy_and_placement(window) -> Non
     from PyQt6.QtWidgets import QApplication
 
     groups = (
-        (window.payload_fields_buttons, window.payload_fields_layout),
+        (window.request_editor.payload_fields_buttons, window.request_editor.payload_fields_layout),
         (
-            window.suite_tab.payload_fields_buttons,
-            window.suite_tab.payload_fields_layout,
+            window.suite_tab.request_editor.payload_fields_buttons,
+            window.suite_tab.request_editor.payload_fields_layout,
         ),
     )
     buttons = [button for actions, _layout in groups for button in actions.values()]
@@ -484,7 +487,7 @@ def test_payload_field_page_actions_preserve_policy_and_placement(window) -> Non
         for actions, layout in groups
         for button in actions.values()
     ]
-    assert all(button.text() == "" for button in buttons)
+    assert all(button.text() == "Seed fields" for button in buttons)
     assert all(button.toolTip() for button in buttons)
     assert all(button.accessibleName() == button.toolTip() for button in buttons)
 
@@ -742,24 +745,27 @@ def test_path_parameters_are_compulsory_and_query_parameters_are_toggleable(
 
     path_row = next(
         row
-        for row, parameter in enumerate(window._table_parameters)
+        for row, parameter in enumerate(window.request_editor._path_parameter_list)
         if parameter.source == "path"
     )
     query_row = next(
         row
-        for row, parameter in enumerate(window._table_parameters)
+        for row, parameter in enumerate(window.request_editor._query_parameter_list)
         if parameter.source == "query"
     )
-    path_item = window.parameters.item(path_row, 0)
-    query_item = window.parameters.item(query_row, 0)
+    path_item = window.request_editor.path_parameters.item(path_row, 0)
+    query_item = window.request_editor.query_parameters.item(query_row, 0)
 
-    assert path_item.checkState() == Qt.CheckState.Checked
-    assert not path_item.flags() & Qt.ItemFlag.ItemIsUserCheckable
+    assert path_item.data(Qt.ItemDataRole.CheckStateRole) is None
+    assert not path_item.flags() & Qt.ItemFlag.ItemIsEditable
+    path_parameter = window.request_editor._path_parameter_list[path_row]
+    assert f"path:{path_parameter.name}" in window._current_values()
+    assert f"enabled:path:{path_parameter.name}" not in window._current_values()
     assert query_item.flags() & Qt.ItemFlag.ItemIsUserCheckable
 
     query_item.setCheckState(Qt.CheckState.Unchecked)
     values = window._current_values()
-    query_parameter = window._table_parameters[query_row]
+    query_parameter = window.request_editor._query_parameter_list[query_row]
     assert (
         values[f"enabled:query:{query_parameter.name}"]
         == "false"
@@ -781,11 +787,11 @@ def test_suite_preserves_unchecked_query_parameters(window) -> None:
     window.suite_tab.add_case_for_endpoint(endpoint, {}, None, "Toggle query")
     row = next(
         index
-        for index, parameter in enumerate(window.suite_tab._table_parameters)
+        for index, parameter in enumerate(window.suite_tab.request_editor._query_parameter_list)
         if parameter.source == "query"
     )
-    parameter = window.suite_tab._table_parameters[row]
-    source_item = window.suite_tab.parameters.item(row, 0)
+    parameter = window.suite_tab.request_editor._query_parameter_list[row]
+    source_item = window.suite_tab.request_editor.query_parameters.item(row, 0)
     source_item.setCheckState(Qt.CheckState.Unchecked)
 
     assert window.suite_tab.current_case is not None
@@ -804,8 +810,9 @@ def test_parameter_rows_are_tall_enough_for_their_cell_widgets(window) -> None:
         FilePicker().minimumSizeHint().height(),
         ValuePicker(["a"]).minimumSizeHint().height(),
     )
-    for table in (window.parameters, window.suite_tab.parameters):
-        assert table.verticalHeader().defaultSectionSize() >= needed
+    for editor in (window.request_editor, window.suite_tab.request_editor):
+        for table in (editor.path_parameters, editor.query_parameters):
+            assert table.verticalHeader().defaultSectionSize() >= needed
 
 
 def test_saved_request_can_be_reopened_in_explorer(window) -> None:

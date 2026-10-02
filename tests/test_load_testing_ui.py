@@ -561,12 +561,12 @@ def test_build_plan_button_shows_a_label(app) -> None:
     assert not button.icon().isNull()
 
 
-def test_stage_rows_are_five_pixels_taller(app) -> None:
+def test_stage_rows_use_the_roomy_theme_height(app) -> None:
     from api_tester import theme
 
     tab = _make_tab(app)
     assert tab.stages_table.objectName() == "roomyEditorTable"
-    assert tab.stages_table.verticalHeader().defaultSectionSize() == 35
+    assert tab.stages_table.verticalHeader().defaultSectionSize() == theme.ROOMY_ROW_HEIGHT
 
 
 @pytest.mark.parametrize("mode", ["Light", "Dark"])
@@ -587,3 +587,365 @@ def test_start_icon_stays_white_on_the_accent_button(app, mode) -> None:
             assert max(opaque, key=lambda c: c.lightness()).name() == theme.TEXT_INVERSE
     finally:
         theme.apply_theme(app, "Light")
+
+# ------------------------------------------------------------------ completed statistics & saved runs
+
+
+def _fast_snapshot_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    from api_tester.load_testing import ui as load_ui
+    from api_tester.load_testing.engine import LoadRunOptions
+
+    monkeypatch.setattr(
+        load_ui,
+        "LoadRunOptions",
+        lambda: LoadRunOptions(metric_snapshot_interval_seconds=0.05, active_user_poll_seconds=0.01),
+    )
+
+
+def _persisted_run(app, monkeypatch, tmp_path, *, name: str = "run.db") -> LoadTestingTab:
+    _install_fake_transport(monkeypatch)
+    _fast_snapshot_options(monkeypatch)
+    tab = _make_tab(app)
+    _make_fast_scenario(tab)
+    tab.stages_table.setRowCount(0)
+    tab._add_stage_row(kind="steady", duration_seconds=0.4, start_users=2, end_users=2, think_time_ms=20, label="Hold")
+    tab._add_threshold_row(metric="error_rate", operator="<=", target=0.5, label="Errors")
+    tab.persist_path.setText(str(tmp_path / name))
+    _run_to_completion(tab, app)
+    assert tab._last_summary is not None
+    return tab
+
+
+def test_completed_run_switches_cards_to_min_avg_max(
+    app: QApplication, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    tab = _persisted_run(app, monkeypatch, tmp_path)
+    cards = tab.stat_cards
+
+    assert cards["throughput"].title_label.text() == "THROUGHPUT · PEAK"
+    assert "min" in cards["throughput"].subtitle_label.text() and "avg" in cards["throughput"].subtitle_label.text()
+    assert cards["latency"].title_label.text() == "AVG LATENCY"
+    assert cards["p99"].title_label.text() == "P99 · AVG"
+    assert "max" in cards["p99"].subtitle_label.text()
+    assert cards["active_users"].title_label.text() == "USERS · PEAK"
+    assert cards["active_users"].value_label.text() == "2"
+    # Error rate and Completed keep their live presentation.
+    assert cards["error_rate"].title_label.text() == "ERROR RATE"
+    assert cards["completed"].value_label.text() == f"{tab._last_summary.total_requests:,}"
+
+    tab._reset_live_metrics()
+    assert cards["throughput"].title_label.text() == "THROUGHPUT"
+    assert cards["p99"].title_label.text() == "P99 LATENCY"
+
+
+def test_final_report_is_detailed(app: QApplication, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    tab = _persisted_run(app, monkeypatch, tmp_path)
+    report = tab.report_view
+
+    metrics = [report.metric_stats_table.item(row, 0).text() for row in range(report.metric_stats_table.rowCount())]
+    assert metrics == [
+        "Throughput (req/s)", "Request latency", "P50 latency", "P95 latency", "P99 latency", "Error rate", "Virtual users",
+    ]
+    assert report.metric_stats_table.item(0, 3).text() != "—"  # max throughput
+    assert report.stage_table.rowCount() == 1
+    assert report.stage_table.item(0, 0).text() == "1. Hold"
+    assert report.thresholds_table.rowCount() == 1
+    assert report.thresholds_table.item(0, 4).text() == "PASS"
+    assert report.run_id_label.text() == tab._last_summary.run_id
+    assert str(tmp_path / "run.db") in report.persisted_label.text()
+    assert "GET /Brands/{Id}" in report.configuration_label.text()
+    assert "p99" in report.latency_distribution_label.text()
+
+
+def test_rail_card_reports_persistence_and_size(app: QApplication, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    tab = _persisted_run(app, monkeypatch, tmp_path)
+
+    assert tab.persistence_status_label.text() == "Persisted"
+    assert tab.persistence_file_label.text() == "run.db"
+    assert tab.persistence_size_label.text().startswith("Size · ")
+    assert tab._last_summary.run_id in tab.persistence_size_label.text()
+    assert tab.persist_size_label.text().startswith("Size · ")
+    assert tab.open_saved_run_button.isEnabled()
+
+    tab.persist_checkbox.setChecked(False)
+    # A finished, persisted run keeps its state until the next run starts.
+    assert tab.persistence_status_label.text() == "Persisted"
+
+
+def test_rail_card_without_persistence(app: QApplication) -> None:
+    tab = _make_tab(app)
+    assert tab.persistence_status_label.text() == "Will be persisted"
+    tab.persist_checkbox.setChecked(False)
+    assert tab.persistence_status_label.text() == "Not persisted"
+    assert tab.persistence_file_label.text() == ""
+    assert not tab.persist_path.isEnabled()
+
+
+def test_saved_run_reopens_with_cards_report_and_chip(
+    app: QApplication, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    source = _persisted_run(app, monkeypatch, tmp_path)
+    summary = source._last_summary
+
+    tab = _make_tab(app)
+    assert tab.open_saved_run(tmp_path / "run.db") is True
+
+    assert tab.saved_run_chip.isVisibleTo(tab)
+    assert "run.db" in tab.saved_run_chip_label.text()
+    assert tab.live_title_label.text() == "brands.get — QA"
+    assert tab.live_status_label.text() == "PASS"
+    assert tab.report_outcome_label.text() == "PASS"
+    assert tab.stat_cards["throughput"].title_label.text() == "THROUGHPUT · PEAK"
+    assert tab.stat_cards["completed"].value_label.text() == f"{summary.total_requests:,}"
+    assert tab.persistence_status_label.text() == "Loaded from file"
+    assert tab.report_view.stage_table.rowCount() == 1
+    assert tab.throughput_chart._values
+    assert tab.steps.currentIndex() == 3
+
+    tab.close_saved_run()
+    assert not tab.saved_run_chip.isVisibleTo(tab)
+    assert tab.live_status_label.text() == "READY"
+    assert tab.stat_cards["completed"].value_label.text() == "–"
+    assert tab.persistence_status_label.text() == "Will be persisted"
+
+
+def test_saved_run_picker_is_used_when_a_file_has_several_runs(
+    app: QApplication, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    source = _persisted_run(app, monkeypatch, tmp_path)
+    first_id = source._last_summary.run_id
+    _run_to_completion(source, app)
+    second_id = source._last_summary.run_id
+    assert first_id != second_id
+
+    tab = _make_tab(app)
+    offered: list[list[str]] = []
+
+    def choose(path, runs):
+        offered.append([run["run_id"] for run in runs])
+        return first_id
+
+    monkeypatch.setattr(tab, "_choose_saved_run", choose)
+    assert tab.open_saved_run(tmp_path / "run.db") is True
+    assert sorted(offered[0]) == sorted([first_id, second_id])
+    assert tab._loaded_run is not None and tab._loaded_run.run_id == first_id
+
+    monkeypatch.setattr(tab, "_choose_saved_run", lambda path, runs: None)
+    assert tab.open_saved_run(tmp_path / "run.db") is False
+    assert tab._loaded_run.run_id == first_id
+
+
+def test_reuse_scenario_restores_stages_limits_and_thresholds(
+    app: QApplication, monkeypatch: pytest.MonkeyPatch, tmp_path, quiet_dialogs
+) -> None:
+    _persisted_run(app, monkeypatch, tmp_path)
+    tab = _make_tab(app)
+    assert tab.stages_table.rowCount() == 4  # default ramp
+    assert tab.environment_permits_checkbox.isChecked() is False
+    tab.open_saved_run(tmp_path / "run.db")
+
+    monkeypatch.setattr(tab, "_ask_reuse_scenario", lambda: "reuse")
+    tab._configure_clicked()
+
+    assert tab.steps.currentIndex() == 0
+    assert tab.stages_table.rowCount() == 1
+    assert tab._stage_from_row(0).duration_seconds == pytest.approx(0.4)
+    assert tab._stage_from_row(0).label == "Hold"
+    assert tab.environment_permits_checkbox.isChecked() is True
+    assert tab.thresholds_table.rowCount() == 1
+    assert tab._threshold_from_row(0).metric == "error_rate"
+    assert tab.current_endpoint is not None and tab.current_endpoint.id == "brands.get"
+    assert tab.plan is None
+
+
+def test_configure_on_saved_run_can_be_cancelled(
+    app: QApplication, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    _persisted_run(app, monkeypatch, tmp_path)
+    tab = _make_tab(app)
+    tab.open_saved_run(tmp_path / "run.db")
+    monkeypatch.setattr(tab, "_ask_reuse_scenario", lambda: "cancel")
+    tab._configure_clicked()
+    assert tab.steps.currentIndex() == 3
+    assert tab.stages_table.rowCount() == 4
+
+
+def test_opening_a_saved_run_confirms_before_discarding_unsaved_results(
+    app: QApplication, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    _persisted_run(app, monkeypatch, tmp_path, name="saved.db")
+    _install_fake_transport(monkeypatch)
+    tab = _make_tab(app)
+    _make_fast_scenario(tab)
+    tab.persist_checkbox.setChecked(False)
+    _run_to_completion(tab, app)
+    assert tab.persistence_status_label.text() == "Not persisted"
+
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.StandardButton.No))
+    assert tab.open_saved_run(tmp_path / "saved.db") is False
+    assert tab._loaded_run is None
+
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes))
+    assert tab.open_saved_run(tmp_path / "saved.db") is True
+
+
+def test_opening_an_invalid_file_warns(app: QApplication, tmp_path, quiet_dialogs) -> None:
+    tab = _make_tab(app)
+    bogus = tmp_path / "bogus.db"
+    bogus.write_bytes(b"not sqlite" * 200)
+    assert tab.open_saved_run(bogus) is False
+    assert tab.open_saved_run(tmp_path / "missing.db") is False
+    assert tab._loaded_run is None
+
+
+def test_starting_a_run_leaves_the_saved_run_view(
+    app: QApplication, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    tab = _persisted_run(app, monkeypatch, tmp_path)
+    tab.open_saved_run(tmp_path / "run.db")
+    assert tab._loaded_run is not None
+
+    _run_to_completion(tab, app)
+
+    assert tab._loaded_run is None
+    assert not tab.saved_run_chip.isVisibleTo(tab)
+    assert tab.persistence_status_label.text() == "Persisted"
+
+
+def test_safety_columns_stack_at_the_data_runner_breakpoint(app: QApplication) -> None:
+    """Inside the main window this page is ~900 px at minimum, so the breakpoint
+    must sit near the Data Runner source page's 1040 px for stacking to happen."""
+    from api_tester.data_runner.ui import _SOURCE_STACK_THRESHOLD
+
+    tab = _make_tab(app)
+    tab.steps.setCurrentIndex(1)
+    columns = tab.safety_columns
+    assert abs(columns.threshold() - _SOURCE_STACK_THRESHOLD) <= 40
+    tab.show()
+    for width, stacked in ((1400, False), (950, True), (1400, False)):
+        tab.resize(width, 800)
+        app.processEvents()
+        assert columns.is_stacked() is stacked, width
+
+
+
+# ------------------------------------------------------------------ PDF export & findings
+
+
+def test_export_is_disabled_until_a_run_finishes(app: QApplication) -> None:
+    tab = _make_tab(app)
+    assert not tab.report_export_button.isEnabled()
+    assert not hasattr(tab, "export_pdf_button")
+    assert not tab.report_copy_button.isEnabled()
+    with pytest.raises(RuntimeError):
+        tab.export_report_pdf("never.pdf")
+
+
+def test_persisted_run_exports_a_full_report_with_findings(
+    app: QApplication, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    tab = _persisted_run(app, monkeypatch, tmp_path)
+    assert tab.report_export_button.isEnabled()
+    assert tab.report_actions_label.text().startswith("Full report")
+    assert tab.report_view.finding_cards
+    assert "F1" in tab.report_summary_text()
+
+    result = tab.export_report_pdf(tmp_path / "report.pdf")
+    assert result.path.exists() and result.page_count >= 4
+    joined = "\n".join(result.texts)
+    assert "HTTP status distribution" in joined
+    assert "per-request detail is not available" not in joined
+
+
+def test_unpersisted_run_exports_a_reduced_report(
+    app: QApplication, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    _install_fake_transport(monkeypatch)
+    _fast_snapshot_options(monkeypatch)
+    tab = _make_tab(app)
+    _make_fast_scenario(tab)
+    tab.persist_checkbox.setChecked(False)
+    _run_to_completion(tab, app)
+    assert tab.report_actions_label.text().startswith("Reduced report")
+    result = tab.export_report_pdf(tmp_path / "reduced.pdf")
+    assert result.page_count >= 1
+    assert any("not persisted" in text for text in result.texts)
+
+
+def test_saved_run_exports_and_closing_disables_export(
+    app: QApplication, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    _persisted_run(app, monkeypatch, tmp_path)
+    tab = _make_tab(app)
+    assert tab.open_saved_run(tmp_path / "run.db") is True
+    assert tab.report_export_button.isEnabled()
+    result = tab.export_report_pdf(tmp_path / "saved.pdf")
+    assert result.path.exists()
+    assert tab._default_export_path().endswith(".pdf")
+
+    tab.close_saved_run()
+    assert not tab.report_export_button.isEnabled()
+    assert tab.report_view.finding_cards == []
+
+
+def test_copy_summary_puts_findings_on_the_clipboard(
+    app: QApplication, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    tab = _persisted_run(app, monkeypatch, tmp_path)
+    tab._copy_report_summary()
+    assert "F1" in QApplication.clipboard().text()
+    assert tab.report_actions_label.text() == "Summary copied to the clipboard."
+
+
+def test_export_button_writes_the_pdf_through_the_dialog(
+    app: QApplication, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    from PyQt6.QtWidgets import QDialog, QFileDialog
+
+    from api_tester.load_testing import ui as ui_module
+    from api_tester.load_testing.export_dialog import PdfExportDialog
+
+    tab = _persisted_run(app, monkeypatch, tmp_path)
+    target = tmp_path / "out" / "clicked"
+    opened: list[str] = []
+    monkeypatch.setattr(PdfExportDialog, "exec", lambda self: QDialog.DialogCode.Accepted)
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: (str(target), "")))
+    monkeypatch.setattr(ui_module.QDesktopServices, "openUrl", staticmethod(lambda url: opened.append(url.toLocalFile())))
+
+    tab._export_pdf_clicked()
+
+    written = tmp_path / "out" / "clicked.pdf"
+    assert written.exists()
+    assert opened and opened[0].endswith("clicked.pdf")
+    assert "clicked.pdf" in tab.report_actions_label.text()
+    assert tab._default_export_path().startswith(str(tmp_path / "out"))
+
+
+def test_status_dot_sits_inside_the_status_pill(app: QApplication) -> None:
+    tab = _make_tab(app)
+    assert tab.live_status_icon.parentWidget() is tab.live_status_pill
+    assert tab.live_status_label.parentWidget() is tab.live_status_pill
+    tab._set_live_status("PASS", "pass")
+    assert tab.live_status_pill.property("status") == "pass"
+    assert tab.live_status_label.property("status") == "pass"
+    assert tab.live_status_label.text() == "PASS"
+
+
+def test_live_stage_label_tracks_the_stage_in_progress(app: QApplication) -> None:
+    """Every stage after the active one used to overwrite the index, so the
+    header always named the last stage while the run was still mid-way."""
+    from api_tester.load_testing.scenario import LoadStage
+
+    tab = _make_tab(app)
+    stages = (
+        LoadStage(kind="ramp_up", duration_seconds=6, start_users=1, end_users=12, label="Warm up"),
+        LoadStage(kind="steady", duration_seconds=8, start_users=12, end_users=12, label="Hold"),
+        LoadStage(kind="ramp_down", duration_seconds=4, start_users=12, end_users=1, label="Cool down"),
+    )
+    tab._view_stages = stages
+    tab._rebuild_stage_progress(stages)
+
+    for elapsed, expected in ((0.0, "Stage 1 of 3 · Warm up"), (12.0, "Stage 2 of 3 · Hold"),
+                              (15.0, "Stage 3 of 3 · Cool down"), (99.0, "Stage 3 of 3 · Cool down")):
+        tab._update_stage_progress(elapsed)
+        assert tab.live_stage_label.text() == expected, elapsed

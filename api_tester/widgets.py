@@ -10,6 +10,9 @@ from PyQt6 import sip
 
 from PyQt6.QtCore import (
     QAbstractAnimation,
+    QModelIndex,
+    QObject,
+    QSortFilterProxyModel,
     QEasingCurve,
     QEvent,
     QPointF,
@@ -35,6 +38,7 @@ from PyQt6.QtWidgets import (
     QApplication,
     QBoxLayout,
     QComboBox,
+    QCompleter,
     QDialog,
     QFrame,
     QGraphicsDropShadowEffect,
@@ -49,6 +53,7 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QStyle,
+    QStyleOptionComboBox,
     QStyleOptionViewItem,
     QStyledItemDelegate,
     QTableWidget,
@@ -991,7 +996,7 @@ def settle_table_rows(table: QTableWidget, passes: int = 5) -> None:
     next layout pass converges in two or three rounds; the bound just stops a
     pathological layout from looping forever.
     """
-    if passes <= 0:
+    if passes <= 0 or sip.isdeleted(table):
         return
     if fit_table_rows(table):
         QTimer.singleShot(0, lambda: settle_table_rows(table, passes - 1))
@@ -1015,6 +1020,33 @@ def fit_last_column(table: QTableWidget, minimum: int = 80) -> None:
         header.setSectionResizeMode(last, QHeaderView.ResizeMode.Interactive)
     used = sum(table.columnWidth(i) for i in range(last))
     table.setColumnWidth(last, max(minimum, table.viewport().width() - used))
+
+
+def fit_combo_column(table: QTableWidget, column: int, combo: QComboBox) -> None:
+    """Widens ``column`` until the longest item of ``combo`` (a cell widget
+    already placed in it) shows in full.
+
+    ``QComboBox.sizeHint`` under-reports under the in-table stylesheet (its
+    right padding and drop-down width are not fully counted), so the space
+    the style keeps around the text is measured from the edit-field rect.
+    """
+    combo.ensurePolished()
+    probe_width = 240
+    combo.resize(probe_width, combo.height())
+    option = QStyleOptionComboBox()
+    combo.initStyleOption(option)
+    edit = combo.style().subControlRect(
+        QStyle.ComplexControl.CC_ComboBox, option, QStyle.SubControl.SC_ComboBoxEditField, combo
+    )
+    decoration = probe_width - edit.width()
+    metrics = combo.fontMetrics()
+    longest = max((metrics.horizontalAdvance(combo.itemText(i)) for i in range(combo.count())), default=0)
+    # The cell widget sits inside the ``QTableWidget::item`` padding (7px a
+    # side) plus the 1px grid line; a few px of slack keep glyphs off the arrow.
+    cell_inset = 15
+    needed = longest + decoration + cell_inset + 6
+    if table.columnWidth(column) < needed:
+        table.setColumnWidth(column, needed)
 
 
 class RowButton(QPushButton):
@@ -1790,3 +1822,195 @@ class Pane(QWidget):
         self.count.setText("" if count is None else str(count))
         self.count.setVisible(count is not None)
 
+
+SEARCH_TEXT_ROLE = Qt.ItemDataRole.UserRole + 64
+SEARCH_DEBOUNCE_MS = 350
+
+
+class _TokenFilterProxy(QSortFilterProxyModel):
+    """Keeps rows whose search text contains every typed token."""
+
+    def __init__(self, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._tokens: list[str] = []
+
+    def set_query(self, query: str) -> None:
+        self._tokens = query.casefold().split()
+        self.invalidateFilter()
+
+    def filterAcceptsRow(self, source_row: int, source_parent) -> bool:  # noqa: N802
+        if not self._tokens:
+            return True
+        index = self.sourceModel().index(source_row, 0, source_parent)
+        text = index.data(SEARCH_TEXT_ROLE) or index.data(Qt.ItemDataRole.DisplayRole) or ""
+        haystack = str(text).casefold()
+        return all(token in haystack for token in self._tokens)
+
+
+class SearchableComboBox(QComboBox):
+    """Editable combo whose suggestions follow typing after a debounce.
+
+    Each keystroke restarts a timer; only once typing pauses for
+    ``debounce_ms`` is the list filtered and the suggestion popup shown.
+    Every whitespace-separated token must match (case-insensitive) the item
+    text or its ``SEARCH_TEXT_ROLE`` data. Picking a suggestion selects the
+    real item, so ``currentIndexChanged`` and ``itemData`` behave exactly as
+    for a plain combo. Typed text that matches nothing is reverted to the
+    current item when focus leaves or Escape is pressed.
+    """
+
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        placeholder: str = "Type to search…",
+        debounce_ms: int = SEARCH_DEBOUNCE_MS,
+    ) -> None:
+        super().__init__(parent)
+        self.setEditable(True)
+        self.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        # The built-in completer would filter on every keystroke.
+        self.setCompleter(None)
+        line_edit = self.lineEdit()
+        line_edit.setPlaceholderText(placeholder)
+
+        self._proxy = _TokenFilterProxy(self)
+        self._choice_pending = False
+        self._proxy.setSourceModel(self.model())
+        self.search_completer = QCompleter(self._proxy, self)
+        self.search_completer.setCompletionMode(
+            QCompleter.CompletionMode.UnfilteredPopupCompletion
+        )
+        self.search_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.search_completer.setMaxVisibleItems(14)
+        self.search_completer.setWidget(line_edit)
+        self.search_completer.popup().setObjectName("searchSuggestionPopup")
+        self.search_completer.activated[QModelIndex].connect(self._suggestion_chosen)
+
+        self.search_timer = QTimer(self)
+        self.search_timer.setSingleShot(True)
+        self.search_timer.setInterval(debounce_ms)
+        self.search_timer.timeout.connect(self._apply_search)
+        line_edit.textEdited.connect(self._schedule_search)
+        line_edit.returnPressed.connect(self._commit_typed_text)
+        line_edit.installEventFilter(self)
+
+    # -- search ---------------------------------------------------------
+
+    def _schedule_search(self, _text: str) -> None:
+        self.search_timer.start()
+
+    def flush_search(self) -> None:
+        """Runs a pending debounced search immediately."""
+        if self.search_timer.isActive():
+            self.search_timer.stop()
+            self._apply_search()
+
+    def _apply_search(self) -> None:
+        query = self.lineEdit().text().strip()
+        if query == self.itemText(self.currentIndex()):
+            query = ""
+        self._proxy.set_query(query)
+        if not query or self._proxy.rowCount() == 0:
+            self.search_completer.popup().hide()
+            return
+        self.search_completer.complete()
+
+    def suggestion_count(self) -> int:
+        return self._proxy.rowCount()
+
+    def suggestion_texts(self) -> list[str]:
+        return [
+            str(self._proxy.index(row, 0).data(Qt.ItemDataRole.DisplayRole))
+            for row in range(self._proxy.rowCount())
+        ]
+
+    def choose_suggestion(self, row: int) -> None:
+        self._suggestion_chosen(self._proxy.index(row, 0))
+
+    def _suggestion_chosen(self, index: QModelIndex) -> None:
+        if not index.isValid() or self._choice_pending:
+            # Enter commits the first match and then the completer may activate
+            # its stale row against the now unfiltered list; ignore that echo.
+            return
+        if index.model() is not self._proxy:
+            index = self._proxy.index(index.row(), 0)
+        source = self._proxy.mapToSource(index)
+        if not source.isValid():
+            return
+        self._choice_pending = True
+        QTimer.singleShot(0, self._clear_choice_pending)
+        self.search_completer.popup().hide()
+        self._proxy.set_query("")
+        if source.row() == self.currentIndex():
+            self._restore_text()
+        else:
+            self.setCurrentIndex(source.row())
+
+    def _commit_typed_text(self) -> None:
+        popup = self.search_completer.popup()
+        if popup.isVisible() and popup.currentIndex().isValid():
+            # The completer activates the highlighted suggestion itself.
+            return
+        self.flush_search()
+        if self.lineEdit().text() == self.itemText(self.currentIndex()):
+            return
+        exact = self.findText(self.lineEdit().text(), Qt.MatchFlag.MatchFixedString)
+        if exact >= 0:
+            self._suggestion_chosen(self._proxy.mapFromSource(self.model().index(exact, 0)))
+        elif self._proxy.rowCount():
+            self.choose_suggestion(0)
+        else:
+            self._restore_text()
+
+    def _clear_choice_pending(self) -> None:
+        if not sip.isdeleted(self):
+            self._choice_pending = False
+
+    def _restore_text(self) -> None:
+        self.search_timer.stop()
+        self._proxy.set_query("")
+        self.lineEdit().setText(self.itemText(self.currentIndex()))
+
+    # An editable QComboBox keeps keyboard focus itself and forwards focus and
+    # key events to its line edit via QLineEdit.event(), which bypasses event
+    # filters installed on the line edit, so these must be handled here.
+    def focusInEvent(self, event) -> None:  # noqa: N802
+        super().focusInEvent(event)
+        QTimer.singleShot(0, self._select_all_if_alive)
+
+    def focusOutEvent(self, event) -> None:  # noqa: N802
+        super().focusOutEvent(event)
+        if not self.search_completer.popup().isVisible():
+            self._restore_text()
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        if event.key() == Qt.Key.Key_Escape and not self.search_completer.popup().isVisible():
+            if self.lineEdit().text() != self.itemText(self.currentIndex()):
+                self._restore_text()
+                self.lineEdit().selectAll()
+                event.accept()
+                return
+        super().keyPressEvent(event)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        had_focus = self.hasFocus()
+        super().mousePressEvent(event)
+        if not had_focus:
+            QTimer.singleShot(0, self._select_all_if_alive)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        # Mouse events do reach the line edit directly. A click on the
+        # unchanged value selects all of it, so typing starts a new search.
+        if (
+            watched is self.lineEdit()
+            and event.type() == QEvent.Type.MouseButtonRelease
+            and not self.lineEdit().hasSelectedText()
+            and self.lineEdit().text() == self.itemText(self.currentIndex())
+        ):
+            QTimer.singleShot(0, self._select_all_if_alive)
+        return super().eventFilter(watched, event)
+
+    def _select_all_if_alive(self) -> None:
+        if not sip.isdeleted(self) and self.lineEdit() is not None:
+            self.lineEdit().selectAll()

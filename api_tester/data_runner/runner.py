@@ -169,6 +169,20 @@ class DataRunner:
             ],
         }
 
+    @staticmethod
+    def _request_template_definition(plan: Any) -> dict[str, Any]:
+        """Records that a request template seeded the run — keys only, since
+        template values may hold header data that must not be persisted."""
+        mapper = plan.mapper
+        if mapper is None or (not mapper.template_values and mapper.template_payload is None):
+            return {}
+        return {
+            "request_template": {
+                "keys": sorted(mapper.template_values),
+                "payload": mapper.template_payload is not None,
+            }
+        }
+
     def run(self) -> RunSummary:
         plan = self.plan
         started_at = _now_iso()
@@ -187,6 +201,7 @@ class DataRunner:
                     "mappings": [
                         {"column": m.column, "target_key": m.target_key} for m in plan.mappings
                     ],
+                    **self._request_template_definition(plan),
                 },
             )
 

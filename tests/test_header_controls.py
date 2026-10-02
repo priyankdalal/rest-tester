@@ -2,7 +2,7 @@
 
 These replaced the old theme dropdown, so the behaviour they encode -- a
 two-state toggle that resolves a stored ``System`` palette, a bell driven by
-the real authentication activity log, and device-pixel-ratio aware icons --
+the job/catalog notification centre, and device-pixel-ratio aware icons --
 has no other regression net.
 """
 
@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import QApplication
 
 from api_tester import theme
 from api_tester.auth_log import activity_log
+from api_tester.notifications import notification_center
 from api_tester.icons import badged_icon, icon, solid_icon
 
 
@@ -31,10 +32,13 @@ def window(qt_app, monkeypatch, tmp_path):
     monkeypatch.setattr(main_module, "SETTINGS_PATH", tmp_path / "settings.json")
     monkeypatch.setattr(main_module, "WORKSPACE_DB_PATH", tmp_path / "workspace.db")
     activity_log.clear()
+    notification_center.clear()
     value = main_module.MainWindow()
     yield value
     value.close()
+    value.deleteLater()
     activity_log.clear()
+    notification_center.clear()
 
 
 @pytest.fixture
@@ -93,34 +97,43 @@ def test_toggle_icon_and_tooltip_point_at_the_destination_theme(window, fast_the
     assert window.theme_toggle_button.accessibleName() == "Switch to light theme"
 
 
-def test_bell_badges_unread_authentication_events(window):
+def test_bell_badges_unread_job_and_catalog_notifications(window):
     window._populate_notifications_menu()
-    assert window.notifications_button.toolTip() == "Recent authentication activity"
+    assert window.notifications_button.toolTip() == "Notifications"
 
-    activity_log.add("token refreshed", "Default", "oauth2")
+    window.notifications.notify("suite", "Suite finished")
     window._refresh_header_buttons()
 
-    assert window.notifications_button.toolTip() == "1 new authentication event"
+    assert window.notifications_button.toolTip() == "1 new notification"
 
-    activity_log.add("token refreshed", "Default", "oauth2")
+    window.notifications.notify("catalog", "Catalog loaded")
     window._refresh_header_buttons()
 
-    assert window.notifications_button.toolTip() == "2 new authentication events"
+    assert window.notifications_button.toolTip() == "2 new notifications"
+
+
+def test_authentication_activity_does_not_badge_the_notification_bell(window):
+    activity_log.add("sign-in", "Default", "api-key")
+    window._refresh_header_buttons()
+    assert window.notifications.unread_count() == 0
+    assert window.notifications_button.toolTip() == "Notifications"
 
 
 def test_opening_the_bell_menu_clears_the_unread_badge(window):
-    activity_log.add("sign-in", "Default", "api-key")
+    window.notifications.notify("suite", "Suite finished")
     window._refresh_header_buttons()
-    assert "new authentication event" in window.notifications_button.toolTip()
+    assert "new notification" in window.notifications_button.toolTip()
 
     window._populate_notifications_menu()
 
-    assert window.notifications_button.toolTip() == "Recent authentication activity"
+    assert window.notifications_button.toolTip() == "Notifications"
+    assert window.notifications.unread_count() == 0
+    assert len(window.notifications) == 1
 
 
 def test_bell_menu_lists_recent_events_newest_first_and_can_clear(window):
     for index in range(14):
-        activity_log.add(f"event {index}", "Default", "api-key")
+        window.notifications.notify("catalog", f"event {index}")
 
     window._populate_notifications_menu()
     actions = [a for a in window.notifications_menu.actions() if not a.isSeparator()]
@@ -128,21 +141,21 @@ def test_bell_menu_lists_recent_events_newest_first_and_can_clear(window):
 
     assert "event 13" in labels[0]
     assert len([label for label in labels if "event" in label]) == 12
-    assert labels[-1] == "Clear activity"
+    assert labels[-1] == "Clear notifications"
 
     window._clear_notifications()
 
-    assert len(activity_log) == 0
+    assert len(window.notifications) == 0
     window._populate_notifications_menu()
     remaining = [a.text() for a in window.notifications_menu.actions()]
-    assert remaining == ["No activity yet"]
+    assert remaining == ["No notifications yet"]
 
 
 def test_empty_bell_menu_explains_itself(window):
     window._populate_notifications_menu()
     actions = window.notifications_menu.actions()
 
-    assert [a.text() for a in actions] == ["No activity yet"]
+    assert [a.text() for a in actions] == ["No notifications yet"]
     assert actions[0].isEnabled() is False
 
 

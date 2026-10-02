@@ -10,6 +10,7 @@ template defaults, environment variables, and optional seeding are combined.
 
 from __future__ import annotations
 
+import copy
 import json
 from dataclasses import dataclass, field, replace
 from datetime import datetime
@@ -411,6 +412,27 @@ class _ResolvedMapping:
     filter_operator: str | None = None
 
 
+_TEMPLATE_SOURCES = ("path", "query", "header", "form")
+
+
+def template_request_values(values: dict[str, str] | None) -> dict[str, str]:
+    """The sendable ``source:name`` values of a request template.
+
+    API Explorer values carry ``enabled:source:name`` flags for optional
+    parameters; flags are dropped, as are switched-off and blank values.
+    """
+    values = values or {}
+    result: dict[str, str] = {}
+    for key, value in values.items():
+        source, _, name = key.partition(":")
+        if source not in _TEMPLATE_SOURCES or not name:
+            continue
+        if values.get(f"enabled:{key}") == "false" or value is None or str(value) == "":
+            continue
+        result[key] = str(value)
+    return result
+
+
 class RowMapper:
     def __init__(
         self,
@@ -420,12 +442,18 @@ class RowMapper:
         *,
         default_expected_status: str = "200-299",
         environment_variables: dict[str, str] | None = None,
+        template_values: dict[str, str] | None = None,
+        template_payload: Any = None,
     ) -> None:
         self.endpoint = endpoint
         self.catalog = catalog
         self.mappings = list(mappings)
         self.default_expected_status = default_expected_status
         self.environment_variables = dict(environment_variables or {})
+        # Request-template layer (precedence 3): every row starts from these
+        # and mapped CSV values override them.
+        self.template_values = template_request_values(template_values)
+        self.template_payload = copy.deepcopy(template_payload)
         self.targets = mapping_targets(endpoint, catalog)
         self.targets_by_key = {target.key: target for target in self.targets}
         self.filter_schema = catalog.endpoint_filter_schema(endpoint)
@@ -465,6 +493,8 @@ class RowMapper:
         raise ValueError(f"Unknown mapping target: {mapping.target_key}")
 
     def _initial_payload(self) -> Any:
+        if self.template_payload is not None:
+            return copy.deepcopy(self.template_payload)
         schema = self.catalog.payload_schema(self.endpoint.payload_schema)
         if not schema:
             return None
@@ -476,12 +506,16 @@ class RowMapper:
         return None
 
     def resolve(self, row_number: int, row: dict[str, str]) -> ResolvedRow:
+        buckets: dict[str, dict[str, str]] = {source: {} for source in _TEMPLATE_SOURCES}
+        for key, value in self.template_values.items():
+            source, _, name = key.partition(":")
+            buckets[source][name] = value
         resolved = ResolvedRow(
             row_number=row_number,
-            path_values={},
-            query_values={},
-            header_values={},
-            form_values={},
+            path_values=buckets["path"],
+            query_values=buckets["query"],
+            header_values=buckets["header"],
+            form_values=buckets["form"],
             payload=self._initial_payload(),
             expected_status=self.default_expected_status,
             correlation_key=f"row-{row_number}",
@@ -599,7 +633,17 @@ class RowMapper:
             if not target.required or target.group not in {"path", "query", "header", "form"}:
                 continue
             mappings = self._mappings_by_target_key.get(target.key, [])
+            _, name = target.key.split(":", 1)
+            bucket = {
+                "path": resolved.path_values,
+                "query": resolved.query_values,
+                "header": resolved.header_values,
+                "form": resolved.form_values,
+            }[target.group]
             if not mappings:
+                # A request-template value satisfies an unmapped requirement.
+                if bucket.get(name, "") != "":
+                    continue
                 resolved.issues.append(
                     RowValidationIssue(
                         column="",
@@ -609,13 +653,6 @@ class RowMapper:
                     )
                 )
                 continue
-            _, name = target.key.split(":", 1)
-            bucket = {
-                "path": resolved.path_values,
-                "query": resolved.query_values,
-                "header": resolved.header_values,
-                "form": resolved.form_values,
-            }[target.group]
             if bucket.get(name, "") != "":
                 continue
             if target.key in issue_targets:
@@ -635,7 +672,10 @@ class RowMapper:
             mappings = self._mappings_by_target_key.get(target.key, [])
             if target.key in issue_targets:
                 continue
+            present, _ = _path_get(resolved.payload, target.key[len("payload:") :])
             if not mappings:
+                if present:
+                    continue
                 resolved.issues.append(
                     RowValidationIssue(
                         column="",
@@ -645,7 +685,6 @@ class RowMapper:
                     )
                 )
                 continue
-            present, _ = _path_get(resolved.payload, target.key[len("payload:") :])
             if present:
                 continue
             resolved.issues.append(
