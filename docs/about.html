@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>About Rest Tester - Principles, Technology &amp; Open-Source License</title>
+  <meta name="description" content="Rest Tester is a free, local-first REST API workbench built with Python and Qt. Learn its design principles, technology stack, GPL-3.0-or-later license, third-party components and how to contribute.">
+  <meta name="keywords" content="Rest Tester about, open-source API testing tool, GPL API client, PyQt6 application, local-first API tester, contribute to Rest Tester">
+  <link rel="canonical" href="https://priyankdalal.github.io/rest-tester/about.html">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta name="theme-color" content="#0878f9">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Rest Tester">
+  <meta property="og:title" content="About Rest Tester">
+  <meta property="og:description" content="A free, local-first REST API workbench - principles, technology, license and contributing.">
+  <meta property="og:url" content="https://priyankdalal.github.io/rest-tester/about.html">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:image" content="https://priyankdalal.github.io/rest-tester/assets/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="The Rest Tester API Explorer">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="About Rest Tester">
+  <meta name="twitter:description" content="Principles, technology, license and contributing.">
+  <meta name="twitter:image" content="https://priyankdalal.github.io/rest-tester/assets/og-image.png">
+  <link rel="icon" href="assets/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&amp;family=DM+Sans:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+  <link rel="stylesheet" href="styles.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "AboutPage",
+        "name": "About Rest Tester",
+        "url": "https://priyankdalal.github.io/rest-tester/about.html",
+        "description": "Design principles, technology, license and contribution guide for Rest Tester.",
+        "inLanguage": "en",
+        "mainEntity": {
+          "@type": "SoftwareApplication",
+          "name": "Rest Tester",
+          "softwareVersion": "2.1.0",
+          "applicationCategory": "DeveloperApplication",
+          "operatingSystem": "Windows, macOS, Linux",
+          "license": "https://www.gnu.org/licenses/gpl-3.0.html",
+          "url": "https://priyankdalal.github.io/rest-tester/"
+        }
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://priyankdalal.github.io/rest-tester/" },
+          { "@type": "ListItem", "position": 2, "name": "About", "item": "https://priyankdalal.github.io/rest-tester/about.html" }
+        ]
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <nav class="nav shell" aria-label="Main navigation">
+      <a class="brand" href="./" aria-label="Rest Tester home">
+        <img src="assets/logo.png" alt="" width="28" height="28">
+        <span>Rest<span>Tester</span></span>
+      </a>
+      <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="site-menu">Menu</button>
+      <div class="nav-links" id="site-menu">
+        <a href="features.html">Features</a>
+        <a href="docs.html">Docs</a>
+        <a href="about.html" aria-current="page">About</a>
+        <a href="https://github.com/priyankdalal/rest-tester" rel="noopener">GitHub</a>
+        <a class="nav-cta" href="download.html">Get started <span aria-hidden="true">-&gt;</span></a>
+      </div>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="page-hero shell">
+      <nav class="breadcrumb" aria-label="Breadcrumb"><ol><li><a href="./">Home</a></li><li aria-current="page">About</li></ol></nav>
+      <p class="eyebrow"><span class="eyebrow-dot"></span> About the project</p>
+      <h1>A workbench that<br><em>knows your API.</em></h1>
+      <p class="page-lede">Generic API clients treat every request as a blank form. Rest Tester starts from a catalog of your services, so it knows which fields exist, which can be filtered and sorted, which values an enum allows and what a valid response looks like.</p>
+    </section>
+
+    <section class="section alt-section">
+      <div class="shell split-block">
+        <div class="split-sticky">
+          <span class="chapter-number">01 / WHAT IT IS</span>
+          <h2>Built for API teams.</h2>
+        </div>
+        <div class="prose">
+          <p>Rest Tester is a desktop application for exploring, testing and load-testing REST APIs. One catalog drives six workspaces: the API Explorer, Test Suites, the Data Runner, Load Studio, the Catalog Builder and Environments.</p>
+          <p>It is aimed at developers and testers who repeatedly exercise the same set of services - checking a new filter, reproducing a bug with real data, building a regression suite before a release or checking that a change still holds up under load.</p>
+          <figure class="feature-shot"><img class="shot-small" src="images/about.png" alt="The Rest Tester About dialog showing version and license information" width="975" height="980" loading="lazy" decoding="async"><figcaption>The in-app About dialog: overview, shortcuts, system details and licenses.</figcaption></figure>
+        </div>
+      </div>
+    </section>
+
+    <section class="dark-section">
+      <div class="shell">
+        <div class="section-heading light">
+          <span class="chapter-number">02 / PRINCIPLES</span>
+          <h2>How it is designed.</h2>
+        </div>
+        <div class="principle-grid">
+          <article class="principle"><span>01</span><h3>Schema first</h3><p>Forms, filters, sorts and assertions come from the catalog, so requests only use fields an endpoint really supports.</p></article>
+          <article class="principle"><span>02</span><h3>Local first</h3><p>No account and no cloud. Settings, history, suites and runs are plain files and SQLite databases on your machine.</p></article>
+          <article class="principle"><span>03</span><h3>Safe by default</h3><p>Load tests have caps for users, duration and timeout, and the Data Runner validates every row before sending.</p></article>
+          <article class="principle"><span>04</span><h3>Explain, don't just report</h3><p>Results come with timelines, schema diffs and diagnosed shortcomings with likely causes and fixes.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="shell">
+        <div class="section-heading">
+          <span class="chapter-number">03 / TECHNOLOGY</span>
+          <h2>What it is made of.</h2>
+        </div>
+        <div class="tech-grid">
+          <article class="tech-card"><h3>Python 3.11+</h3><p>Application logic, catalog parsing, the filter grammar and the load engine.</p></article>
+          <article class="tech-card"><h3>PyQt6 / Qt 6</h3><p>The native desktop interface with light and dark themes and charts.</p></article>
+          <article class="tech-card"><h3>requests &amp; MSAL</h3><p>HTTP with timing breakdowns, plus Microsoft identity, OAuth 2.0 and signed JWT authentication.</p></article>
+          <article class="tech-card"><h3>SQLite</h3><p>Workspace history, saved requests and portable run files for the Data Runner and Load Studio.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section alt-section" id="license">
+      <div class="shell split-block">
+        <div class="split-sticky">
+          <span class="chapter-number">04 / LICENSE</span>
+          <h2>Free software.</h2>
+          <p>Rest Tester is licensed under the GNU General Public License v3.0 or later.</p>
+        </div>
+        <div class="prose">
+          <p>You may use, study, share and modify Rest Tester. If you distribute a modified version, you must make its source available under the same license. See the <a href="https://github.com/priyankdalal/rest-tester/blob/master/LICENSE" rel="noopener">LICENSE</a> file and the <a href="https://www.gnu.org/licenses/gpl-3.0.html" rel="noopener">full GPL-3.0 text</a>.</p>
+          <table class="spec-table">
+            <caption>Third-party components</caption>
+            <thead><tr><th scope="col">Component</th><th scope="col">License</th></tr></thead>
+            <tbody>
+              <tr><td>PyQt6 / Qt</td><td>GPL-3.0</td></tr>
+              <tr><td>requests</td><td>Apache-2.0</td></tr>
+              <tr><td>MSAL, msal-extensions</td><td>MIT</td></tr>
+              <tr><td>PyJWT</td><td>MIT</td></tr>
+              <tr><td>cryptography</td><td>Apache-2.0 OR BSD-3-Clause</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="section alt-section" id="contributing">
+      <div class="shell split-block">
+        <div class="split-sticky">
+          <span class="chapter-number">05 / CONTRIBUTING</span>
+          <h2>Make it better.</h2>
+          <p>Bug reports, ideas and pull requests are welcome.</p>
+        </div>
+        <div>
+          <ol class="step-list">
+            <li>Fork the repository and create a feature branch.</li>
+            <li>Install <code>requirements-dev.txt</code> and make your change with tests.</li>
+            <li>Run <code>python -m pytest</code> with <code>QT_QPA_PLATFORM=offscreen</code>.</li>
+            <li>Open a pull request describing the change and why it helps.</li>
+          </ol>
+          <div class="download-actions">
+            <a class="button button-primary" href="https://github.com/priyankdalal/rest-tester" rel="noopener">Fork on GitHub <span aria-hidden="true">-&gt;</span></a>
+            <a class="text-link" href="https://github.com/priyankdalal/rest-tester/issues" rel="noopener">Report an issue</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="shell footer-grid">
+      <div class="footer-brand">
+        <a class="brand" href="./"><img src="assets/logo.png" alt="" width="28" height="28"><span>Rest<span>Tester</span></span></a>
+        <p>A desktop workbench for exploring, testing and load-testing REST APIs.</p>
+      </div>
+      <nav class="footer-col" aria-label="Product"><h2>Product</h2><a href="features.html">Features</a><a href="download.html">Get started</a><a href="about.html">About</a></nav>
+      <nav class="footer-col" aria-label="Documentation"><h2>Documentation</h2><a href="docs.html">Docs</a><a href="docs.html#grammar">Filter grammar</a><a href="docs.html#faq">FAQ</a></nav>
+      <nav class="footer-col" aria-label="Project"><h2>Project</h2><a href="https://github.com/priyankdalal/rest-tester" rel="noopener">GitHub</a><a href="https://github.com/priyankdalal/rest-tester/issues" rel="noopener">Issues</a><a href="about.html#license">License</a></nav>
+    </div>
+    <div class="shell footer-base"><span>&copy; 2026 Rest Tester contributors &middot; GPL-3.0-or-later</span><span class="footer-note">Rest Tester 2.1.0</span></div>
+  </footer>
+  <script src="script.js" defer></script>
+</body>
+</html>

@@ -14,7 +14,9 @@ measure behaviour under load. Everything runs in one native app on your machine.
 ![PyQt6](https://img.shields.io/badge/UI-PyQt6-41cd52.svg?logo=qt&logoColor=white)
 ![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)
 ![Tests](https://img.shields.io/badge/tests-pytest-0a9edc.svg?logo=pytest&logoColor=white)
+[![Website](https://img.shields.io/badge/website-rest--tester-0878f9.svg)](https://priyankdalal.github.io/rest-tester/)
 
+[Website](https://priyankdalal.github.io/rest-tester/) ·
 [Features](#features) ·
 [Quick start](#quick-start) ·
 [Screenshots](#screenshots) ·
@@ -47,6 +49,7 @@ measure behaviour under load. Everything runs in one native app on your machine.
   - [Keyboard shortcuts](#keyboard-shortcuts)
 - [Building a standalone executable](#building-a-standalone-executable)
 - [Running the tests](#running-the-tests)
+- [Project website](#project-website)
 - [Project structure](#project-structure)
 - [Contributing](#contributing)
 - [License](#license)
@@ -471,6 +474,19 @@ font directory (for example `/usr/share/fonts`).
 
 ---
 
+## Project website
+
+The website lives in [`docs/`](docs). It is plain HTML and CSS with no build step, and it reuses
+the screenshots in `docs/images/`. To publish it, open **Settings → Pages** in your GitHub
+repository, choose **Deploy from a branch**, then select your branch and the `/docs` folder. The site
+will be served at `https://<user>.github.io/rest-tester/`.
+
+If you fork the project or use a custom domain, replace the base URL in `docs/` first.
+[`docs/images/README.md`](docs/images/README.md) lists every place it appears, along with the
+screenshot and SEO conventions.
+
+---
+
 ## Project structure
 
 ```text
@@ -493,7 +509,8 @@ rest-tester/
 ├── examples/                  # demo Store API server and catalog
 ├── suites/                    # saved test suites (JSON)
 ├── data/                      # settings, local database, default catalog
-├── docs/images/               # README screenshots
+├── docs/                      # project website (GitHub Pages)
+│   └── images/                #   screenshots shared by the README and the website
 ├── tests/                     # pytest suite
 ├── RestTester.spec            # PyInstaller build definition
 ├── requirements.txt

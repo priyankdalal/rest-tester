@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Features - API Explorer, Test Suites, Data Runner &amp; Load Studio | Rest Tester</title>
+  <meta name="description" content="Tour every Rest Tester workspace: schema-driven API Explorer, regression Test Suites with rich assertions, CSV Data Runner, Load Studio with PDF reports, Catalog Builder and managed authentication.">
+  <meta name="keywords" content="API explorer, API test suite, API assertions, CSV API testing, API load test dashboard, API catalog builder, OAuth token renewal">
+  <link rel="canonical" href="https://priyankdalal.github.io/rest-tester/features.html">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta name="theme-color" content="#0878f9">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Rest Tester">
+  <meta property="og:title" content="Rest Tester features - from first request to load test">
+  <meta property="og:description" content="Schema-driven requests, regression suites, CSV data runs, load testing, a visual catalog builder and managed authentication.">
+  <meta property="og:url" content="https://priyankdalal.github.io/rest-tester/features.html">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:image" content="https://priyankdalal.github.io/rest-tester/images/load-studio-live.png">
+  <meta property="og:image:width" content="1800">
+  <meta property="og:image:height" content="1125">
+  <meta property="og:image:alt" content="Rest Tester Load Studio live dashboard">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Rest Tester features">
+  <meta name="twitter:description" content="Explorer, test suites, data runner, load studio, catalog builder and managed auth in one desktop app.">
+  <meta name="twitter:image" content="https://priyankdalal.github.io/rest-tester/images/load-studio-live.png">
+  <link rel="icon" href="assets/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&amp;family=DM+Sans:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+  <link rel="stylesheet" href="styles.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://priyankdalal.github.io/rest-tester/" },
+      { "@type": "ListItem", "position": 2, "name": "Features", "item": "https://priyankdalal.github.io/rest-tester/features.html" }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <nav class="nav shell" aria-label="Main navigation">
+      <a class="brand" href="./" aria-label="Rest Tester home">
+        <img src="assets/logo.png" alt="" width="28" height="28">
+        <span>Rest<span>Tester</span></span>
+      </a>
+      <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="site-menu">Menu</button>
+      <div class="nav-links" id="site-menu">
+        <a href="features.html" aria-current="page">Features</a>
+        <a href="docs.html">Docs</a>
+        <a href="about.html">About</a>
+        <a href="https://github.com/priyankdalal/rest-tester" rel="noopener">GitHub</a>
+        <a class="nav-cta" href="download.html">Get started <span aria-hidden="true">-&gt;</span></a>
+      </div>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="page-hero shell">
+      <nav class="breadcrumb" aria-label="Breadcrumb"><ol><li><a href="./">Home</a></li><li aria-current="page">Features</li></ol></nav>
+      <p class="eyebrow"><span class="eyebrow-dot"></span> Feature tour</p>
+      <h1>Everything between<br><em>request and release.</em></h1>
+      <p class="page-lede">Six workspaces share one catalog, one set of environments and one set of credentials. Build a request once, then verify it, repeat it with data, scale it under load and document it.</p>
+      <div class="pipeline-diagram" aria-label="Typical workflow">
+        <span>Catalog</span><b aria-hidden="true">-&gt;</b><span>API Explorer</span><b aria-hidden="true">-&gt;</b><span>Test Suite</span><b aria-hidden="true">-&gt;</b><span>Data Runner</span><b aria-hidden="true">-&gt;</b><span>Load Studio</span><b aria-hidden="true">-&gt;</b><span>PDF report</span>
+      </div>
+    </section>
+
+    <section class="section shell alt-section" id="explorer">
+      <div class="split-block">
+        <div class="split-sticky">
+          <span class="chapter-number">01 / API EXPLORER</span>
+          <h2>Build requests from the schema.</h2>
+          <p>The home workspace. Pick an endpoint from the searchable tree and Rest Tester renders the right editor for every parameter and payload field.</p>
+          <a class="text-link" href="docs.html#explorer">Explorer docs <span aria-hidden="true">-&gt;</span></a>
+        </div>
+        <div class="detail-grid">
+          <article class="detail-card"><h3>Endpoint tree</h3><p>Grouped by service and controller, with search (<kbd>Ctrl</kbd>+<kbd>L</kbd>), method and scope filters, favourites and recent endpoints.</p></article>
+          <article class="detail-card"><h3>Typed request tabs</h3><p><strong>Path</strong>, <strong>Query</strong>, <strong>Form</strong> and <strong>Payload JSON</strong> tabs with catalog defaults and samples. File fields get a Browse button.</p></article>
+          <article class="detail-card"><h3>Filter &amp; sort builders</h3><p>Only the fields the endpoint can filter or sort on, and only operators valid for each data type. Hand-edited filters parse back into the grid.</p></article>
+          <article class="detail-card"><h3>Seed data</h3><p>Fresh UUIDs, ISO dates, real enum members, two values for <code>bt</code>, several for <code>in</code> and fragments for <code>ct</code>.</p></article>
+          <article class="detail-card"><h3>Send and Verify</h3><p><kbd>Ctrl</kbd>+<kbd>Enter</kbd> sends the request and validates the response against the endpoint's response schema.</p></article>
+          <article class="detail-card"><h3>Response viewer</h3><p>Body, Headers, Timeline, Request and Validation tabs. JSON is highlighted and searchable, images preview and downloads can be saved.</p></article>
+          <article class="detail-card"><h3>Timing waterfall</h3><p>Every call is broken down into DNS, TCP connect, TLS and HTTP phases so slow hops stand out.</p></article>
+          <article class="detail-card"><h3>Reuse everywhere</h3><p>Save requests into Collections, generate cURL or Python code, or send the request straight to a suite, the Data Runner or Load Studio.</p></article>
+          <figure class="feature-shot"><img src="images/api-explorer-request.png" alt="API Explorer request workspace with typed parameters and a JSON response" width="1800" height="1125" loading="lazy" decoding="async"><figcaption>The request workspace and response viewer.</figcaption></figure>
+          <div class="shot-pair">
+            <figure class="feature-shot"><img src="images/sort-builder.png" alt="Sort builder with ordered fields and per-field direction" width="950" height="525" loading="lazy" decoding="async"><figcaption>Sort builder: ordered, per-field direction.</figcaption></figure>
+            <figure class="feature-shot"><img src="images/payload-json.png" alt="Raw JSON payload editor next to the schema-driven form" width="1800" height="1125" loading="lazy" decoding="async"><figcaption>Raw JSON is always available and authoritative.</figcaption></figure>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section shell alt-section" id="suites">
+      <div class="split-block">
+        <div class="split-sticky">
+          <span class="chapter-number">02 / TEST SUITES</span>
+          <h2>Turn requests into regression tests.</h2>
+          <p>A suite is an ordered list of cases. Each case pins one endpoint with its parameters, payload, expected status and assertions.</p>
+          <a class="text-link" href="docs.html#suites">Suite docs <span aria-hidden="true">-&gt;</span></a>
+        </div>
+        <div class="detail-grid">
+          <article class="detail-card"><h3>Body</h3><p>Contains or does not contain text; matches a regular expression.</p></article>
+          <article class="detail-card"><h3>JSON</h3><p>Field equals, not equals or contains; exists or absent; not empty; length equals, at least or at most; type is.</p></article>
+          <article class="detail-card"><h3>Headers &amp; timing</h3><p>Header equals or exists, and responds within <em>N</em> ms.</p></article>
+          <article class="detail-card"><h3>Schema</h3><p>Validate the whole response against the endpoint's response schema from the catalog.</p></article>
+          <article class="detail-card"><h3>Many cases per endpoint</h3><p>Happy path, not found and validation failure side by side. Cases can be renamed, duplicated, reordered and disabled.</p></article>
+          <article class="detail-card"><h3>Version-friendly</h3><p>Suites are plain JSON files in <code>suites/</code>, so they diff cleanly in code review.</p></article>
+          <div class="shot-pair">
+            <figure class="feature-shot"><img src="images/suite-case-result.png" alt="Per-case suite result listing each assertion and its outcome" width="1800" height="1125" loading="lazy" decoding="async"><figcaption>Assertion-by-assertion case results.</figcaption></figure>
+            <figure class="feature-shot"><img src="images/suite-timeline.png" alt="Waterfall timeline of an entire suite run" width="1800" height="1125" loading="lazy" decoding="async"><figcaption>A waterfall of the whole suite run.</figcaption></figure>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section shell alt-section" id="data-runner">
+      <div class="split-block">
+        <div class="split-sticky">
+          <span class="chapter-number">03 / DATA RUNNER</span>
+          <h2>One endpoint, every row of a CSV.</h2>
+          <p>A step-by-step wizard that turns a spreadsheet into a validated batch of requests - and keeps each execution as a portable run file.</p>
+          <a class="text-link" href="docs.html#data-runner">Data Runner docs <span aria-hidden="true">-&gt;</span></a>
+        </div>
+        <div class="detail-grid">
+          <article class="detail-card"><h3>1 &middot; Source</h3><p>Pick the service and endpoint with type-ahead search, then load a CSV file.</p></article>
+          <article class="detail-card"><h3>2 &middot; Mapping</h3><p>Bind columns to path, query, header and payload fields. Matching names map automatically; values can be parsed as JSON.</p></article>
+          <article class="detail-card"><h3>3 &middot; Validate</h3><p>Preview resolved requests and catch type or required-field problems before anything is sent.</p></article>
+          <article class="detail-card"><h3>4 &middot; Execute &amp; review</h3><p>Run with configurable concurrency, inspect each row's status, timing and response, then export.</p></article>
+          <div class="shot-pair">
+            <figure class="feature-shot"><img src="images/data-runner-source.png" alt="Data Runner source step with endpoint selection and CSV preview" width="1800" height="1125" loading="lazy" decoding="async"><figcaption>Choose an endpoint and a data source.</figcaption></figure>
+            <figure class="feature-shot"><img src="images/data-runner-mapping.png" alt="Data Runner column mapping step binding CSV columns to request fields" width="1800" height="1125" loading="lazy" decoding="async"><figcaption>Map columns onto request fields.</figcaption></figure>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="dark-section" id="load-studio">
+      <div class="shell split-block">
+        <div class="split-sticky light">
+          <span class="chapter-number">04 / LOAD STUDIO</span>
+          <h2>See how it behaves under load.</h2>
+          <p>Closed-model load tests against a single endpoint, with safety limits, pass/fail thresholds and a report that explains what it found.</p>
+          <a class="text-link" href="docs.html#load-studio">Load Studio docs <span aria-hidden="true">-&gt;</span></a>
+        </div>
+        <div class="detail-grid">
+          <article class="detail-card dark"><h3>Staged profiles</h3><p>Combine ramp-up, steady and ramp-down stages with think time to model real traffic.</p></article>
+          <article class="detail-card dark"><h3>Safety &amp; thresholds</h3><p>Cap peak virtual users, duration and timeout; set thresholds such as error rate, P95 or P99 latency.</p></article>
+          <article class="detail-card dark"><h3>Live dashboard</h3><p>Throughput, average latency, P99, errors, completed requests and active users - then min / avg / max once the run ends.</p></article>
+          <article class="detail-card dark"><h3>Report &amp; PDF</h3><p>A detailed final report with charts, diagnosed shortcomings, likely causes and fixes - exportable to PDF and saved as a reopenable SQLite run.</p></article>
+          <div class="shot-pair">
+            <figure class="feature-shot"><img src="images/load-studio-configure.png" alt="Load Studio stage configuration with ramp up, steady and ramp down" width="1800" height="1125" loading="lazy" decoding="async"><figcaption>Stage-based load profile.</figcaption></figure>
+            <figure class="feature-shot"><img src="images/load-studio-results.png" alt="Load Studio results with minimum, average and maximum for each metric" width="1800" height="1125" loading="lazy" decoding="async"><figcaption>Final min / avg / max summaries.</figcaption></figure>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section shell" id="catalog-builder">
+      <div class="split-block">
+        <div class="split-sticky">
+          <span class="chapter-number">05 / CATALOG BUILDER</span>
+          <h2>Describe your API once.</h2>
+          <p>A visual editor for the catalog that powers every other workspace - or a generator that scans your service source code for you.</p>
+          <a class="text-link" href="docs.html#catalog">Catalog docs <span aria-hidden="true">-&gt;</span></a>
+        </div>
+        <div class="detail-grid">
+          <article class="detail-card"><h3>Services &amp; endpoints</h3><p>Base URLs, methods, routes, content types, parameters and allowed-value lists.</p></article>
+          <article class="detail-card"><h3>Schemas &amp; enums</h3><p>Payload, form and response schemas with nested objects, arrays and enum members.</p></article>
+          <article class="detail-card"><h3>Filterable fields</h3><p>Declare which fields filter and sort, with Text, Number, Date, Flag or LOV types.</p></article>
+          <article class="detail-card"><h3>Generate from source</h3><p><code>python -m tools.generate_catalog</code> statically scans ASP.NET Core controllers, DTOs and entity attributes.</p></article>
+          <div class="shot-pair">
+            <figure class="feature-shot"><img src="images/catalog-builder-endpoint.png" alt="Catalog Builder endpoint editor" width="1800" height="1055" loading="lazy" decoding="async"><figcaption>Edit an endpoint visually.</figcaption></figure>
+            <figure class="feature-shot"><img src="images/catalog-builder-filter.png" alt="Catalog Builder filter entity editor with field types" width="1800" height="1055" loading="lazy" decoding="async"><figcaption>Define filterable and sortable fields.</figcaption></figure>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section shell alt-section" id="environments">
+      <div class="split-block">
+        <div class="split-sticky">
+          <span class="chapter-number">06 / ENVIRONMENTS &amp; AUTH</span>
+          <h2>Switch targets, not settings.</h2>
+          <p>Each environment owns its base URLs, variables, headers, transport settings and credentials. Managed sign-in renews tokens for you.</p>
+          <a class="text-link" href="docs.html#environments">Environment docs <span aria-hidden="true">-&gt;</span></a>
+        </div>
+        <div class="detail-grid">
+          <article class="detail-card"><h3>Microsoft identity</h3><p>Entra ID browser sign-in with PKCE, Azure AD B2C and client credentials via MSAL.</p></article>
+          <article class="detail-card"><h3>Generic OAuth 2.0</h3><p>Authorization code + PKCE, client credentials, device code, password and refresh token - Auth0, Okta, Keycloak, Google and more.</p></article>
+          <article class="detail-card"><h3>Static credentials</h3><p>Bearer token, API key in header or query, Basic, locally signed JWT bearer and Atlassian ASAP.</p></article>
+          <article class="detail-card"><h3>Transport</h3><p>Per-environment TLS verification and request timeout, plus variables substituted into requests.</p></article>
+          <div class="shot-pair">
+            <figure class="feature-shot"><img src="images/environments.png" alt="Environments page listing profiles and their base URLs" width="1800" height="1125" loading="lazy" decoding="async"><figcaption>Environment profiles.</figcaption></figure>
+            <figure class="feature-shot"><img src="images/environment-editor.png" alt="Environment editor with base URL, variables, headers, transport and authentication tabs" width="1250" height="850" loading="lazy" decoding="async"><figcaption>Five tabs per environment.</figcaption></figure>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section shell alt-section" id="experience">
+      <div class="section-heading">
+        <p class="eyebrow">Desktop polish</p>
+        <h2>Made to live in all day.</h2>
+      </div>
+      <div class="category-grid">
+        <article class="category-card"><h3>Light &amp; dark themes</h3><p>Every workspace, chart and report adapts to both themes.</p></article>
+        <article class="category-card"><h3>Responsive layout</h3><p>Panels reflow and stack at narrow widths instead of clipping.</p></article>
+        <article class="category-card"><h3>Keyboard first</h3><p><kbd>Ctrl</kbd>+<kbd>Enter</kbd>, <kbd>Ctrl</kbd>+<kbd>L</kbd> and <kbd>Alt</kbd>+<kbd>&larr;</kbd>/<kbd>&rarr;</kbd> for the most common actions.</p></article>
+        <article class="category-card"><h3>Portable runs</h3><p>Data Runner and Load Studio runs are self-contained SQLite files you can archive and share.</p></article>
+        <article class="category-card"><h3>About &amp; diagnostics</h3><p>Version, system details and licenses, with one-click copy for bug reports.</p></article>
+        <article class="category-card"><h3>Standalone build</h3><p>Package a portable executable with PyInstaller - no Python needed on the target machine.</p></article>
+      </div>
+      <figure class="feature-shot feature-shot-narrow"><img src="images/api-explorer-dark.png" alt="Rest Tester API Explorer in the dark theme" width="1800" height="1125" loading="lazy" decoding="async"><figcaption>The API Explorer in the dark theme.</figcaption></figure>
+    </section>
+
+    <section class="cta-section shell">
+      <div class="cta-card">
+        <div><p class="eyebrow">Try it on the demo API</p><h2>Five minutes from<br><em>clone to first test.</em></h2></div>
+        <div class="cta-action"><a class="button button-primary button-lg" href="download.html">Get started <span aria-hidden="true">-&gt;</span></a><small>Python 3.11+ &middot; Windows, macOS, Linux</small></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="shell footer-grid">
+      <div class="footer-brand">
+        <a class="brand" href="./"><img src="assets/logo.png" alt="" width="28" height="28"><span>Rest<span>Tester</span></span></a>
+        <p>A desktop workbench for exploring, testing and load-testing REST APIs.</p>
+      </div>
+      <nav class="footer-col" aria-label="Product"><h2>Product</h2><a href="features.html">Features</a><a href="download.html">Get started</a><a href="about.html">About</a></nav>
+      <nav class="footer-col" aria-label="Documentation"><h2>Documentation</h2><a href="docs.html">Docs</a><a href="docs.html#grammar">Filter grammar</a><a href="docs.html#faq">FAQ</a></nav>
+      <nav class="footer-col" aria-label="Project"><h2>Project</h2><a href="https://github.com/priyankdalal/rest-tester" rel="noopener">GitHub</a><a href="https://github.com/priyankdalal/rest-tester/issues" rel="noopener">Issues</a><a href="about.html#license">License</a></nav>
+    </div>
+    <div class="shell footer-base"><span>&copy; 2026 Rest Tester contributors &middot; GPL-3.0-or-later</span><span class="footer-note">Rest Tester 2.1.0</span></div>
+  </footer>
+  <script src="script.js" defer></script>
+</body>
+</html>
