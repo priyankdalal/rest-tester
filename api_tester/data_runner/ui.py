@@ -76,7 +76,7 @@ from .charts import (
 )
 from .csv_source import CsvImportSettings, CsvPreview, CsvSource
 from .dashboard_widgets import ContextCard, StatCard, WizardStepper
-from .mapping import ColumnMapping, MappingTarget, Transform, mapping_targets, template_request_values
+from .mapping import ColumnMapping, MappingTarget, RowMapper, Transform, mapping_targets, template_request_values
 from .planner import DataRunPlan, PlanIssue, build_plan
 from .runner import DataRunner, DataRunnerOptions, RunSummary
 
@@ -1150,6 +1150,53 @@ class DataRunnerTab(QWidget):
         self._template_payload = None
         if had_template:
             self._template_changed()
+
+    def load_ai_draft(
+        self, endpoint: Endpoint, values: dict[str, str], payload: Any,
+        source: CsvImportSettings, columns: tuple[str, ...],
+        mappings: tuple[ColumnMapping, ...], expected_status: str,
+    ) -> bool:
+        """Import a reviewed CSV mapping without validating or executing rows."""
+        if (self._thread is not None and self._thread.isRunning()) or self._validation_jobs:
+            raise ValueError("Finish or stop Data Runner execution/validation before opening an AI draft.")
+        if CsvSource(source).read_columns() != columns:
+            raise ValueError("CSV columns changed since planning. Choose the file and generate the plan again.")
+        RowMapper(endpoint, self.catalog, list(mappings))
+        if any(mapping.column not in columns for mapping in mappings):
+            raise ValueError("An AI mapping references an unknown CSV column.")
+        if not self.load_request(endpoint, values, payload):
+            return False
+        self.mapping_table.setRowCount(0)
+        self._mapping_rows = {}
+        self.default_expected_status.setText(expected_status)
+        self.encoding_combo.setCurrentText(source.encoding or "Auto")
+        self.delimiter_combo.setCurrentIndex(next(
+            index for index, (_, delimiter) in enumerate(_DELIMITER_CHOICES)
+            if delimiter == source.delimiter
+        ))
+        self.quotechar_edit.setText(source.quotechar)
+        self.has_header_checkbox.setChecked(source.has_header)
+        self.start_row_spin.setValue(source.start_row)
+        self.max_rows_spin.setValue(source.max_rows or 0)
+        self.skip_blank_checkbox.setChecked(source.skip_blank_rows)
+        self.csv_path.setText(source.path)
+        self._preview_timer.stop()
+        self._load_preview(interactive=False)
+        if self.preview is None:
+            raise ValueError("Could not load the CSV preview. Review the source settings in Data Runner.")
+        for mapping in mappings:
+            if mapping.target_key not in {target.key for target in self.current_targets}:
+                field_name, operator = mapping.target_key.removeprefix("filter:").rsplit(":", 1)
+                base = next(target for target in self.current_targets if target.key == f"filter:{field_name}:eq")
+                self.current_targets.append(MappingTarget(
+                    mapping.target_key, f"Filter - {field_name} ({operator})",
+                    base.group, base.required, base.clr_type, base.allowed_values,
+                ))
+            self._add_mapping_row(mapping.column, mapping.target_key, mapping.transforms)
+        self.plan = None
+        self.run_button.setEnabled(False)
+        self.steps.setCurrentIndex(1)
+        return True
 
     def has_request_template(self) -> bool:
         return self._template_endpoint_id is not None

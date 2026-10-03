@@ -387,6 +387,7 @@ class LoadTestingTab(QWidget):
             None,
         )
         self.current_endpoint = endpoint
+        self._draft_expected_status = endpoint.expected_status if endpoint is not None else "200-299"
         self._render_parameters_table()
         self._render_payload_editor()
         self._refresh_write_method_hint()
@@ -449,6 +450,43 @@ class LoadTestingTab(QWidget):
         return True
 
     # ------------------------------------------------------------------ 1. scenario page
+
+    def load_ai_draft(
+        self, endpoint: Endpoint, values: dict[str, str], payload: Any,
+        *, name: str, stages: tuple[LoadStage, ...],
+        thresholds: tuple[ThresholdDefinition, ...], expected_status: str,
+    ) -> bool:
+        """Open a load configuration without granting permissions or starting it."""
+        if self._thread is not None and self._thread.isRunning():
+            raise ValueError("Stop the current load test before opening an AI draft.")
+        if not self.load_request(endpoint, values, payload):
+            return False
+        self.payload_editor.setPlainText("" if payload is None else json.dumps(payload, indent=2))
+        self._draft_expected_status = expected_status
+        self.scenario_name_edit.setText(name)
+        self.stages_table.setRowCount(0)
+        for stage in stages:
+            self._add_stage_row(
+                kind=stage.kind, duration_seconds=stage.duration_seconds,
+                start_users=stage.start_users, end_users=stage.end_users,
+                think_time_ms=stage.think_time_ms, label=stage.label,
+            )
+        self.thresholds_table.setRowCount(0)
+        for threshold in thresholds:
+            self._add_threshold_row(
+                metric=threshold.metric, operator=threshold.operator,
+                target=threshold.target, label=threshold.label,
+            )
+        self.environment_permits_checkbox.setChecked(False)
+        self.confirmed_write_checkbox.setChecked(False)
+        self.confirm_checkbox.setChecked(False)
+        self.auth_failure_stop_checkbox.setChecked(True)
+        self.plan = None
+        self.scenario = None
+        self.start_button.setEnabled(False)
+        self._refresh_scenario_section_summaries()
+        self.steps.setCurrentIndex(0)
+        return True
 
     def _build_scenario_page(self) -> QWidget:
         accordion = AccordionScrollArea(content_margins=(4, 4, 4, 4))
@@ -1102,7 +1140,7 @@ class LoadTestingTab(QWidget):
             path=self.current_endpoint.path,
             values=values,
             payload=payload,
-            expected_status=self.current_endpoint.expected_status,
+            expected_status=self._draft_expected_status,
         )
 
         if self.stages_table.rowCount() == 0:

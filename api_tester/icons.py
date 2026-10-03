@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from typing import Literal
 
 from PyQt6.QtCore import QPointF, QRectF, Qt
 from PyQt6.QtGui import (
@@ -25,6 +26,23 @@ APP_ICON_SIZES = (16, 24, 32, 48, 64, 128, 256)
 
 _ICON_TOP = "#3a97ff"
 _ICON_BOTTOM = "#0058c7"
+
+BulbColor = Literal["grey", "green", "red", "orange", "yellow", "blue"]
+
+
+def light_bulb_icon(color: BulbColor = "yellow", size: int = 18) -> QIcon:
+    """Reusable status bulb with named colours; use icon() for a custom colour."""
+    from . import theme
+
+    colors: dict[BulbColor, str] = {
+        "grey": theme.SKIP,
+        "green": theme.PASS,
+        "red": theme.FAIL,
+        "orange": theme.WARN,
+        "yellow": "#eab308",
+        "blue": theme.PRIMARY,
+    }
+    return icon("light-bulb", colors[color], size)
 
 
 def app_pixmap(size: int = 256) -> QPixmap:
@@ -273,6 +291,10 @@ def icon(name: str, color: str = "#65758B", size: int = 18) -> QIcon:
         painter.drawEllipse(QRectF(5.5, 2, 7, 14))
         painter.drawLine(QPointF(2.5, 7), QPointF(15.5, 7))
         painter.drawLine(QPointF(2.5, 11), QPointF(15.5, 11))
+    elif name == "arrow-up":
+        painter.drawLine(QPointF(9, 15), QPointF(9, 3))
+        painter.drawLine(QPointF(9, 3), QPointF(4, 8))
+        painter.drawLine(QPointF(9, 3), QPointF(14, 8))
     elif name == "send":
         painter.drawLine(QPointF(2, 3), QPointF(16, 9))
         painter.drawLine(QPointF(16, 9), QPointF(2, 15))
@@ -327,6 +349,14 @@ def icon(name: str, color: str = "#65758B", size: int = 18) -> QIcon:
         painter.drawRoundedRect(QRectF(7, 3, 9, 5), 1.4, 1.4)
         painter.drawLine(QPointF(2.5, 12.5), QPointF(4.5, 12.5))
         painter.drawRoundedRect(QRectF(7, 10, 9, 5), 1.4, 1.4)
+    elif name == "sparkles":
+        for cx, cy, radius in ((7.0, 10.0, 5.5), (14.0, 4.0, 2.5)):
+            painter.drawPolygon(QPolygonF([
+                QPointF(cx, cy - radius), QPointF(cx + radius * 0.28, cy - radius * 0.28),
+                QPointF(cx + radius, cy), QPointF(cx + radius * 0.28, cy + radius * 0.28),
+                QPointF(cx, cy + radius), QPointF(cx - radius * 0.28, cy + radius * 0.28),
+                QPointF(cx - radius, cy), QPointF(cx - radius * 0.28, cy - radius * 0.28),
+            ]))
     elif name == "settings":
         painter.drawPolygon(_cog_polygon())
         painter.drawEllipse(QPointF(9.0, 9.0), 2.5, 2.5)
@@ -522,6 +552,20 @@ def icon(name: str, color: str = "#65758B", size: int = 18) -> QIcon:
         painter.drawLine(QPointF(4, 4), QPointF(5.5, 5.5))
         painter.drawLine(QPointF(15.5, 8), QPointF(17, 9.5))
         painter.drawLine(QPointF(17, 9.5), QPointF(15.5, 11))
+    elif name == "light-bulb":
+        bulb = QPainterPath()
+        bulb.moveTo(6, 12)
+        bulb.lineTo(6, 10.5)
+        bulb.cubicTo(2, 7.5, 3.5, 2, 9, 2)
+        bulb.cubicTo(14.5, 2, 16, 7.5, 12, 10.5)
+        bulb.lineTo(12, 12)
+        bulb.closeSubpath()
+        painter.drawPath(bulb)
+        painter.drawLine(QPointF(6, 14), QPointF(12, 14))
+        painter.drawLine(QPointF(7.5, 16), QPointF(10.5, 16))
+        painter.drawLine(QPointF(9, 12), QPointF(9, 8))
+        painter.drawLine(QPointF(7, 7), QPointF(9, 9))
+        painter.drawLine(QPointF(9, 9), QPointF(11, 7))
     elif name == "warning":
         painter.drawPolygon(
             QPolygonF([QPointF(9, 2), QPointF(16.5, 15.5), QPointF(1.5, 15.5)])

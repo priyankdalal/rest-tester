@@ -14,7 +14,7 @@ import pytest
 DOCS = Path(__file__).resolve().parent.parent / "docs"
 BASE_URL = "https://priyankdalal.github.io/rest-tester/"
 SITE_PREFIX = "/rest-tester/"
-INDEXABLE = ["index.html", "features.html", "docs.html", "download.html", "about.html"]
+INDEXABLE = ["index.html", "features.html", "docs.html", "ai.html", "download.html", "about.html"]
 ALL_PAGES = INDEXABLE + ["404.html"]
 
 
@@ -161,6 +161,30 @@ def test_titles_and_descriptions_are_unique():
     pages = [_parse(name) for name in INDEXABLE]
     assert len({p.title for p in pages}) == len(pages)
     assert len({p.meta["description"] for p in pages}) == len(pages)
+
+
+@pytest.mark.parametrize("name", ALL_PAGES)
+def test_ai_guide_is_discoverable(name):
+    assert any(ref.endswith("ai.html") for ref in _parse(name).refs)
+
+
+def test_ai_guide_covers_workflows_and_publishes_handbook():
+    page = _parse("ai.html")
+    assert {"setup", "request", "suite", "data", "load", "privacy", "tokens",
+            "activity", "troubleshooting", "developer"} <= page.ids
+    published = DOCS / "guides" / "AI-Implementation-Guide.pdf"
+    source = DOCS.parent / "roadmaps" / "ai-integration" / published.name
+    assert published.read_bytes().startswith(b"%PDF-")
+    assert published.read_bytes() == source.read_bytes()
+
+
+@pytest.mark.parametrize("name", ALL_PAGES)
+def test_website_omits_filter_sort_grammar_and_builder_screenshots(name):
+    page = _parse(name)
+    assert "grammar" not in page.ids
+    assert not any(ref.endswith("#grammar") for ref in page.refs)
+    assert not any(image.get("src") in {"images/query-builder.png", "images/sort-builder.png"}
+                   for image in page.images)
 
 
 def test_not_found_page_is_not_indexed():

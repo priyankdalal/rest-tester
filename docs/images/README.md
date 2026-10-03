@@ -32,9 +32,11 @@ manually.
 
 | File | Purpose |
 |---|---|
-| `index.html` | Home page: hero, gallery, workspaces, filter grammar |
+| `index.html` | Home page: hero, gallery and workspaces |
 | `features.html` | Feature tour, one section per workspace |
 | `docs.html` | Full documentation and FAQ (FAQPage structured data) |
+| `ai.html` | Dedicated AI guide: setup, four modes, privacy, tokens, diagnostics and troubleshooting |
+| `guides/AI-Implementation-Guide.pdf` | Published copy of the illustrated implementation handbook |
 | `download.html` | Install, demo API and standalone build (HowTo structured data) |
 | `about.html` | Principles, technology, license and contributing |
 | `404.html` | Not-found page (`noindex`) |
@@ -44,13 +46,37 @@ manually.
 
 ## Screenshot rules
 
-- Capture at the same window size as the existing images (most are 1800×1125) so the gallery stays aligned.
+- Use a consistent size per screen family: the refreshed Explorer is 1440×1000, builders 1160×540,
+  AI composer 1000×900 and AI Settings/Usage 1100×760. Older workspace captures retain their original sizes.
 - Every `<img>` on the site has `width` and `height` attributes matching the file's real pixel size. This
   prevents layout shift. Update them whenever a screenshot is replaced with one of a different size.
 - Give every screenshot descriptive `alt` text. The sitemap reuses it as the image title.
 - Use `loading="lazy"` and `decoding="async"` on every image below the fold.
 - `assets/og-image.png` is the social preview. It is a 1200×630 crop of `api-explorer.png`; regenerate it when
   the API Explorer changes noticeably.
+
+### Recreate the current captures
+
+The 3 October 2026 refresh covers Explorer (light, dark and disabled state), filter/sort builders,
+all four AI modes, Activity, named provider settings and usage. AI plans and token counts are scripted
+offline examples, not live model output or execution results. Never capture real secrets or confidential data.
+
+From the repository root, with the application's Python environment:
+
+```powershell
+$env:QT_QPA_PLATFORM = "offscreen"
+python -m tools.capture_documentation
+python -m tools.update_website_assets --date 2026-10-03
+python -m pytest tests/test_website.py -n 4 --dist loadfile
+```
+
+The capture tool uses temporary settings/databases, the demo Store catalog and a fake provider.
+It also refreshes the 1200×630 social image. The metadata tool updates HTML image dimensions,
+regenerates the sitemap and copies the handbook into the Pages-served `docs/guides/` directory.
+Use the actual refresh date for later updates. It is not necessary to run a demo server.
+
+The website and repository README intentionally omit the filter/sort grammar section and builder
+screenshots. The image files remain as capture assets; do not re-add them to either gallery.
 
 ## Keep in sync
 
@@ -63,3 +89,7 @@ When you add, remove or rename a page or screenshot, update:
 The test `tests/test_website.py` checks all of this: local links and images resolve, image sizes match their
 attributes, each page has a title, description, canonical URL, Open Graph tags, valid JSON-LD and exactly one
 `<h1>`, and the sitemap lists every indexable page and image.
+
+It also checks AI navigation on every page, coverage of all four workflows, and that the published PDF
+matches its source artifact. When changing the base URL, update `tools/update_website_assets.py` and
+`tests/test_website.py` as well so regeneration and validation retain the correct project prefix.
