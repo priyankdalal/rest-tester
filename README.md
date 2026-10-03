@@ -14,11 +14,14 @@ measure behaviour under load. Everything runs in one native app on your machine.
 ![PyQt6](https://img.shields.io/badge/UI-PyQt6-41cd52.svg?logo=qt&logoColor=white)
 ![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)
 ![Tests](https://img.shields.io/badge/tests-pytest-0a9edc.svg?logo=pytest&logoColor=white)
+[![Website](https://img.shields.io/badge/website-rest--tester-0878f9.svg)](https://priyankdalal.github.io/rest-tester/)
 
+[Website](https://priyankdalal.github.io/rest-tester/) ·
 [Features](#features) ·
 [Quick start](#quick-start) ·
 [Screenshots](#screenshots) ·
 [Documentation](#documentation) ·
+[AI guide](https://priyankdalal.github.io/rest-tester/ai.html) ·
 [Contributing](#contributing) ·
 [License](#license)
 
@@ -36,17 +39,18 @@ measure behaviour under load. Everything runs in one native app on your machine.
 - [Screenshots](#screenshots)
 - [Documentation](#documentation)
   - [API Explorer](#api-explorer)
-  - [Filter and sort grammar](#filter-and-sort-grammar)
   - [Test Suites](#test-suites)
   - [Data Runner](#data-runner)
   - [Load Studio](#load-studio)
   - [Catalog Builder](#catalog-builder)
   - [Environments and authentication](#environments-and-authentication)
+  - [Ask AI (local or hosted LLM)](#ask-ai-local-or-hosted-llm)
   - [The API catalog format](#the-api-catalog-format)
   - [Local data storage](#local-data-storage)
   - [Keyboard shortcuts](#keyboard-shortcuts)
 - [Building a standalone executable](#building-a-standalone-executable)
 - [Running the tests](#running-the-tests)
+- [Project website](#project-website)
 - [Project structure](#project-structure)
 - [Contributing](#contributing)
 - [License](#license)
@@ -65,8 +69,9 @@ uses it to build the right UI for every endpoint:
   sort on, and only the operators that make sense for each field's type.
 - **Testing is built in.** You go from an ad-hoc request to a saved regression case in one click,
   then to a data-driven batch or a load test.
-- **Private and local.** No account and no cloud sync. Requests go straight from your machine to
-  your API, and history lives in a local SQLite file.
+- **Local workspaces, optional hosted AI.** No workbench account or cloud sync. API requests go
+  straight from your machine to your API, and history lives in local SQLite files. Opting into
+  hosted AI sends sanitized prompts and selected catalog context to your configured provider.
 
 ---
 
@@ -80,6 +85,7 @@ uses it to build the right UI for every endpoint:
 | ⚡ | **Load Studio** | Closed-model load tests with ramp-up, steady and ramp-down stages and safety limits. It shows a live dashboard (throughput, latency percentiles, errors, virtual users), a detailed final report and PDF export. Runs can be saved and reopened. |
 | 🛠️ | **Catalog Builder** | Creates and edits the catalog: services, endpoints, parameters, schemas, allowed values and filter/sort fields. It can also scan ASP.NET Core service repositories to generate a catalog. |
 | 🌐 | **Environments** | Per-environment base URLs, variables, custom headers, TLS and timeout settings, plus managed authentication (OAuth 2.0, Microsoft Entra/B2C, API keys, JWT and more) with automatic token renewal. |
+| ✦ | **Ask AI** | Catalog-aware drafts for **Single request**, **Test Suite**, **Data Runner** and **Load Testing**. Named Ollama, Azure OpenAI, OpenAI, Claude and Sarvam AI connections; bounded repairs, Activity diagnostics, token details and usage history. Review a validated draft, open it in its native workspace, then explicitly Send or Run. [AI guide](https://priyankdalal.github.io/rest-tester/ai.html). |
 | 🎨 | **Polished desktop UX** | Light and dark themes, a responsive layout and keyboard shortcuts. An About dialog shows version, system and license details. |
 
 ---
@@ -125,7 +131,7 @@ python run.py
 
 ### 4. Load the demo catalog
 
-1. Open **Settings → API catalog → Load catalog…** and choose `examples/store_catalog.json`.
+1. Click the **Settings** gear in the top toolbar, immediately after the theme button, then open **API catalog → Load catalog…** and choose `examples/store_catalog.json`.
 2. Each environment's base URLs are pre-filled from the catalog (for example
    `http://127.0.0.1:8765/catalog/v1/`). Change them under **Environments** if you started the
    demo server on another port.
@@ -138,14 +144,15 @@ That's it: you're exploring a fully described API.
 
 ## Screenshots
 
+Explorer, query/sort builders and AI screenshots were refreshed on **3 October 2026**.
+AI examples use the demo Store catalog, synthetic plans and illustrative usage from an
+offline fake provider. No model or test API was called to capture them; other screenshots
+illustrate the existing workspaces.
+
 <table>
   <tr>
     <td width="50%"><img src="docs/images/api-explorer-request.png" alt="Request builder"><br><sub><b>API Explorer</b>: endpoint tree, request builder and response viewer</sub></td>
     <td width="50%"><img src="docs/images/api-explorer-dark.png" alt="Dark theme"><br><sub><b>Dark theme</b>: every workspace supports light and dark</sub></td>
-  </tr>
-  <tr>
-    <td><img src="docs/images/query-builder.png" alt="Query builder"><br><sub><b>Query builder</b>: only the filterable fields and valid operators</sub></td>
-    <td><img src="docs/images/sort-builder.png" alt="Sort builder"><br><sub><b>Sort builder</b>: ordered, per-field direction</sub></td>
   </tr>
   <tr>
     <td><img src="docs/images/payload-form.png" alt="Payload form"><br><sub><b>Payload form</b>: rendered from the payload schema</sub></td>
@@ -191,7 +198,7 @@ tabs. The request itself is edited in four sub-tabs:
 | Request tab | Purpose |
 |---|---|
 | **Path** | Path parameters with typed editors and catalog defaults. |
-| **Query** | Query parameters. `Filter` and `Sort` rows open the [filter and sort builders](#filter-and-sort-grammar). |
+| **Query** | Query parameters. `Filter` and `Sort` rows open their schema-driven builders. |
 | **Form** | `multipart/form-data` fields. File fields get a **Browse…** button. |
 | **Payload JSON** | The raw body. **Payload fields** opens a schema-driven form that writes back to the JSON. |
 
@@ -216,43 +223,6 @@ tabs. JSON is syntax-highlighted, images are previewed and file downloads can be
 **timeline** breaks each call into a DNS, TCP connect, TLS and HTTP waterfall.
 
 <p align="center"><img src="docs/images/api-explorer-request.png" alt="API explorer request" width="85%"></p>
-
-### Filter and sort grammar
-
-Rest Tester encodes filters in a compact, URL-friendly grammar that the query builder writes
-for you. You can also type it by hand; edits parse back into the builder grid.
-
-```text
-Filter = Name__op:=value          one condition
-         A;B                      A AND B
-         A|B                      A OR  B
-Sort   = Name,CreatedDate-        comma separated, trailing "-" = descending
-```
-
-| Operator | Meaning | Example |
-|---|---|---|
-| `eq` / `neq` | equals / not equals | `Status__eq:=Active` |
-| `gt` / `gte` / `lt` / `lte` | comparisons | `Price__gte:=10` |
-| `bt` | between (two values) | `Price__bt:=10,50` |
-| `in` / `nin` | in list / not in list | `Name__in:=Desk,Lamp` |
-| `ct` / `nct` | contains / does not contain | `Name__ct:=lamp` |
-| `sw` / `ew` | starts with / ends with | `Sku__sw:=SKU-1` |
-
-The operators offered depend on the field's data type, and only fields the catalog marks as
-filterable or sortable appear:
-
-| Data type | Operators |
-|---|---|
-| Text | `eq` `neq` `ct` `nct` `sw` `ew` `in` `nin` |
-| Number | `eq` `neq` `gt` `lt` `gte` `lte` `in` `nin` `bt` |
-| Date | `eq` `neq` `gt` `lt` `gte` `lte` `bt` |
-| Flag (boolean) | `eq` `neq` |
-| LOV (enum) | `eq` `neq`, with values chosen from the real enum members |
-
-<p align="center">
-  <img src="docs/images/query-builder.png" alt="Query builder" width="49%">
-  <img src="docs/images/sort-builder.png" alt="Sort builder" width="49%">
-</p>
 
 ### Test Suites
 
@@ -364,6 +334,267 @@ Managed authentication obtains tokens and **renews them automatically**:
   <img src="docs/images/environment-editor.png" alt="Environment editor" width="36%">
 </p>
 
+### Ask AI (local or hosted LLM)
+
+**Start here:** [Dedicated AI documentation](https://priyankdalal.github.io/rest-tester/ai.html)
+covers provider setup, all four workflows, privacy, token limits, usage and troubleshooting.
+For architecture, code examples and diagrams, read the
+[illustrated implementation handbook](roadmaps/ai-integration/AI-Implementation-Guide.pdf).
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/ai-request.png" alt="Current Ask AI single-request draft"><br><sub>Single request: validate, review, then open.</sub></td>
+    <td width="50%"><img src="docs/images/ai-suite.png" alt="Current Ask AI suite draft"><br><sub>Test Suite: cases, assertions, captures and cleanup.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/ai-data.png" alt="Current AI CSV mapping plan"><br><sub>Data Runner: headers only, never CSV rows.</sub></td>
+    <td><img src="docs/images/ai-load.png" alt="Current AI load-test profile"><br><sub>Load Testing: a draft does not grant execution approval.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/ai-settings.png" alt="Named AI provider profiles"><br><sub>Five providers, one active connection.</sub></td>
+    <td><img src="docs/images/ai-usage.png" alt="Metadata-only AI usage dashboard"><br><sub>Illustrative recorded usage, not provider billing.</sub></td>
+  </tr>
+</table>
+
+Press the **sparkles icon (Ask AI)** in the header (or `Ctrl+K`) and describe the request.
+An unavailable connection opens AI Settings first:
+
+> *List brands whose name starts with Pi, Z to A, 10 per page*
+
+The minimalist prompt window puts **AI plan** above a Copy / Open action row
+and a compact prompt composer. A yellow light-bulb icon beside a muted warning at the top reminds you that AI can
+make mistakes: review the plan before execution. Nothing will run without your approval.
+Its test selector offers **Single request**, **Test Suite**, **Data Runner**, and **Load Testing**.
+The composer shows
+the active provider/model as a read-only label and a connection dot: blue when connected,
+grey otherwise. The gear beside the provider label opens **AI Settings** directly;
+it is disabled during generation. Providers can also be changed through
+**Settings → AI Settings** in the main window.
+Press the arrow button or `Ctrl+Enter` to generate. Cancel stops subsequent processing
+cooperatively; an in-flight non-streaming model call may finish and still incur usage.
+Example cards, extra headings, and the unused change-summary row are omitted.
+
+**AI Data Runner.** Select Data Runner and **Choose CSV** before asking for a plan,
+for example "Map this CSV to create brands using BrandName for the name". The planner
+receives only column names, never CSV row values or the local file path, and proposes
+catalog-aware mappings and transformations plus a base request. Review the plan and
+use **Open in Data Runner** to replace the current draft after confirmation. The CSV
+headers are checked again at hand-off. Review mappings and use the native validation
+step before Run; planning and opening a draft do not execute any endpoint.
+
+**AI Load Testing.** Describe a single endpoint, virtual-user stages, think time, and
+optional thresholds, for example "Load test the brands list: ramp from 1 to 10 users
+over 30 seconds, then hold for 60 seconds; P95 below 500 ms". The plan uses the studio's
+supported closed virtual-user model and warm-up/ramp-up/steady/ramp-down stages.
+Stage SLA participation uses native defaults; explicit overrides are rejected
+both when parsing AI output and when revalidating an existing workflow draft.
+**Open in Load Testing** transfers the editable request, stages, and thresholds after
+confirmation. Environment permission, write-endpoint consent, and pre-run approval
+are cleared, never granted by AI. Review safety limits and build the native summary
+before explicitly starting. Open arrival-rate and multi-target scenarios are not supported.
+
+The assistant answers with a plan, not a sent request:
+
+| Plan part | Example |
+|---|---|
+| Endpoint | `GET /Brand`, MasterData `Brand.GetAllBrands` |
+| Parameters | `PageSize = 10` |
+| Filters | Name starts with Pi → `Filter=Name__sw:=Pi` |
+| Sort | Name descending → `Sort=Name-` |
+| Assumptions / warnings | e.g. "This DELETE request changes data on the server." |
+
+**Open in API Explorer** loads the plan as an editable draft; you review it and press Send as usual.
+
+**Token usage.** **Token details** below the composer is always clickable. Before a model
+response, it explains that usage is not available yet.
+It opens a per-call table with input/output/total tokens, purpose, time, and status for this
+generation (including repair/refinement calls); **Copy usage** copies the
+breakdown as JSON. Both single-request and test-suite planning use this view.
+These are consumed tokens, not a percentage of the model's context capacity. Missing
+provider counts and invalid responses whose usage was unavailable show **Not reported**,
+not invented zeros. Local models have no cloud API charge; hosted cost is not estimated
+without configured pricing. Previous prompts and connection checks are excluded.
+Hosted invalid or truncated responses retain provider-reported token counts when
+available, so failed generation is included in usage instead of discarded.
+
+**Activity.** Toggle Activity below the composer to inspect timestamped execution
+diagnostics while planning: retrieval counts, endpoint selection, model-call duration,
+tokens, provider-reported finish reason, validation issue locations/codes, and refinement
+or failure events. Copy activity exports the visible sanitized log. It is not private
+model reasoning and does not include prompts or raw provider responses. Logs are bounded
+to 300 lines, kept only in session memory, and restored with notification results.
+A hosted structured response reports token-limit truncation when the provider's
+finish reason identifies it, even if the returned text is parseable JSON.
+Planning stops immediately rather than repeating the same budget. Ordinary
+non-truncated JSON/validation errors still use the configured repair rounds.
+Suite refinement adds each missing detailed endpoint card once, keyed by catalog
+endpoint ID, even when several cases use the same endpoint. Assertion values are
+literal comparisons; `{{variables}}` in assertions are reported for repair rather
+than substituted (request parameters and payloads still support variables).
+Failure diagnostics include reported tokens and whether final text was empty or
+non-empty, not the raw content; unavailable finish reasons are not guessed.
+
+<p align="center"><img src="docs/images/ai-activity.png" alt="Sanitized AI Activity diagnostics in the current composer" width="70%"></p>
+
+**Token controls are not spending limits.** Per-call output ceilings are 2,000 tokens
+for requests, 4,000 for Data Runner/Load Testing, and 6,000 for suites. The default
+allows two repairs after the initial call. Each attempt can consume input and output
+tokens again. Ollama's default context window is 16,384; there is no exact local
+provider-tokenizer preflight. There is no daily quota or hard monetary budget: use
+your provider's spending controls for financial limits.
+
+**Implementation handbook.** The beginner-friendly
+[AI Implementation Guide (PDF)](roadmaps/ai-integration/AI-Implementation-Guide.pdf)
+explains all four workflows, components, diagrams, examples, token controls,
+usage accounting, safety boundaries and failure corrections. An
+[HTML version](roadmaps/ai-integration/AI-Implementation-Guide.html) is included.
+Rebuild locally with `python roadmaps/ai-integration/build-implementation-guide.py`
+(requires Microsoft Edge or Chrome; no additional Python package or cloud call).
+The generated function index reflects the source snapshot at build time.
+
+**Usage history.** Open **Settings → AI Usage** for persistent app-recorded totals by
+connection. Filter by Today, Last 7 days, Last 30 days, This session, or All recorded;
+click Refresh to pick up new calls. The overview shows tokens, model calls, and validated
+ready plans. **Export usage** saves the filtered per-call records as CSV.
+History includes planning, repair/refinement calls and hosted connection checks, including
+startup checks. Ollama model-list checks consume no generation tokens and are excluded.
+Missing counts are marked unreported, and partial totals are labelled accordingly.
+The ledger records connection/model identity, timestamps, purpose, counts, duration and
+status—not prompts, keys, endpoint URLs or responses. Deleted connections retain their
+history. Recording starts with this version; earlier usage cannot be reconstructed.
+This dashboard is not provider-wide billing or quota reporting; hosted cost is not estimated.
+
+**Test suite mode.** Switch the dialog to **Test suite** and describe a scenario:
+
+> *Create a brand, read it back, rename it with PATCH, verify the new name, then delete it and confirm it is gone*
+
+The preview lists every case in run order: method and path, expected status, dependencies,
+parameters, filters, sort, body, checks (`json_equals`, `json_exists`, `response_schema`, ...) and
+captures such as `brandId ← $.Id`. **Open in Test Suites** loads the suite unsaved and not yet run.
+If Test Suites already has cases, you choose **Replace** or **Append**.
+
+Each case goes through the same request validator. On top of that, the suite validator checks:
+
+- Case keys are unique.
+- Every `{{variable}}` is captured by an earlier case or defined as a suite variable. A missing
+  dependency on the capturing case is added automatically.
+- Dependencies exist and contain no cycles, and normal cases never depend on cleanup cases.
+- Assertion kinds and values are valid, and response paths exist in the endpoint's response schema
+  when one is declared.
+- Delete or "undo" cases run in the always-run cleanup phase.
+
+A suite request costs several model calls. On a CPU-only machine, expect several minutes.
+
+**Settings window.** Click the gear immediately after the theme button in the top toolbar.
+Settings opens as a separate window, with a left navigation rail:
+
+- **Catalog** holds the catalog heading, descriptions, current catalog details, and all four
+  actions: Load catalog, Reload, Use bundled catalog, and Open Catalog Builder.
+- **AI Settings** manages named connections like environments. You can configure several
+  Ollama servers/models, Azure deployments, OpenAI, Claude, or Sarvam AI accounts—even multiple
+  connections for the same provider. Each has its own endpoint, model, key and hosted consent.
+  The initial view is a table with **Use**, **Connection**, **Provider**, **Model / Endpoint**,
+  and **Actions** columns, matching the Environments workspace.
+- **Add provider** opens a new connection editor. Use a row's **Edit** action (or double-click
+  the row) to change its configuration. **Save** persists the connection; **Cancel** discards
+  its draft, including a newly added connection. The name field renames a connection.
+- Tick a row's **Use** box to activate it. Exactly **one** connection is active for Ask AI;
+  selecting or editing a row does not change that. The active row's tick stays selected.
+  Use another connection before deleting the active one. **Delete** asks for confirmation
+  and removes the saved connection and its unused encrypted key.
+  Ask AI displays the active connection name/provider/model.
+  **Test connection** in the editor checks the draft without saving or activating it.
+  On startup, Rest Tester checks the saved active connection in the background. The
+  icon is grey and static if no connection is configured, while checking, or if the
+  connection fails. A healthy idle connection has a solid blue icon. While a prompt
+  is executing a thin blue arc rotates around the stationary sparkles once every
+  1.5 seconds, and disappears when execution finishes. The check also repeats
+  after AI settings change. Clicking an unavailable icon opens AI Settings.
+  Hosted startup checks send a tiny billed completion when hosted consent is enabled.
+  Completed, failed, or cancelled AI generations add a bell notification. Clicking
+  one opens a read-only Ask AI result window for that exact prompt, including its
+  preview and usage, without rerunning it or interrupting another active generation.
+  Copy/open-plan actions remain available for usable results. These result snapshots
+  remain in memory for this app session, bounded to the notification history size.
+  Inactive connections may be saved as unfinished drafts; their missing endpoint or model
+  does not block saving another connection. Full validation applies when activating or
+  testing a connection, and the active connection must remain valid.
+
+| Provider | Configuration |
+|---|---|
+| Ollama | Server URL (default `http://localhost:11434`), installed model tag, reasoning toggle, and context window. Test connection lists installed models. |
+| Azure OpenAI | Resource base URL (`https://<resource>.openai.azure.com`), deployment name, API version, and API key. Use a chat deployment supporting JSON mode. |
+| OpenAI | API base URL (default `https://api.openai.com/v1`), model ID supporting JSON mode, and API key. |
+| Claude / Anthropic | API base URL (default `https://api.anthropic.com`), model ID, and API key. Plans use structured tool output. |
+| Sarvam AI | API base URL (default `https://api.sarvam.ai/v1`), model ID (default `sarvam-105b`), and API subscription key. Plans use JSON mode. Optional environment-variable binding: `SARVAM_API_KEY`. |
+
+Sarvam connection checks explicitly disable reasoning, allow up to 128 output
+tokens, and use a minimum 30-second timeout so a tiny probe does not exhaust its
+budget before producing final text. Sarvam structured plan generation also disables
+reasoning, retaining the existing 2,000-token request, 4,000-token Data/Load and
+6,000-token suite budgets. Non-structured calls retain default reasoning.
+An empty answer remains a failed check, with a safe explanation
+of truncation, filtering, or the reported stop condition; only a successful check
+activates the AI toolbar icon.
+
+OpenAI and Azure OpenAI checks use `max_completion_tokens`; Claude uses
+`max_tokens`. These probes allow up to 4,096 tokens and a minimum 60-second
+timeout, leaving room for models whose default thinking consumes tokens before
+the final answer. Probes omit temperature and do not force a reasoning setting:
+support varies by model, and Azure deployment names do not identify the underlying
+model. Other providers' normal planning settings are unchanged. These are application-selected
+caps, not provider-prescribed limits or guarantees; hosted checks remain billed
+for actual usage and do not automatically retry or increase the budget.
+
+Ollama checks use `GET /api/tags` to confirm the configured model is available
+without generating an answer or loading it into memory. Malformed/non-JSON model
+lists are reported as failures. This checks availability, not inference quality.
+
+Provider references:
+[OpenAI reasoning](https://developers.openai.com/api/docs/guides/reasoning),
+[OpenAI parameter compatibility](https://developers.openai.com/api/docs/guides/latest-model/gpt-5.4),
+[Azure reasoning](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/reasoning),
+[Claude thinking](https://platform.claude.com/docs/en/build-with-claude/thinking),
+[Claude Messages](https://platform.claude.com/docs/en/api/messages/create),
+[Ollama model list](https://docs.ollama.com/api/tags).
+
+For local AI, install [Ollama](https://ollama.com), pull a structured-output model
+(for example `ollama pull qwen3:14b`), and keep it running. Enter its model tag in AI Settings.
+For hosted AI, enter a key per connection, or set an environment variable before starting
+Rest Tester and enter its name in **Key environment variable**. This allows separate keys for
+multiple accounts of the same provider. That variable's value takes precedence over the
+connection's saved key. Keys entered in Settings are saved separately with OS-backed encryption,
+not in the JSON settings file. Existing single-provider settings and keys are migrated
+automatically; conventional `AZURE_OPENAI_API_KEY`, `OPENAI_API_KEY`, and `ANTHROPIC_API_KEY`
+bindings are retained for migrated connections.
+Enable **Allow prompts and selected API catalog metadata to be sent to hosted AI** before using
+a cloud provider. **Test connection** makes a small billed request for hosted providers; it does
+not invoke a test endpoint. A valid connection still requires a model compatible with planning.
+Request timeout and maximum repair rounds are shared across providers.
+
+**How it stays accurate.** The model never guesses from memory:
+
+1. Rest Tester searches the loaded catalog locally and sends the model only the best-matching
+   endpoints, including their real parameters, filterable fields, operators, enum values and payload fields.
+2. The answer is constrained to a JSON schema, and the endpoint must be one of those candidates.
+3. A validator checks every field, operator, enum value, sort field, parameter type and payload
+   key against the catalog. It fixes harmless slips (letter case, `contains` → `ct`, a body on a GET),
+   then sends anything else back to the model with the valid options, for up to two repair rounds.
+4. A required path parameter left empty gets one targeted follow-up.
+
+**Privacy.** Ollama runs locally. Hosted providers receive your prompt and selected catalog
+metadata; do not use them for confidential data. Before each call, the access token, API key,
+environment variable values, custom header values and auth-profile secrets are masked, along with
+anything that looks like a JWT, bearer token or key. Settings are stored in `data/ai_settings.json`;
+encrypted hosted keys live separately in `data/ai_credentials/` (excluded from Git).
+
+**Speed.** A 36B model on a workstation GPU typically answers in 25–60 seconds; the first request
+also loads the model. On CPU only, a single request can take minutes and a suite 5–20 minutes.
+The request timeout (`timeout_seconds`, default 600) and the model context size
+(`context_window`, default 16384, sent as Ollama `num_ctx`) live in `data/ai_settings.json`.
+You can keep working while it runs. Closing the dialog doesn't stop the plan,
+and **Cancel** abandons it.
+
 ### The API catalog format
 
 A catalog is a single JSON file. An abridged example:
@@ -416,6 +647,9 @@ The Catalog Builder reads and writes this format, so you rarely need to edit it 
 | Data | Location | Notes |
 |---|---|---|
 | Settings and environments | `data/settings.json` | Catalog path, theme and environment profiles. |
+| Ask AI settings | `data/ai_settings.json` | Named connections, one active connection ID, and planner options. No secrets. |
+| Hosted AI keys | `data/ai_credentials/` | OS-encrypted API keys, excluded from Git. Environment variables can be used instead. |
+| AI usage history | `data/ai_usage.db` | Persistent metadata-only call ledger, excluded from Git. |
 | History, saved requests, collections | `data/workspace.db` (SQLite) | History older than 100 days is pruned automatically. |
 | Test suites | `suites/*.json` | Plain JSON, friendly to version control. |
 | Data Runner / Load Studio runs | `*.db` files you choose | One portable SQLite file per run; never pruned. |
@@ -429,6 +663,7 @@ the app portable.
 |---|---|
 | `Ctrl+Enter` | Send and Verify the current request |
 | `Ctrl+L` | Focus the endpoint search |
+| `Ctrl+K` | Ask AI: describe a request in plain words |
 | `Alt+←` / `Alt+→` | Back / forward through visited items (Catalog Builder) |
 
 ---
@@ -471,6 +706,38 @@ font directory (for example `/usr/share/fonts`).
 
 ---
 
+## Project website
+
+The website lives in [`docs/`](docs). It is plain HTML and CSS with no build step, and it reuses
+the screenshots in `docs/images/`. To publish it, open **Settings → Pages** in your GitHub
+repository, choose **Deploy from a branch**, then select your branch and the `/docs` folder. The site
+will be served at `https://<user>.github.io/rest-tester/`.
+
+If you fork the project or use a custom domain, replace the base URL in `docs/` first.
+[`docs/images/README.md`](docs/images/README.md) lists every place it appears, along with the
+screenshot and SEO conventions.
+
+The [AI guide](docs/ai.html) is a dedicated page linked from every site's main navigation.
+Its downloadable handbook is published inside `docs/guides/` so GitHub Pages can serve it.
+The site content is updated locally; publishing still requires your normal commit/push and
+Pages deployment.
+
+To refresh documentation assets safely:
+
+```powershell
+$env:QT_QPA_PLATFORM = "offscreen"
+python -m tools.capture_documentation
+python -m tools.update_website_assets --date 2026-10-03
+python -m pytest tests/test_website.py -n 4 --dist loadfile
+```
+
+The capture tool uses temporary settings/databases, the demo catalog and a fake provider.
+It never reads real AI usage, sends test requests or calls a model. The metadata tool updates
+image dimensions and the sitemap, and copies the implementation PDF into the published site.
+After rebuilding the handbook, rerun the metadata tool to refresh that copy.
+
+---
+
 ## Project structure
 
 ```text
@@ -488,12 +755,14 @@ rest-tester/
 │   ├── scanners/              #   source scanners used by the catalog generator
 │   ├── data_runner/           #   Data Runner workspace
 │   ├── load_testing/          #   Load Studio workspace
+│   ├── ai/                    #   Ask AI: LLM providers, catalog retrieval, plan validation, dialog
 │   └── assets/                #   icons and bundled license text
 ├── tools/                     # catalog generator, schema extractor, icon builder
 ├── examples/                  # demo Store API server and catalog
 ├── suites/                    # saved test suites (JSON)
 ├── data/                      # settings, local database, default catalog
-├── docs/images/               # README screenshots
+├── docs/                      # project website (GitHub Pages)
+│   └── images/                #   screenshots shared by the README and the website
 ├── tests/                     # pytest suite
 ├── RestTester.spec            # PyInstaller build definition
 ├── requirements.txt

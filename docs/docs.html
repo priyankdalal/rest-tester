@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docs - API Testing, Suites, Load Testing &amp; Catalog | Rest Tester</title>
+  <meta name="description" content="Rest Tester documentation: installation, quick start with the demo API, test suite assertions, the CSV Data Runner, Load Studio, Ask AI, the API catalog format, authentication, data storage and FAQ.">
+  <meta name="keywords" content="Rest Tester documentation, API test assertions, CSV API runner guide, API load testing guide, API catalog JSON format">
+  <link rel="canonical" href="https://priyankdalal.github.io/rest-tester/docs.html">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta name="theme-color" content="#0878f9">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Rest Tester">
+  <meta property="og:title" content="Rest Tester documentation">
+  <meta property="og:description" content="Install, run the demo API, write suites, run CSV batches and load tests, use Ask AI and describe your API catalog.">
+  <meta property="og:url" content="https://priyankdalal.github.io/rest-tester/docs.html">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:image" content="https://priyankdalal.github.io/rest-tester/assets/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="The Rest Tester API Explorer">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Rest Tester documentation">
+  <meta name="twitter:description" content="Installation, suites, CSV runs, load tests, Ask AI and the catalog format.">
+  <meta name="twitter:image" content="https://priyankdalal.github.io/rest-tester/assets/og-image.png">
+  <link rel="icon" href="assets/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&amp;family=DM+Sans:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+  <link rel="stylesheet" href="styles.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "headline": "Rest Tester documentation",
+        "description": "Installation, quick start, test suites, Data Runner, Load Studio, Ask AI, catalog format, authentication and storage for Rest Tester.",
+        "url": "https://priyankdalal.github.io/rest-tester/docs.html",
+        "image": "https://priyankdalal.github.io/rest-tester/assets/og-image.png",
+        "inLanguage": "en",
+        "proficiencyLevel": "Beginner",
+        "author": { "@type": "Organization", "name": "Rest Tester contributors", "url": "https://github.com/priyankdalal/rest-tester" },
+        "about": { "@type": "SoftwareApplication", "name": "Rest Tester", "applicationCategory": "DeveloperApplication", "operatingSystem": "Windows, macOS, Linux" }
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://priyankdalal.github.io/rest-tester/" },
+          { "@type": "ListItem", "position": 2, "name": "Documentation", "item": "https://priyankdalal.github.io/rest-tester/docs.html" }
+        ]
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Is Rest Tester free?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Yes. Rest Tester is free and open-source under GPL v3.0 or later, with no workbench subscription or account. Optional hosted AI requires your own provider connection and may incur provider charges." }
+          },
+          {
+            "@type": "Question",
+            "name": "Which operating systems does Rest Tester support?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Rest Tester runs from source on Windows, macOS and Linux with Python 3.11 or newer. A standalone Windows executable can be built with PyInstaller." }
+          },
+          {
+            "@type": "Question",
+            "name": "Do I need a real API to try Rest Tester?",
+            "acceptedAnswer": { "@type": "Answer", "text": "No. The repository ships a dependency-free demo Store API (examples/demo_store_server.py) and a matching catalog (examples/store_catalog.json) so every feature can be tried locally." }
+          },
+          {
+            "@type": "Question",
+            "name": "Where does Rest Tester store my data?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Locally. Settings and environments are in data/settings.json, history and saved requests in data/workspace.db, suites in suites/*.json, and each Data Runner or Load Studio run in its own SQLite file." }
+          },
+          {
+            "@type": "Question",
+            "name": "Can Rest Tester generate the API catalog automatically?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Yes, for ASP.NET Core services. python -m tools.generate_catalog statically scans controllers, routes, DTOs and entity attributes. Any other API can be described in the visual Catalog Builder." }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <nav class="nav shell" aria-label="Main navigation">
+      <a class="brand" href="./" aria-label="Rest Tester home">
+        <img src="assets/logo.png" alt="" width="28" height="28">
+        <span>Rest<span>Tester</span></span>
+      </a>
+      <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="site-menu">Menu</button>
+      <div class="nav-links" id="site-menu">
+        <a href="features.html">Features</a>
+        <a href="docs.html" aria-current="page">Docs</a>
+        <a href="ai.html">AI guide</a>
+        <a href="about.html">About</a>
+        <a href="https://github.com/priyankdalal/rest-tester" rel="noopener">GitHub</a>
+        <a class="nav-cta" href="download.html">Get started <span aria-hidden="true">-&gt;</span></a>
+      </div>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="page-hero shell">
+      <nav class="breadcrumb" aria-label="Breadcrumb"><ol><li><a href="./">Home</a></li><li aria-current="page">Documentation</li></ol></nav>
+      <p class="eyebrow"><span class="eyebrow-dot"></span> Documentation</p>
+      <h1>Learn the workbench,<br><em>then test fast.</em></h1>
+      <p class="page-lede">Everything you need to install Rest Tester, point it at an API and use each workspace - from request drafts to regression suites and load tests.</p>
+    </section>
+
+    <div class="shell docs-layout">
+      <aside class="docs-nav" aria-label="Documentation sections">
+        <h2>On this page</h2>
+        <a href="#install">Installation</a>
+        <a href="#quick-start">Quick start</a>
+        <a href="#explorer">API Explorer</a>
+        <a href="#suites">Test Suites</a>
+        <a href="#data-runner">Data Runner</a>
+        <a href="#load-studio">Load Studio</a>
+        <a href="#catalog">Catalog Builder</a>
+        <a href="#catalog-format">Catalog format</a>
+        <a href="#environments">Environments &amp; auth</a>
+        <a href="#ai">Ask AI</a>
+        <a href="#storage">Data storage</a>
+        <a href="#shortcuts">Keyboard shortcuts</a>
+        <a href="#build">Standalone build</a>
+        <a href="#testing">Running the tests</a>
+        <a href="#faq">FAQ</a>
+      </aside>
+
+      <article class="docs-body">
+        <section id="install">
+          <h2>Installation</h2>
+          <p>Rest Tester runs from source on Windows, macOS and Linux. You need <strong>Python 3.11 or newer</strong> and Git.</p>
+<pre class="doc-code"><code>git clone https://github.com/priyankdalal/rest-tester.git
+cd rest-tester
+
+python -m venv .venv
+.venv\Scripts\activate          # Windows
+source .venv/bin/activate       # macOS / Linux
+
+pip install -r requirements.txt
+python run.py</code></pre>
+          <p>Runtime dependencies are PyQt6, requests, MSAL and msal-extensions, PyJWT and cryptography. The Catalog Builder can also be launched on its own with <code>python run_builder.py</code>.</p>
+        </section>
+
+        <section id="quick-start">
+          <h2>Quick start with the demo API</h2>
+          <p>The repository ships a small, dependency-free <strong>Store</strong> API so you can try every feature without a real backend. It serves products, categories, customers and orders with seeded data, and supports filtering, sorting, paging, field selection, JSON Patch, <code>HEAD</code> counts, <code>problem+json</code> validation errors, file downloads and image responses.</p>
+<pre class="doc-code"><code>python examples/demo_store_server.py            # http://127.0.0.1:8765
+python examples/demo_store_server.py --port 9000 --quiet</code></pre>
+          <ol class="step-list">
+            <li>Start Rest Tester with <code>python run.py</code>.</li>
+            <li>Open <strong>Settings &rarr; API catalog &rarr; Load catalog...</strong> and choose <code>examples/store_catalog.json</code>.</li>
+            <li>Base URLs are pre-filled from the catalog (for example <code>http://127.0.0.1:8765/catalog/v1/</code>). Change them under <strong>Environments</strong> if you used another port.</li>
+            <li>In <strong>API Explorer</strong>, pick <code>GET /Product</code> under <strong>Catalog</strong> and click <strong>Send</strong>.</li>
+            <li>Open the <code>Filter</code> row's builder on the <strong>Query</strong> tab and try a filter.</li>
+          </ol>
+        </section>
+
+        <section id="explorer">
+          <h2>API Explorer</h2>
+          <p>The endpoint tree on the left is grouped by service and supports search (<kbd>Ctrl</kbd>+<kbd>L</kbd>), method and scope filters, favourites and recent endpoints. Each endpoint has <strong>Request</strong>, <strong>Documentation</strong>, <strong>Examples</strong> and <strong>Test History</strong> tabs.</p>
+          <table class="spec-table">
+            <caption>Request tabs</caption>
+            <thead><tr><th scope="col">Tab</th><th scope="col">Purpose</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Path</strong></td><td>Path parameters with typed editors and catalog defaults.</td></tr>
+              <tr><td><strong>Query</strong></td><td>Query parameters. <code>Filter</code> and <code>Sort</code> rows open the filter and sort builders.</td></tr>
+              <tr><td><strong>Form</strong></td><td><code>multipart/form-data</code> fields. File fields get a <strong>Browse...</strong> button.</td></tr>
+              <tr><td><strong>Payload JSON</strong></td><td>The raw body. <strong>Payload fields</strong> opens a schema-driven form that writes back to the JSON.</td></tr>
+            </tbody>
+          </table>
+          <h3>Header actions</h3>
+          <ul class="plain-list">
+            <li><strong>Send</strong> issues the request; its drop-down offers <strong>Send and Verify</strong> (<kbd>Ctrl</kbd>+<kbd>Enter</kbd>), which validates against the response schema.</li>
+            <li><strong>Add to Test Suite</strong> captures the request as a case; its drop-down also offers <strong>Open in Load Studio</strong> and <strong>Open in Data Runner</strong>.</li>
+            <li><strong>Save Request</strong> and <strong>Favorite</strong> keep requests in Saved Requests and Collections.</li>
+            <li><strong>More</strong> offers <strong>Generate cURL</strong>, <strong>Generate Python Request</strong> and <strong>Copy URL</strong>.</li>
+          </ul>
+          <h3>Seed data</h3>
+          <p>Seeding fills payloads and filters with realistic, type-aware values: fresh UUIDs for GUID fields, ISO dates, real enum members only, two values for <code>bt</code>, several for <code>in</code> / <code>nin</code> and a substring fragment for <code>ct</code>, <code>sw</code> and <code>ew</code>.</p>
+          <h3>Response viewer</h3>
+          <p><strong>Body</strong>, <strong>Headers</strong>, <strong>Timeline</strong>, <strong>Request</strong> and <strong>Validation</strong> tabs. JSON is syntax-highlighted and searchable, images are previewed and downloads can be saved. The timeline breaks each call into a DNS, TCP connect, TLS and HTTP waterfall.</p>
+          <figure class="feature-shot"><img src="images/api-explorer-request.png" alt="API Explorer request workspace and response viewer" width="1440" height="1000" loading="lazy" decoding="async"><figcaption>The API Explorer request workspace.</figcaption></figure>
+          <p>Without a selected endpoint, request actions are disabled. Disabled split buttons use a neutral appearance without the active blue dropdown divider.</p>
+          <figure class="feature-shot"><img src="images/api-explorer-disabled.png" alt="Current API Explorer before endpoint selection with disabled request actions and no blue dropdown divider" width="1440" height="1000" loading="lazy" decoding="async"><figcaption>Disabled actions make the next step clear: select an endpoint first.</figcaption></figure>
+        </section>
+
+        <section id="suites">
+          <h2>Test Suites</h2>
+          <p>A suite is an ordered list of cases. Each case pins one endpoint with its parameters, payload, expected status and assertions. Any number of cases can target the same endpoint.</p>
+          <table class="spec-table">
+            <caption>Assertions</caption>
+            <thead><tr><th scope="col">Group</th><th scope="col">Assertions</th></tr></thead>
+            <tbody>
+              <tr><td>Body</td><td>contains / does not contain text, matches regex</td></tr>
+              <tr><td>JSON</td><td>field equals / not equals / contains, exists / absent, not empty, length equals / at least / at most, type is</td></tr>
+              <tr><td>Headers</td><td>header equals, header exists</td></tr>
+              <tr><td>Timing</td><td>responds within <em>N</em> ms</td></tr>
+              <tr><td>Schema</td><td>matches the endpoint's response schema</td></tr>
+            </tbody>
+          </table>
+          <p>Cases can be renamed, duplicated, reordered and individually disabled. A run produces a <strong>run analysis</strong>, a detailed <strong>result</strong> per case and a <strong>timeline</strong> waterfall. Suites are plain JSON files in <code>suites/</code>.</p>
+          <figure class="feature-shot"><img src="images/test-suites.png" alt="Test suite run analysis" width="1800" height="1125" loading="lazy" decoding="async"><figcaption>Run analysis for a suite.</figcaption></figure>
+        </section>
+
+        <section id="data-runner">
+          <h2>Data Runner</h2>
+          <p>Executes one endpoint once per row of a CSV file, as a step-by-step wizard:</p>
+          <ol class="step-list">
+            <li><strong>Source</strong> - pick the service and endpoint (type-ahead search) and load a CSV file.</li>
+            <li><strong>Mapping</strong> - bind columns to path, query, header and payload fields; matching names map automatically and values can be parsed as JSON.</li>
+            <li><strong>Validate</strong> - preview resolved requests and catch type or required-field problems before sending.</li>
+            <li><strong>Execute &amp; review</strong> - run with configurable concurrency and inspect each row's status, timing and response; export the results.</li>
+            <li><strong>History</strong> - reopen earlier executions.</li>
+          </ol>
+          <p>Every execution is a portable SQLite run file that can be loaded back later.</p>
+          <figure class="feature-shot"><img src="images/data-runner-results.png" alt="Data Runner batch results" width="1800" height="1125" loading="lazy" decoding="async"><figcaption>Per-row outcome, timing and export.</figcaption></figure>
+        </section>
+
+        <section id="load-studio">
+          <h2>Load Studio</h2>
+          <ul class="plain-list">
+            <li><strong>Configure</strong> - choose the endpoint with type-ahead search and build a profile from ramp-up, steady and ramp-down stages with think time.</li>
+            <li><strong>Safety &amp; Thresholds</strong> - cap peak virtual users, scenario duration and request timeout, then set pass/fail thresholds such as error rate, P95 or P99 latency.</li>
+            <li><strong>Live &amp; Results</strong> - a live dashboard of throughput, average latency, P99, errors, completed requests and active virtual users, with charts and per-stage progress. Once the run finishes the cards show <strong>min / avg / max</strong>.</li>
+          </ul>
+          <p>The final report breaks down every metric, highlights shortcomings and suggests likely causes and fixes. It can be <strong>exported to PDF</strong> with charts and tables, and runs can be persisted to SQLite and reopened from the Live &amp; Results title bar.</p>
+          <figure class="feature-shot"><img src="images/load-studio-results.png" alt="Load Studio final results" width="1800" height="1125" loading="lazy" decoding="async"><figcaption>Final results with min / avg / max per metric.</figcaption></figure>
+        </section>
+
+        <section id="catalog">
+          <h2>Catalog Builder</h2>
+          <p>Open it with <code>python run_builder.py</code> or <strong>Settings &rarr; Open Catalog Builder</strong>. It covers services and base URLs; endpoints with method, route and content types; path, query, header and form parameters with allowed values; payload and response schemas with enums, nested objects and arrays; and filterable and sortable fields.</p>
+          <p>It can also generate a catalog by statically scanning ASP.NET Core repositories with <code>python -m tools.generate_catalog</code>. Use <kbd>Alt</kbd>+<kbd>&larr;</kbd> / <kbd>Alt</kbd>+<kbd>&rarr;</kbd> to go back and forward through visited items.</p>
+          <figure class="feature-shot"><img src="images/catalog-builder-filter.png" alt="Catalog Builder filter field editor" width="1800" height="1055" loading="lazy" decoding="async"><figcaption>Defining filterable fields in the Catalog Builder.</figcaption></figure>
+        </section>
+
+        <section id="catalog-format">
+          <h2>The API catalog format</h2>
+          <p>A catalog is a single JSON file. An abridged example:</p>
+<pre class="doc-code"><code>{
+  "schema_version": 2,
+  "name": "Demo Store API",
+  "services": [
+    {
+      "name": "Catalog",
+      "default_base_url": "http://127.0.0.1:8765/catalog/v1/",
+      "filter_sort_builders": true,
+      "endpoints": [
+        {
+          "id": "f76aeb49ca37",
+          "service": "Catalog",
+          "controller": "Product",
+          "method": "GET",
+          "path": "/Product",
+          "parameters": [
+            { "name": "Filter",   "source": "query", "type": "string?", "required": false },
+            { "name": "Sort",     "source": "query", "type": "string?", "required": false },
+            { "name": "PageSize", "source": "query", "type": "int",     "required": false, "sample": 25 }
+          ],
+          "payload": null,
+          "filter_entity": "Product",
+          "expected_status": "200-299"
+        }
+      ]
+    }
+  ],
+  "filter_schemas":   { "Product": { "...": "filterable / sortable fields" } },
+  "payload_schemas":  { },
+  "form_schemas":     { },
+  "response_schemas": { },
+  "enums":            { }
+}</code></pre>
+          <p>The top-level schema maps hold reusable definitions that endpoints reference by name. See <a href="https://github.com/priyankdalal/rest-tester/blob/master/examples/store_catalog.json" rel="noopener">examples/store_catalog.json</a> for a complete catalog.</p>
+        </section>
+
+        <section id="environments">
+          <h2>Environments and authentication</h2>
+          <table class="spec-table">
+            <caption>Environment tabs</caption>
+            <thead><tr><th scope="col">Tab</th><th scope="col">Contents</th></tr></thead>
+            <tbody>
+              <tr><td>Base URLs</td><td>one URL per service in the loaded catalog</td></tr>
+              <tr><td>Variables</td><td>name/value pairs substituted into requests</td></tr>
+              <tr><td>Custom headers</td><td>name/value pairs; <code>Authorization</code> and <code>x-api-key</code> have one-click presets</td></tr>
+              <tr><td>Transport</td><td>TLS verification and request timeout</td></tr>
+              <tr><td>Authentication</td><td>managed credential profiles, service bindings, sign-in and renewal</td></tr>
+            </tbody>
+          </table>
+          <ul class="plain-list">
+            <li><strong>Microsoft identity (MSAL)</strong> - Entra ID browser sign-in (PKCE), Azure AD B2C, client credentials.</li>
+            <li><strong>Generic OAuth 2.0</strong> - authorization code + PKCE, client credentials, device code, resource owner password, refresh token.</li>
+            <li><strong>Static credentials</strong> - bearer token, API key (header or query), Basic, JWT bearer (signed locally) and Atlassian ASAP.</li>
+          </ul>
+          <p class="callout warning"><strong>Keep secrets out of version control.</strong> Static credentials such as API keys, bearer tokens and custom headers are stored in plain text in <code>data/settings.json</code>.</p>
+        </section>
+
+        <section id="ai">
+          <h2>Ask AI</h2>
+          <p>Use the header sparkles icon or <kbd>Ctrl</kbd>+<kbd>K</kbd> to draft a Single request, Test Suite, Data Runner mapping or Load Testing profile. Configure named Ollama, Azure OpenAI, OpenAI, Claude or Sarvam AI profiles in <strong>Settings &rarr; AI Settings</strong>.</p>
+          <p>Plans are validated against the catalog. Open transfers a draft; only the native Send or Run executes. CSV planning sends headers, not rows, and load handoff clears execution approvals.</p>
+          <p><a href="ai.html">Read the complete AI guide</a> for provider setup, examples, privacy, Activity, token caps, persistent usage and troubleshooting. A <a href="guides/AI-Implementation-Guide.pdf">40-page illustrated PDF</a> explains the implementation.</p>
+          <figure class="feature-shot"><img src="images/ai-request.png" alt="Current Ask AI composer and validated request preview" width="1000" height="900" loading="lazy"><figcaption>Offline demo plan in the current application UI.</figcaption></figure>
+        </section>
+
+        <section id="storage">
+          <h2>Local data storage</h2>
+          <table class="spec-table">
+            <thead><tr><th scope="col">Data</th><th scope="col">Location</th><th scope="col">Notes</th></tr></thead>
+            <tbody>
+              <tr><td>Settings and environments</td><td><code>data/settings.json</code></td><td>Catalog path, theme and environment profiles.</td></tr>
+              <tr><td>History, saved requests, collections</td><td><code>data/workspace.db</code></td><td>SQLite; history older than 100 days is pruned automatically.</td></tr>
+              <tr><td>Test suites</td><td><code>suites/*.json</code></td><td>Plain JSON, friendly to version control.</td></tr>
+              <tr><td>Data Runner / Load Studio runs</td><td><code>*.db</code> files you choose</td><td>One portable SQLite file per run; never pruned.</td></tr>
+              <tr><td>AI profiles</td><td><code>data/ai_settings.json</code></td><td>Named connections and planning options; AI keys are stored separately.</td></tr>
+              <tr><td>AI credentials</td><td><code>data/ai_credentials/</code> or configured environment variable</td><td>Protected credential storage; never publish this directory.</td></tr>
+              <tr><td>AI usage</td><td><code>data/ai_usage.db</code></td><td>Metadata-only SQLite ledger, not prompts, raw replies or provider-wide billing.</td></tr>
+            </tbody>
+          </table>
+          <p>In a packaged build these folders are created next to the executable, which keeps the app portable.</p>
+        </section>
+
+        <section id="shortcuts">
+          <h2>Keyboard shortcuts</h2>
+          <table class="spec-table">
+            <thead><tr><th scope="col">Shortcut</th><th scope="col">Action</th></tr></thead>
+            <tbody>
+              <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>Send and Verify the current request</td></tr>
+              <tr><td><kbd>Ctrl</kbd>+<kbd>L</kbd></td><td>Focus the endpoint search</td></tr>
+              <tr><td><kbd>Alt</kbd>+<kbd>&larr;</kbd> / <kbd>Alt</kbd>+<kbd>&rarr;</kbd></td><td>Back / forward through visited items (Catalog Builder)</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="build">
+          <h2>Building a standalone executable</h2>
+<pre class="doc-code"><code>pip install -r requirements-dev.txt
+pyinstaller --noconfirm --clean RestTester.spec</code></pre>
+          <p>The build is written to <code>dist/RestTester/</code>; keep the whole folder together because it contains the Qt runtime. The application icon is generated at build time by <code>python -m tools.make_icon</code>. The packaged build ships <strong>without a catalog</strong>: on first launch the explorer explains how to load one from Settings or create one in the Catalog Builder.</p>
+        </section>
+
+        <section id="testing">
+          <h2>Running the tests</h2>
+<pre class="doc-code"><code>pip install -r requirements-dev.txt
+
+# Headless Qt (Windows PowerShell)
+$env:QT_QPA_PLATFORM = "offscreen"
+$env:QT_QPA_FONTDIR  = "C:\Windows\Fonts"   # real font metrics for layout tests
+
+python -m pytest                           # full suite, parallel via pytest-xdist</code></pre>
+          <p>On macOS or Linux use <code>export QT_QPA_PLATFORM=offscreen</code> and point <code>QT_QPA_FONTDIR</code> at a system font directory such as <code>/usr/share/fonts</code>.</p>
+        </section>
+
+        <section id="faq" class="faq">
+          <h2>FAQ</h2>
+          <details><summary>Is Rest Tester free?</summary><p>Yes. It is free and open-source software under GPL v3.0 or later, with no workbench account or subscription. Optional hosted AI uses your own provider connection and may incur provider charges; local Ollama has no cloud API charge.</p></details>
+          <details><summary>Which operating systems are supported?</summary><p>Rest Tester runs from source on Windows, macOS and Linux with Python 3.11 or newer. A standalone Windows executable can be built with PyInstaller.</p></details>
+          <details><summary>Do I need a real API to try it?</summary><p>No. The repository ships a dependency-free demo Store API (<code>examples/demo_store_server.py</code>) and a matching catalog (<code>examples/store_catalog.json</code>).</p></details>
+          <details><summary>Where is my data stored?</summary><p>Locally: settings in <code>data/settings.json</code>, history and saved requests in <code>data/workspace.db</code>, suites in <code>suites/*.json</code>, and each Data Runner or Load Studio run in its own SQLite file.</p></details>
+          <details><summary>Can the catalog be generated automatically?</summary><p>Yes, for ASP.NET Core services: <code>python -m tools.generate_catalog</code> statically scans controllers, routes, DTOs and entity attributes. Any other API can be described in the Catalog Builder.</p></details>
+        </section>
+      </article>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="shell footer-grid">
+      <div class="footer-brand">
+        <a class="brand" href="./"><img src="assets/logo.png" alt="" width="28" height="28"><span>Rest<span>Tester</span></span></a>
+        <p>A desktop workbench for exploring, testing and load-testing REST APIs.</p>
+      </div>
+      <nav class="footer-col" aria-label="Product"><h2>Product</h2><a href="features.html">Features</a><a href="download.html">Get started</a><a href="about.html">About</a></nav>
+      <nav class="footer-col" aria-label="Documentation"><h2>Documentation</h2><a href="docs.html">Docs</a><a href="ai.html">AI guide</a><a href="docs.html#faq">FAQ</a></nav>
+      <nav class="footer-col" aria-label="Project"><h2>Project</h2><a href="https://github.com/priyankdalal/rest-tester" rel="noopener">GitHub</a><a href="https://github.com/priyankdalal/rest-tester/issues" rel="noopener">Issues</a><a href="about.html#license">License</a></nav>
+    </div>
+    <div class="shell footer-base"><span>&copy; 2026 Rest Tester contributors &middot; GPL-3.0-or-later</span><span class="footer-note">Rest Tester 2.1.0</span></div>
+  </footer>
+  <script src="script.js" defer></script>
+</body>
+</html>

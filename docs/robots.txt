@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://priyankdalal.github.io/rest-tester/sitemap.xml

@@ -1,0 +1,187 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+  <url>
+    <loc>https://priyankdalal.github.io/rest-tester/about.html</loc>
+    <lastmod>2026-10-03</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.6</priority>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/about.png</image:loc>
+      <image:title>The Rest Tester About dialog showing version and license information</image:title>
+    </image:image>
+  </url>
+  <url>
+    <loc>https://priyankdalal.github.io/rest-tester/ai.html</loc>
+    <lastmod>2026-10-03</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/ai-request.png</image:loc>
+      <image:title>Ask AI single-request draft with review warning, token summary, test selector and settings gear</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/ai-settings.png</image:loc>
+      <image:title>AI Settings with five named demo provider connections and active profile selection</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/ai-suite.png</image:loc>
+      <image:title>AI suite preview with two read-only product cases, expected statuses and Test Suites handoff</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/ai-data.png</image:loc>
+      <image:title>AI Data Runner plan mapping ProductId onto the request path with the selected CSV header</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/ai-load.png</image:loc>
+      <image:title>AI Load Testing plan with ramp-up, steady and ramp-down stages and a P95 threshold</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/ai-activity.png</image:loc>
+      <image:title>Activity drawer showing catalog retrieval, returned token counts and successful validation</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/ai-usage.png</image:loc>
+      <image:title>AI Usage dashboard showing illustrative local metadata totals for four offline generated plans</image:title>
+    </image:image>
+  </url>
+  <url>
+    <loc>https://priyankdalal.github.io/rest-tester/docs.html</loc>
+    <lastmod>2026-10-03</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/api-explorer-request.png</image:loc>
+      <image:title>API Explorer request workspace and response viewer</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/api-explorer-disabled.png</image:loc>
+      <image:title>Current API Explorer before endpoint selection with disabled request actions and no blue dropdown divider</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/test-suites.png</image:loc>
+      <image:title>Test suite run analysis</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/data-runner-results.png</image:loc>
+      <image:title>Data Runner batch results</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/load-studio-results.png</image:loc>
+      <image:title>Load Studio final results</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/catalog-builder-filter.png</image:loc>
+      <image:title>Catalog Builder filter field editor</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/ai-request.png</image:loc>
+      <image:title>Current Ask AI composer and validated request preview</image:title>
+    </image:image>
+  </url>
+  <url>
+    <loc>https://priyankdalal.github.io/rest-tester/download.html</loc>
+    <lastmod>2026-10-03</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/environments.png</image:loc>
+      <image:title>Rest Tester environments with service base URLs pre-filled from the catalog</image:title>
+    </image:image>
+  </url>
+  <url>
+    <loc>https://priyankdalal.github.io/rest-tester/features.html</loc>
+    <lastmod>2026-10-03</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/api-explorer-request.png</image:loc>
+      <image:title>API Explorer request workspace with typed parameters and a JSON response</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/payload-json.png</image:loc>
+      <image:title>Raw JSON payload editor next to the schema-driven form</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/suite-case-result.png</image:loc>
+      <image:title>Per-case suite result listing each assertion and its outcome</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/suite-timeline.png</image:loc>
+      <image:title>Waterfall timeline of an entire suite run</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/data-runner-source.png</image:loc>
+      <image:title>Data Runner source step with endpoint selection and CSV preview</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/data-runner-mapping.png</image:loc>
+      <image:title>Data Runner column mapping step binding CSV columns to request fields</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/load-studio-configure.png</image:loc>
+      <image:title>Load Studio stage configuration with ramp up, steady and ramp down</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/load-studio-results.png</image:loc>
+      <image:title>Load Studio results with minimum, average and maximum for each metric</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/catalog-builder-endpoint.png</image:loc>
+      <image:title>Catalog Builder endpoint editor</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/catalog-builder-filter.png</image:loc>
+      <image:title>Catalog Builder filter entity editor with field types</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/environments.png</image:loc>
+      <image:title>Environments page listing profiles and their base URLs</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/environment-editor.png</image:loc>
+      <image:title>Environment editor with base URL, variables, headers, transport and authentication tabs</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/ai-suite.png</image:loc>
+      <image:title>Current AI-generated suite preview with native Test Suites handoff</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/api-explorer-dark.png</image:loc>
+      <image:title>Rest Tester API Explorer in the dark theme</image:title>
+    </image:image>
+  </url>
+  <url>
+    <loc>https://priyankdalal.github.io/rest-tester/</loc>
+    <lastmod>2026-10-03</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>1.0</priority>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/api-explorer.png</image:loc>
+      <image:title>Current Rest Tester API Explorer with the endpoint tree, a GET draft and schema-driven query fields</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/payload-form.png</image:loc>
+      <image:title>Payload form rendered from a schema with text, number, enum and boolean fields</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/test-suites.png</image:loc>
+      <image:title>Test suite run analysis with pass and fail counts and per-case timings</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/data-runner-results.png</image:loc>
+      <image:title>Data Runner results table showing the outcome and timing of each CSV row</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/load-studio-live.png</image:loc>
+      <image:title>Load Studio live dashboard with throughput, latency percentile and virtual user charts</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/catalog-builder-endpoint.png</image:loc>
+      <image:title>Catalog Builder editing an endpoint's route, parameters and schemas</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://priyankdalal.github.io/rest-tester/images/ai-request.png</image:loc>
+      <image:title>Current Ask AI request draft with provider settings and review controls</image:title>
+    </image:image>
+  </url>
+</urlset>

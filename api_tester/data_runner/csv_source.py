@@ -134,6 +134,19 @@ class CsvSource:
         self.settings = settings
         self._cached_total_row_count: int | None = None
 
+    def read_columns(self) -> tuple[str, ...]:
+        """Read only the header for AI mapping; never return row data."""
+        if not self.settings.has_header:
+            raise ValueError("AI mapping requires a CSV header row.")
+        encoding, delimiter, quotechar = self._resolve_format()
+        with open(self.settings.path, "r", encoding=encoding, newline="") as handle:
+            columns = tuple(next(csv.reader(handle, delimiter=delimiter, quotechar=quotechar), ()))
+        if not columns or any(not column.strip() for column in columns):
+            raise ValueError("The CSV must have non-empty column names.")
+        if len(set(columns)) != len(columns):
+            raise ValueError("The CSV must have unique column names.")
+        return columns
+
     def preview(
         self,
         *,

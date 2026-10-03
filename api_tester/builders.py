@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import QSize, QTimer, Qt, pyqtSignal
 from PyQt6.QtGui import QDoubleValidator, QIntValidator
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -43,7 +43,7 @@ from .schema import (
     seed_filter_value,
     seed_payload_field,
 )
-from .widgets import attach_table_empty_state
+from .widgets import attach_table_empty_state, settle_table_rows
 
 
 ROW_HEIGHT = 38
@@ -51,6 +51,22 @@ ROW_HEIGHT = 38
 #: Kinds a value list cannot sensibly be offered for: these hold structured or
 #: binary content, not one of a set of scalars.
 _UNLISTABLE_KINDS = frozenset({"array", "json", "object", "boolean", "file", "file_list"})
+
+
+def _fit_action_cells(table: QTableWidget, column: int) -> None:
+    for row in range(table.rowCount()):
+        actions = table.cellWidget(row, column)
+        actions.ensurePolished()
+        for button in actions.findChildren(QPushButton):
+            button.ensurePolished()
+        actions.layout().invalidate()
+        item = table.item(row, column)
+        if item is None:
+            item = QTableWidgetItem()
+            table.setItem(row, column, item)
+        # Match the styled table cell's 7px side padding and 1px grid line.
+        item.setSizeHint(QSize(actions.sizeHint().width() + 15, ROW_HEIGHT))
+    QTimer.singleShot(0, lambda: settle_table_rows(table))
 
 
 def _coerce_scalar(text: str, kind: str) -> Any:
@@ -175,6 +191,7 @@ class QueryBuilder(QWidget):
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         self.empty_state = attach_table_empty_state(
             self.table,
             icon_name="filter",
@@ -276,6 +293,7 @@ class QueryBuilder(QWidget):
         actions_layout.addWidget(remove)
         self.table.setCellWidget(row, 4, actions)
         self.table.setRowHeight(row, ROW_HEIGHT)
+        _fit_action_cells(self.table, 4)
 
         self._populate_operators(row, condition.get("operator") if condition else None)
         if condition:
@@ -294,6 +312,7 @@ class QueryBuilder(QWidget):
             elif action == "remove":
                 button.setIcon(icon("trash", theme.FAIL, 16))
         self.empty_state.refresh_theme()
+        _fit_action_cells(self.table, 4)
 
     def _field_changed(self, row: int) -> None:
         self._populate_operators(row)
@@ -456,6 +475,7 @@ class SortBuilder(QWidget):
         self.table.verticalHeader().setDefaultSectionSize(ROW_HEIGHT)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self.empty_state = attach_table_empty_state(
             self.table,
             icon_name="sort",
@@ -542,6 +562,7 @@ class SortBuilder(QWidget):
         holder_layout.addWidget(remove)
         self.table.setCellWidget(row, 3, holder)
         self.table.setRowHeight(row, ROW_HEIGHT)
+        _fit_action_cells(self.table, 3)
         self._emit()
 
     def refresh_theme(self) -> None:
@@ -551,6 +572,7 @@ class SortBuilder(QWidget):
             if button.property("sortRowAction") == "remove":
                 button.setIcon(icon("trash", theme.FAIL, 16))
         self.empty_state.refresh_theme()
+        _fit_action_cells(self.table, 3)
 
     def remove_row(self, row: int) -> None:
         entries = self.entries()
