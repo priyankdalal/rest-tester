@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import csv
 import json
 import sys
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from PyQt6.QtCore import (
     QEasingCurve,
@@ -63,6 +64,11 @@ from . import theme
 from .about import AboutDialog
 from .branding import APP_NAME, APP_VERSION, display_name
 from .catalog import Catalog, Endpoint, Service, load_catalog
+
+if TYPE_CHECKING:
+    from .ai.workflow_plan import WorkflowPlan
+    from .ai.request_plan import ExplorerRequest
+    from .data_runner.csv_source import CsvImportSettings
 from .client import (
     ApiResult,
     append_history,
@@ -89,11 +95,13 @@ from .execution.models import ExecutionEnvironmentSnapshot
 from .icons import app_icon, app_pixmap, badged_icon, icon
 from .documentation import endpoint_documentation
 from .notifications import (
+    AI,
     CATALOG,
     DATA_RUNNER,
     LOAD_TEST,
     REQUEST,
     Notification,
+    MAX_ENTRIES,
     notification_center,
 )
 from .seeding import seed_parameter
@@ -114,6 +122,7 @@ from .widgets import (
     expected_status_combo,
     ElidingLabel,
     HeaderConnectionPill,
+    HeaderAiButton,
     IconTextItemDelegate,
     OverlayEmptyState,
     attach_table_empty_state,
@@ -139,6 +148,7 @@ def application_resource_root() -> Path:
 ROOT = application_root()
 CATALOG_PATH = application_resource_root() / "data" / "api_catalog.json"
 SETTINGS_PATH = ROOT / "data" / "settings.json"
+AI_SETTINGS_PATH = ROOT / "data" / "ai_settings.json"
 SUITES_DIR = ROOT / "suites"
 #: Run history, suite history, and saved requests share one database. Data
 #: Runner and Load Testing keep writing one database per execution so a run
@@ -308,6 +318,10 @@ class MainWindow(QMainWindow):
         self._request_worker: RequestWorker | None = None
         self._connection_probes: set[ConnectionProbe] = set()
         self._connection_token = 0
+        self._ai_connection_token = 0
+        self._ai_connection_task = None
+        self._ai_results: dict[str, dict] = {}
+        self._closing = False
         self.app_settings = AppSettings.from_dict(
             raw_settings,
             {service.name: service.default_base_url for service in self.services},
@@ -336,6 +350,7 @@ class MainWindow(QMainWindow):
         self.connection_pill.refresh_theme()
         self._refresh_connection_state()
         report_progress(96, "Finalizing workspace")
+        QTimer.singleShot(0, self._check_ai_connection)
 
     def _build_ui(self) -> None:
         central = QWidget()
@@ -390,7 +405,18 @@ class MainWindow(QMainWindow):
         self.theme_toggle_button.setFixedSize(32, 32)
         self.theme_toggle_button.clicked.connect(self._toggle_theme)
         header_layout.addWidget(self.theme_toggle_button)
+        self.settings_button = QToolButton()
+        self.settings_button.setObjectName("headerIconButton")
+        self.settings_button.setIconSize(QSize(18, 18))
+        self.settings_button.setFixedSize(32, 32)
+        self.settings_button.setToolTip("Settings")
+        self.settings_button.setAccessibleName("Settings")
+        self.settings_button.clicked.connect(self._open_settings_for_catalog)
+        header_layout.addWidget(self.settings_button)
         self._refresh_header_buttons()
+        self.ask_ai_button = HeaderAiButton()
+        self.ask_ai_button.clicked.connect(self._show_ask_ai)
+        header_layout.addWidget(self.ask_ai_button)
         help_button = QPushButton("?")
         help_button.setObjectName("iconButton")
         help_button.setToolTip(f"About {APP_NAME}: version, shortcuts, system details and licenses")
@@ -792,15 +818,15 @@ class MainWindow(QMainWindow):
         self.workspace_tabs.addTab(self.environment_page, "Environments")
         settings_page = QWidget()
         settings_layout = QVBoxLayout(settings_page)
-        settings_heading = QLabel("Settings")
+        settings_heading = QLabel("Catalog")
         settings_heading.setObjectName("settingsPageTitle")
         settings_heading.setProperty("pageTitle", True)
         settings_heading.setProperty("workspaceTitle", True)
         settings_layout.addWidget(settings_heading)
         settings_hint = QLabel(
-            "Appearance is set from the header theme selector. Base URLs, "
-            "credentials, variables, SSL verification, and the request timeout "
-            "all live on the active environment in the Environments workspace."
+            "Choose the API catalog used by API Explorer, Test Suites, Data Runner, "
+            "Load Studio, and Ask AI. Appearance is set from the header theme selector. "
+            "Base URLs and API credentials live in Environments."
         )
         settings_hint.setObjectName("settingsPageDescription")
         settings_hint.setProperty("pageDescription", True)
@@ -844,8 +870,8 @@ class MainWindow(QMainWindow):
         settings_layout.addWidget(catalog_box)
 
         settings_layout.addStretch()
-        self.workspace_tabs.addTab(settings_page, "Settings")
         self.settings_page = settings_page
+        self.settings_dialog = None
         self._refresh_catalog_label()
         self.refresh_catalog_presence()
 
@@ -876,7 +902,6 @@ class MainWindow(QMainWindow):
             ("Saved Requests", "bookmark"),
             ("Collections", "folder"),
             ("Environments", "globe"),
-            ("Settings", "settings"),
         ):
             item = make_icon_text_item(name, icon_name)
             item.setToolTip(name)
@@ -981,6 +1006,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         QShortcut(QKeySequence("Ctrl+Return"), self, activated=self._send_request)
         QShortcut(QKeySequence("Ctrl+L"), self, activated=self.endpoint_search.setFocus)
+        QShortcut(QKeySequence("Ctrl+K"), self, activated=self._show_ask_ai)
         self._allow_splitter_shrink()
 
     def _allow_splitter_shrink(self) -> None:
@@ -1115,12 +1141,15 @@ class MainWindow(QMainWindow):
 
     def _workspace_tab_changed(self, index: int) -> None:
         """Keep the left navigation highlight in sync with programmatic tab changes."""
-        if index < 0 or index >= self.navigation.count():
+        if index < 0:
             return
-        if self.navigation.currentRow() == index:
+        row = index if index < self.navigation.count() else -1
+        if self.navigation.currentRow() == row:
             return
         blocked = self.navigation.blockSignals(True)
-        self.navigation.setCurrentRow(index)
+        self.navigation.setCurrentRow(row)
+        if row < 0:
+            self.navigation.clearSelection()
         self.navigation.blockSignals(blocked)
 
     def _load_startup_catalog(self, raw_settings: dict[str, Any]) -> Catalog:
@@ -1157,18 +1186,61 @@ class MainWindow(QMainWindow):
 
     def _open_settings_for_catalog(self) -> None:
         """Takes the user to Settings, where a catalog can be loaded or built."""
-        page = getattr(self, "settings_page", None)
-        if page is None:
+        self._open_settings("Catalog")
+
+    def _open_settings(self, section: str = "Catalog") -> None:
+        from .settings_ui import SettingsDialog
+
+        if self.settings_dialog is None:
+            self.settings_dialog = SettingsDialog(self.settings_page, AI_SETTINGS_PATH, self)
+            self.settings_dialog.ai_changed.connect(self._ai_settings_changed)
+        dialog = self.settings_dialog
+        dialog.refresh_theme()
+        dialog.section_rail.setCurrentRow(1 if section == "AI Settings" else 0)
+        dialog.exec()
+
+    def _ai_settings_changed(self) -> None:
+        dialog = getattr(self, "ask_ai_dialog", None)
+        if dialog is not None:
+            dialog.reload_settings()
+        self._check_ai_connection()
+
+    def _check_ai_connection(self) -> None:
+        if self._closing:
             return
-        index = self.workspace_tabs.indexOf(page)
-        if index < 0:
+        from .ai.config import load_ai_settings
+        from .ai.controller import connection_test_task
+        from .ai.ui import _keep_alive
+
+        self._ai_connection_token += 1
+        token = self._ai_connection_token
+        if self._ai_connection_task is not None:
+            self._ai_connection_task.cancel()
+        if not AI_SETTINGS_PATH.is_file():
+            self.ask_ai_button.set_available(False, "No saved active AI connection. Open Settings > AI Settings.")
             return
-        # Driving the rail keeps its highlight in step; it owns the tab index.
-        navigation = getattr(self, "navigation", None)
-        if navigation is not None and navigation.count() > index:
-            navigation.setCurrentRow(index)
-        else:
-            self.workspace_tabs.setCurrentIndex(index)
+        try:
+            settings = load_ai_settings(AI_SETTINGS_PATH, strict=True)
+        except (OSError, ValueError, TypeError):
+            self.ask_ai_button.set_available(False, "AI configuration is invalid. Review Settings > AI Settings.")
+            return
+        if not settings.active_connection_id:
+            self.ask_ai_button.set_available(False, "No active AI connection. Open Settings > AI Settings.")
+            return
+        self.ask_ai_button.set_available(False, f"Checking '{settings.connection_name}'...")
+        task = _keep_alive(connection_test_task(settings))
+        self._ai_connection_task = task
+
+        def update(available: bool, message: str) -> None:
+            if token == self._ai_connection_token and not self._closing:
+                self.ask_ai_button.set_available(available, message)
+                dialog = getattr(self, "ask_ai_dialog", None)
+                if dialog is not None:
+                    dialog.refresh_connection_state()
+
+        task.succeeded.connect(lambda report: update(report.ok, report.message))
+        task.failed.connect(lambda message: update(False, message))
+        task.start()
 
     def refresh_catalog_presence(self) -> None:
         """Shows or hides the no-catalog messaging across the explorer page.
@@ -2555,6 +2627,9 @@ class MainWindow(QMainWindow):
         target = "light" if dark else "dark"
         self.theme_toggle_button.setToolTip(f"Turn the lights {'on' if dark else 'off'}")
         self.theme_toggle_button.setAccessibleName(f"Switch to {target} theme")
+        self.settings_button.setIcon(icon("settings", theme.TEXT_MUTED, 18))
+        if hasattr(self, "ask_ai_button"):
+            self.ask_ai_button.refresh_theme()
         unread = self.notifications.unread_count()
         if unread:
             self.notifications_button.setIcon(
@@ -2609,6 +2684,9 @@ class MainWindow(QMainWindow):
     def _open_notification(self, entry: Notification) -> None:
         """Takes the user back to the work a notification describes."""
         route = entry.route
+        if entry.kind == AI:
+            self._open_ai_result(str(route.get("generation_id") or ""))
+            return
         if entry.kind == REQUEST and route.get("page") == "Collections":
             if self._navigate_to("Collections"):
                 request_id = str(route.get("request_id") or "")
@@ -2669,6 +2747,10 @@ class MainWindow(QMainWindow):
         self.request_editor.refresh_theme()
         self.connection_pill.refresh_theme()
         self.endpoint_tree.viewport().update()
+        for name in ("ask_ai_dialog", "ai_result_dialog"):
+            dialog = getattr(self, name, None)
+            if dialog is not None:
+                dialog.refresh_theme()
         self._refresh_highlighters()
         self._save_settings()
 
@@ -2685,6 +2767,252 @@ class MainWindow(QMainWindow):
         )
         self.about_dialog.exec()
 
+    def _show_ask_ai(self) -> None:
+        if not self.ask_ai_button.available and not self.ask_ai_button.busy:
+            self._open_settings("AI Settings")
+            self._check_ai_connection()
+            return
+        # Imported lazily so the AI package costs nothing until it is used.
+        from .ai.ui import AskAiDialog
+
+        dialog = getattr(self, "ask_ai_dialog", None)
+        if dialog is None:
+            dialog = AskAiDialog(
+                self,
+                catalog=lambda: self.catalog,
+                secrets=self._ai_secrets,
+                on_open=self.open_ai_request,
+                settings_path=AI_SETTINGS_PATH,
+                on_open_suite=self.open_ai_suite,
+                on_open_data=self.open_ai_data,
+                on_open_load=self.open_ai_load,
+                on_settings=lambda: self._open_settings("AI Settings"),
+            )
+            self.ask_ai_dialog = dialog
+            dialog.execution_started.connect(lambda: self.ask_ai_button.set_busy(True))
+            dialog.execution_finished.connect(self._ai_execution_finished)
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+        dialog.prompt_input.setFocus()
+
+    def _ai_execution_finished(self, snapshot: dict) -> None:
+        self.ask_ai_button.set_busy(False)
+        if self._closing:
+            return
+        self._ai_results[snapshot["id"]] = snapshot
+        while len(self._ai_results) > MAX_ENTRIES:
+            del self._ai_results[next(iter(self._ai_results))]
+        what = {"request": "request", "suite": "suite", "data": "data run", "load": "load test"}[snapshot["mode"]]
+        if snapshot["error"] == "Cancelled.":
+            title = f"AI {what} planning cancelled"
+        elif snapshot["ok"]:
+            title = f"AI {what} planning completed"
+        else:
+            title = f"AI {what} planning needs attention"
+        self.notifications.notify(
+            AI, title, snapshot["connection"], ok=snapshot["ok"],
+            route={"generation_id": snapshot["id"]},
+        )
+
+    def _open_ai_result(self, generation_id: str) -> None:
+        from .ai.ui import AskAiDialog
+
+        snapshot = self._ai_results.get(generation_id)
+        if snapshot is None:
+            QMessageBox.information(self, "AI result unavailable", "This AI result is no longer in session history.")
+            return
+        viewer = getattr(self, "ai_result_dialog", None)
+        if viewer is None:
+            viewer = AskAiDialog(
+                self, catalog=lambda: self.catalog, secrets=self._ai_secrets,
+                on_open=self.open_ai_request, settings_path=AI_SETTINGS_PATH,
+                on_open_suite=self.open_ai_suite,
+                on_open_data=self.open_ai_data, on_open_load=self.open_ai_load,
+            )
+            self.ai_result_dialog = viewer
+            viewer.read_only_result = True
+            viewer.ask_button.hide()
+            viewer.cancel_button.hide()
+            viewer.prompt_input.setReadOnly(True)
+            viewer.mode_selector.setEnabled(False)
+        viewer.restore_result(snapshot)
+        viewer.setWindowTitle("Ask AI - completed result")
+        viewer.show()
+        viewer.raise_()
+        viewer.activateWindow()
+
+    def _ai_secrets(self) -> tuple[str, ...]:
+        """Values that must never reach the model, masked before every call."""
+        active = self.app_settings.active
+        values = [self.access_token.text(), self.api_key.text()]
+        values.extend(str(value) for value in active.variables.values())
+        values.extend(str(value) for value in active.custom_headers.values())
+        for profile in active.auth_profiles.values():
+            for name, value in vars(profile).items():
+                lowered = name.lower()
+                if isinstance(value, str) and any(
+                    word in lowered for word in ("secret", "password", "token", "key")
+                ):
+                    values.append(value)
+        return tuple(value for value in values if value)
+
+    def open_ai_request(self, request) -> None:
+        """Opens an Ask AI plan in API Explorer as an editable, unsent draft."""
+        endpoint_item = self.endpoint_items.get(request.endpoint_id)
+        if endpoint_item is None:
+            QMessageBox.warning(
+                self, "Endpoint unavailable", "The planned endpoint is not in the loaded catalog."
+            )
+            return
+        self._request_drafts[request.endpoint_id] = (
+            dict(request.values),
+            "" if request.payload is None else json.dumps(request.payload, indent=2),
+        )
+        self.current_endpoint = None
+        self._select_endpoint_item(endpoint_item)
+        self.expected_status.setCurrentText(request.expected_status)
+        self.navigation.setCurrentRow(0)
+        self.raise_()
+        self.activateWindow()
+
+    def open_ai_suite(self, suite: TestSuite) -> None:
+        """Loads an Ask AI suite into Test Suites, unsaved and not yet run."""
+        tab = self.suite_tab
+        choice = self._ai_suite_choice() if tab.suite.cases else "replace"
+        if choice is None:
+            return
+        if choice == "append":
+            for name, value in suite.variables.items():
+                tab.suite.variables.setdefault(name, value)
+            tab.suite.cases.extend(suite.cases)
+        else:
+            tab.suite = suite
+            tab.results.clear()
+            tab.last_result = None
+            tab._publish_result(None)
+        tab._load_suite_into_ui()
+        self.navigation.setCurrentRow(1)
+        self.raise_()
+        self.activateWindow()
+
+    def open_ai_data(
+        self, plan: WorkflowPlan, request: ExplorerRequest,
+        source: CsvImportSettings, columns: tuple[str, ...],
+    ) -> None:
+        """Hand off a CSV mapping draft; require native validation before Run."""
+        validated = self._validate_ai_workflow(plan, columns)
+        if validated is None:
+            return
+        plan, request = validated
+        endpoint = next(
+            (endpoint for service in self.catalog.services for endpoint in service.endpoints
+             if endpoint.id == request.endpoint_id), None,
+        )
+        if endpoint is None:
+            QMessageBox.warning(self, "Endpoint unavailable", "The planned endpoint is not in the loaded catalog.")
+            return
+        if QMessageBox.question(
+            self, "Open AI Data Runner draft",
+            "Replace the current Data Runner source, mappings and request template?\n"
+            "Nothing will run. Review the mappings and validate the CSV before pressing Run.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            loaded = self.data_runner_tab.load_ai_draft(
+                endpoint, request.values, request.payload, source, columns,
+                plan.mappings, request.expected_status,
+            )
+        except (OSError, UnicodeError, ValueError, csv.Error) as exc:
+            QMessageBox.warning(self, "Could not open Data Runner draft", str(exc))
+            return
+        if not loaded:
+            QMessageBox.warning(self, "Endpoint unavailable", "The planned endpoint is not in Data Runner's catalog.")
+            return
+        self.workspace_tabs.setCurrentWidget(self.data_runner_tab)
+        self.raise_()
+        self.activateWindow()
+
+    def open_ai_load(self, plan: WorkflowPlan, request: ExplorerRequest) -> None:
+        """Hand off editable load stages without granting load/write consent."""
+        validated = self._validate_ai_workflow(plan)
+        if validated is None:
+            return
+        plan, request = validated
+        endpoint = next(
+            (endpoint for service in self.catalog.services for endpoint in service.endpoints
+             if endpoint.id == request.endpoint_id), None,
+        )
+        if endpoint is None:
+            QMessageBox.warning(self, "Endpoint unavailable", "The planned endpoint is not in the loaded catalog.")
+            return
+        if QMessageBox.question(
+            self, "Open AI Load Testing draft",
+            "Replace the current load scenario request, stages and thresholds?\n"
+            "Load and write permissions will be cleared. Nothing will run until you review "
+            "the safety controls, build the summary and explicitly start the load test.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            loaded = self.load_testing_tab.load_ai_draft(
+                endpoint, request.values, request.payload, name=plan.title,
+                stages=plan.stages, thresholds=plan.thresholds, expected_status=request.expected_status,
+            )
+        except ValueError as exc:
+            QMessageBox.warning(self, "Could not open Load Testing draft", str(exc))
+            return
+        if not loaded:
+            QMessageBox.warning(self, "Endpoint unavailable", "The planned endpoint is not in Load Testing's catalog.")
+            return
+        self.workspace_tabs.setCurrentWidget(self.load_testing_tab)
+        self.raise_()
+        self.activateWindow()
+
+    def _validate_ai_workflow(
+        self, plan: WorkflowPlan, columns: tuple[str, ...] = (),
+    ) -> tuple[WorkflowPlan, ExplorerRequest] | None:
+        from .ai.catalog_index import CatalogIndex
+        from .ai.workflow_plan import WorkflowPlan, to_workflow_request, validate_workflow_plan
+
+        index = CatalogIndex(self.catalog)
+        result = validate_workflow_plan(plan, index, columns)
+        if result.issues or result.plan.status != "plan" or not isinstance(result.plan, WorkflowPlan):
+            details = "\n".join(issue.as_text() for issue in result.issues)
+            QMessageBox.warning(
+                self, "AI draft needs review",
+                "The draft is not valid against the current catalog. Generate it again.\n" + details,
+            )
+            return None
+        return result.plan, to_workflow_request(result.plan, index)
+
+    def _ai_suite_choice(self) -> str | None:
+        """'replace', 'append' or None (cancel) when Test Suites already has cases."""
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle("Open AI suite")
+        box.setText(
+            f"Test Suites already has '{self.suite_tab.suite.name}' with "
+            f"{len(self.suite_tab.suite.cases)} case(s)."
+        )
+        box.setInformativeText(
+            "Replace it with the AI suite, or append the AI cases to it? Unsaved changes are lost on replace."
+        )
+        replace_button = box.addButton("Replace", QMessageBox.ButtonRole.DestructiveRole)
+        append_button = box.addButton("Append", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton(QMessageBox.StandardButton.Cancel)
+        box.setDefaultButton(append_button)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is replace_button:
+            return "replace"
+        if clicked is append_button:
+            return "append"
+        return None
+
     def _catalog_summary(self) -> str:
         catalog = getattr(self, "catalog", None)
         if catalog is None or not catalog.services:
@@ -2694,6 +3022,7 @@ class MainWindow(QMainWindow):
         return f"{name} · {len(catalog.services)} services · {endpoints} endpoints"
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt signature
+        self._closing = True
         self._save_settings()
         # A token method may still be consulting its session; let each probe
         # end so Qt never destroys a running QThread.
@@ -2701,6 +3030,11 @@ class MainWindow(QMainWindow):
             if probe.isRunning():
                 probe.wait(2000)
         self.data_runner_tab.shutdown()
+        if (getattr(self, "ask_ai_dialog", None) is not None or self.settings_dialog is not None
+                or self._ai_connection_task is not None):
+            from .ai.ui import shutdown_ai_tasks
+
+            shutdown_ai_tasks()
         super().closeEvent(event)
 
 

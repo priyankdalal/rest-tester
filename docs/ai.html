@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ask AI Guide - Requests, Suites, CSV &amp; Load Plans | Rest Tester</title>
+  <meta name="description" content="Configure Ollama, Azure OpenAI, OpenAI, Claude or Sarvam AI. Generate catalog-validated request, suite, CSV and load-test drafts; understand privacy, diagnostics, token limits and usage.">
+  <link rel="canonical" href="https://priyankdalal.github.io/rest-tester/ai.html">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta name="theme-color" content="#0878f9">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Rest Tester">
+  <meta property="og:title" content="Ask AI - From plain words to a validated test draft">
+  <meta property="og:description" content="Four planning workflows, five providers, explicit execution approval, activity diagnostics and token accounting.">
+  <meta property="og:url" content="https://priyankdalal.github.io/rest-tester/ai.html">
+  <meta property="og:image" content="https://priyankdalal.github.io/rest-tester/images/ai-request.png">
+  <meta property="og:image:alt" content="Current Ask AI request preview with the compact composer and provider settings button">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Rest Tester Ask AI guide">
+  <meta name="twitter:description" content="Generate and review API testing drafts, with catalog validation and explicit approval before execution.">
+  <meta name="twitter:image" content="https://priyankdalal.github.io/rest-tester/images/ai-request.png">
+  <link rel="icon" href="assets/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&amp;family=DM+Sans:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+  <link rel="stylesheet" href="styles.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "Rest Tester Ask AI guide",
+    "url": "https://priyankdalal.github.io/rest-tester/ai.html",
+    "description": "Provider setup, four catalog-aware planning workflows, execution safety, privacy, token controls, usage and troubleshooting.",
+    "image": "https://priyankdalal.github.io/rest-tester/images/ai-request.png",
+    "dateModified": "2026-10-03",
+    "proficiencyLevel": "Beginner",
+    "inLanguage": "en",
+    "author": {"@type": "Organization", "name": "Rest Tester contributors"}
+  }
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <nav class="nav shell" aria-label="Main navigation">
+      <a class="brand" href="./" aria-label="Rest Tester home"><img src="assets/logo.png" alt="" width="28" height="28"><span>Rest<span>Tester</span></span></a>
+      <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="site-menu">Menu</button>
+      <div class="nav-links" id="site-menu">
+        <a href="features.html">Features</a><a href="docs.html">Docs</a><a href="ai.html" aria-current="page">AI guide</a><a href="about.html">About</a>
+        <a href="https://github.com/priyankdalal/rest-tester" rel="noopener">GitHub</a>
+        <a class="nav-cta" href="download.html">Get started <span aria-hidden="true">-&gt;</span></a>
+      </div>
+    </nav>
+  </header>
+  <main id="main">
+    <section class="page-hero shell">
+      <nav class="breadcrumb" aria-label="Breadcrumb"><ol><li><a href="./">Home</a></li><li><a href="docs.html">Documentation</a></li><li aria-current="page">Ask AI</li></ol></nav>
+      <p class="eyebrow"><span class="eyebrow-dot"></span> AI documentation &middot; Updated 3 October 2026</p>
+      <h1>Describe the test.<br><em>Review the plan.</em></h1>
+      <p class="page-lede">Ask AI is a catalog-aware drafting assistant, not an autonomous API runner. It prepares requests, regression suites, CSV mappings and load profiles inside the workbench you already use.</p>
+      <a class="button button-primary" href="guides/AI-Implementation-Guide.pdf">Read the illustrated implementation handbook (PDF)</a>
+    </section>
+    <div class="shell docs-layout">
+      <aside class="docs-nav" aria-label="AI documentation sections">
+        <h2>On this page</h2>
+        <a href="#overview">What AI does</a><a href="#setup">Connections &amp; providers</a><a href="#composer">The composer</a>
+        <a href="#request">Single request</a><a href="#suite">Test Suite</a><a href="#data">Data Runner</a><a href="#load">Load Testing</a>
+        <a href="#pipeline">How planning works</a><a href="#privacy">Privacy &amp; safety</a><a href="#tokens">Tokens &amp; budgets</a>
+        <a href="#activity">Activity &amp; usage</a><a href="#troubleshooting">Troubleshooting</a><a href="#developer">Developer reference</a>
+      </aside>
+      <article class="docs-body">
+        <section id="overview">
+          <h2>A drafter, not a driver</h2>
+          <p>Think of the catalog as a restaurant menu, AI as the person helping you choose an order, and the native runner as the kitchen. The assistant can draft an order using known options. It cannot decide that you have approved placing it.</p>
+          <p class="callout"><strong>Generate &rarr; validate &rarr; review &rarr; open a draft &rarr; explicitly Send or Run.</strong> A ready plan means the draft passed validation, not that the endpoint works or a test has passed.</p>
+          <p>All screenshots on this page are captures of the current application with the bundled demo Store catalog and scripted offline responses. Token counts and plans are illustrative; no provider or test API was called to produce them.</p>
+          <figure class="feature-shot"><img src="images/ai-request.png" alt="Ask AI single-request draft with review warning, token summary, test selector and settings gear" width="1000" height="900" loading="lazy"><figcaption>A validated draft stays separate from execution.</figcaption></figure>
+        </section>
+        <section id="setup">
+          <h2>Set up a connection</h2>
+          <ol class="step-list">
+            <li>Open <strong>Settings &rarr; AI Settings</strong>. Add a named connection so you can keep local and hosted profiles side by side.</li>
+            <li>Choose the provider, endpoint and model (an Azure deployment name for Azure OpenAI). For hosted profiles, explicitly enable hosted AI and configure the credential.</li>
+            <li>Use <strong>Test connection</strong>, then tick <strong>Use</strong> to choose the active connection. Only one profile is active at a time.</li>
+            <li>Press the header sparkles icon or <kbd>Ctrl</kbd>+<kbd>K</kbd>. If the connection is unavailable, this opens AI Settings first.</li>
+          </ol>
+          <table class="spec-table">
+            <caption>Supported providers and connection probes</caption>
+            <thead><tr><th scope="col">Provider</th><th scope="col">Setup</th><th scope="col">Test connection policy</th></tr></thead>
+            <tbody>
+              <tr><td>Ollama</td><td>Local endpoint, model installed in Ollama; default endpoint <code>http://localhost:11434</code>.</td><td>Reads <code>/api/tags</code>; no model generation. A listed model does not guarantee a complex plan will succeed.</td></tr>
+              <tr><td>Azure OpenAI</td><td>Azure endpoint, deployment name, API version and key.</td><td>Small generated answer, ceiling 4,096 output tokens, timeout at least 60 seconds.</td></tr>
+              <tr><td>OpenAI</td><td>Compatible endpoint, supported model and API key.</td><td>Same 4,096-token / 60-second probe policy.</td></tr>
+              <tr><td>Claude</td><td>Anthropic Messages endpoint, model and API key.</td><td>Same ceiling / timeout; does not universally disable thinking because model requirements vary.</td></tr>
+              <tr><td>Sarvam AI</td><td>Sarvam endpoint, model such as <code>sarvam-105b</code>, and API key.</td><td>Reasoning disabled, 128 output tokens, timeout at least 30 seconds.</td></tr>
+            </tbody>
+          </table>
+          <p>Hosted probes are model calls and may be billed, including startup checks. These ceilings are application policies, not guaranteed consumption. OpenAI/Azure/Claude probes omit temperature and do not guess a universal reasoning mode. API/model compatibility still matters.</p>
+          <p>For local Ollama, install and run it separately, pull the model configured in your profile, then test the connection. The application does not install models for you.</p>
+          <figure class="feature-shot"><img src="images/ai-settings.png" alt="AI Settings with five named demo provider connections and active profile selection" width="1100" height="760" loading="lazy"><figcaption>Named profiles separate provider configuration from the prompt composer.</figcaption></figure>
+        </section>
+        <section id="composer">
+          <h2>Know the composer</h2>
+          <ul class="plain-list">
+            <li><strong>Test selector:</strong> Single request, Test Suite, Data Runner or Load Testing. Modes without a native handoff are disabled.</li>
+            <li><strong>Provider/model:</strong> a read-only single-line label; long names elide, with the full name in the tooltip. Use the adjacent gear to change settings.</li>
+            <li><strong>Connection dot:</strong> availability status, not proof of a completed generation. The header activity animation runs during Ask AI generation, not a Settings probe.</li>
+            <li><strong>Generate:</strong> the arrow or <kbd>Ctrl</kbd>+<kbd>Enter</kbd>. Cancel cooperatively stops further processing; an in-flight non-streaming HTTP call may finish and still incur usage.</li>
+            <li><strong>Copy / Open:</strong> copy the plan JSON or transfer a valid draft to its native workspace. Review the warning and the plan first.</li>
+          </ul>
+        </section>
+        <section id="request">
+          <h2>Single request</h2>
+          <p>Example for the demo catalog: <em>&ldquo;List active products, five per page, most expensive first.&rdquo;</em> For your service catalog, name the actual resource and fields.</p>
+          <p>The planner selects an endpoint ID, fills parameters, filter fields and operators, sort direction, payload and expected status. Validation checks these against the catalog, including enum choices and RFC 6902 JSON Patch shapes.</p>
+          <ol class="step-list"><li>Select <strong>Single request</strong> and describe the request.</li><li>Review the endpoint, encoded query, payload, assumptions and warnings.</li><li>Choose <strong>Open in API Explorer</strong>, review environment and authentication, then click <strong>Send</strong> when ready.</li></ol>
+          <p>No endpoint is sent during planning. A schema-valid body may still fail business rules or reference data requirements when executed.</p>
+        </section>
+        <section id="suite">
+          <h2>Test Suite</h2>
+          <p>Example: <em>&ldquo;Create a product, capture its ID, read it back, rename it, delete it, and confirm it is gone.&rdquo;</em> The suite draft can include assertions, captures, dependencies and cleanup cases.</p>
+          <p>Opening the result in Test Suites offers the native replacement/append workflow. The native runner resolves request variables, orders dependencies, checks assertions and handles cleanup only after you run the suite.</p>
+          <p class="callout"><strong>Assertion values are literal.</strong> <code>{{productId}}</code> can be used in request parameters and payloads, but is not substituted in assertion values. The validator requests a correction instead. Use a literal expectation or an appropriate existence/type check.</p>
+          <p>Repeated cases may target the same endpoint. Refinement includes its detailed catalog card once, keyed by endpoint ID; endpoint payload dictionaries are not used as hash keys.</p>
+          <figure class="feature-shot"><img src="images/ai-suite.png" alt="AI suite preview with two read-only product cases, expected statuses and Test Suites handoff" width="1000" height="900" loading="lazy"><figcaption>A read-only example; lifecycle prompts can also propose writes and cleanup.</figcaption></figure>
+        </section>
+        <section id="data">
+          <h2>Data Runner</h2>
+          <ol class="step-list"><li>Select <strong>Data Runner</strong> and <strong>Choose CSV</strong>.</li><li>Describe how columns map to the request, for example <em>&ldquo;Get each product using ProductId as the ID.&rdquo;</em></li><li>Review mappings, transforms and the base request.</li><li>Choose <strong>Open in Data Runner</strong>, confirm draft replacement, validate the actual rows in the native wizard, then explicitly Run.</li></ol>
+          <p>Only CSV column names are supplied to AI, not row values or the local file path. Current headers are checked again before handoff. A mapped required path field can remain empty in the base request; the row mapper supplies it later.</p>
+          <p>AI mappings cannot author credentials, header values or arbitrary filesystem paths. Native row validation is still required; a correct header mapping is not proof that every row contains valid data.</p>
+          <figure class="feature-shot"><img src="images/ai-data.png" alt="AI Data Runner plan mapping ProductId onto the request path with the selected CSV header" width="1000" height="900" loading="lazy"><figcaption>Headers guide the draft; row values stay outside the AI prompt.</figcaption></figure>
+        </section>
+        <section id="load">
+          <h2>Load Testing</h2>
+          <p>Example: <em>&ldquo;Load test the products list: ramp from 1 to 5 users over 30 seconds, hold for 60 seconds, then ramp down; P95 below 500 ms.&rdquo;</em></p>
+          <p>The draft supports one catalog endpoint and the <strong>closed virtual-user model</strong>, with warm-up, ramp-up, steady and ramp-down stages, think time and supported thresholds. Open arrival-rate workloads and multiple targets are not supported.</p>
+          <p>Review the scenario and choose <strong>Open in Load Testing</strong>. Environment permission, write-endpoint consent and execution approval are cleared. Review safety limits and build the native summary before starting.</p>
+          <p><code>error_rate</code> thresholds use fractions: <code>0.01</code> means 1%. Stage SLA participation uses native defaults; explicit overrides are rejected during both parsing and draft revalidation. Numeric bounds are representational limits, not safe recommendations for a production API.</p>
+          <figure class="feature-shot"><img src="images/ai-load.png" alt="AI Load Testing plan with ramp-up, steady and ramp-down stages and a P95 threshold" width="1000" height="900" loading="lazy"><figcaption>Planning a load profile grants no permission to execute it.</figcaption></figure>
+        </section>
+        <section id="pipeline">
+          <h2>How a prompt becomes a draft</h2>
+          <ol class="step-list">
+            <li><strong>Local retrieval:</strong> deterministic lexical/fuzzy catalog search finds likely endpoints. There is no embeddings service or vector database.</li>
+            <li><strong>Context cards:</strong> compact summaries and selected detailed cards describe fields, parameters, schemas and valid choices. Suite retrieval expands related resource endpoints.</li>
+            <li><strong>Structured model call:</strong> the provider adapter requests a JSON plan constrained to the offered endpoint IDs.</li>
+            <li><strong>Validation:</strong> the app checks endpoint existence, fields, operators, values, body shape and workflow-specific restrictions.</li>
+            <li><strong>Repair/refinement:</strong> ordinary invalid output gets a bounded corrective prompt; endpoints used without a detailed card receive one for review.</li>
+            <li><strong>Handoff:</strong> only a validated draft enables Open. The native workspace remains the execution authority.</li>
+          </ol>
+          <p>Default request retrieval offers eight candidates and three detailed cards. Suite planning may offer up to 24 candidates and ten cards. This reduces prompt size but does not guarantee the best endpoint or complete business context.</p>
+        </section>
+        <section id="privacy">
+          <h2>Privacy and execution boundaries</h2>
+          <p>Ollama normally runs locally; a remote Ollama endpoint still receives the prompt. Hosted profiles send the sanitized prompt and selected catalog context to the configured provider only after hosted AI is enabled.</p>
+          <ul class="plain-list"><li>Known credentials and recognizable bearer/JWT/key patterns are redacted from outgoing messages and diagnostics. Redaction is best effort, not a complete data-loss-prevention system: do not paste secrets or confidential row values.</li><li>CSV rows and local paths are not part of Data Runner AI context.</li><li>The persistent AI usage ledger stores metadata, not prompts, keys, endpoint URLs or raw model replies.</li><li>Activity and result snapshots are bounded session history, not a persistent audit transcript.</li><li>AI credentials use the app's protected credential storage; this differs from static service credentials in environment settings, which may be stored in plain text.</li></ul>
+          <p>Review the catalog content too: payload samples and user-entered prompt text can contain sensitive data. Choosing a provider is a data-handling decision, not just a speed setting.</p>
+        </section>
+        <section id="tokens">
+          <h2>Tokens, context and budgets</h2>
+          <p>A token is a model-specific chunk of text, not necessarily a word. The application does not run the provider's exact tokenizer locally. It reports counts returned by the provider and shows missing counts as <strong>Not reported</strong>, never invented zeros.</p>
+          <table class="spec-table"><caption>Planning output ceilings per model call</caption><thead><tr><th scope="col">Mode</th><th scope="col">Output ceiling</th></tr></thead><tbody><tr><td>Single request</td><td>2,000 tokens</td></tr><tr><td>Data Runner</td><td>4,000 tokens</td></tr><tr><td>Load Testing</td><td>4,000 tokens</td></tr><tr><td>Test Suite</td><td>6,000 tokens</td></tr></tbody></table>
+          <p><strong>Context window:</strong> Ollama defaults to 16,384 tokens. This setting is not a consumption meter or precise local input preflight. Input context and generated output must still fit the model's capabilities.</p>
+          <p><strong>Retries:</strong> the default allows two repairs after the initial call; the setting ranges from zero to five. Each attempt resends context and may consume input and output tokens. The default timeout is 600 seconds per call; increasing it does not solve output truncation.</p>
+          <h3>When output is truncated</h3>
+          <p>Hosted structured generation checks finish reasons such as <code>length</code> or <code>max_tokens</code>. A truncated answer is rejected even if the JSON parses, and planning stops immediately instead of spending more calls on the same ceiling. There is no automatic token increase, continuation stitching or model switch.</p>
+          <p>Sarvam structured plans explicitly send <code>reasoning_effort: null</code>, disabling reasoning while retaining existing output ceilings. Plain non-structured chat is not changed. This avoids hidden reasoning exhausting a structured plan's output allowance, but does not guarantee every large plan will fit.</p>
+          <h3>What &ldquo;budget&rdquo; means here</h3>
+          <p>The implemented controls are bounded output, candidates/cards and repair attempts, plus usage recording. <strong>There is no daily quota, hard monetary spending cap, price engine or account-wide billing sync.</strong> Provider billing can include reasoning and other model-specific charges. Use provider-side spending controls for financial limits.</p>
+        </section>
+        <section id="activity">
+          <h2>Activity and usage</h2>
+          <p>Toggle <strong>Activity</strong> below the composer to see timestamped retrieval counts, call duration, token counts, finish reasons, validation locations/codes and repair/failure events. <strong>Copy activity</strong> exports the sanitized visible log.</p>
+          <p>This is observable application activity, <strong>not private model thinking</strong>. The log is capped at 300 blocks and each message at 3,000 characters. It remains in session memory and can be restored with notification results.</p>
+          <figure class="feature-shot"><img src="images/ai-activity.png" alt="Activity drawer showing catalog retrieval, returned token counts and successful validation" width="1000" height="900" loading="lazy"><figcaption>Diagnostics explain what the application did without exposing raw replies.</figcaption></figure>
+          <p><strong>Token details</strong> covers the current generation and its repairs, excluding connection probes. <strong>Settings &rarr; AI Usage</strong> is persistent, grouped by connection, with Today / Last 7 days / Last 30 days / This session / All recorded filters and CSV export. It includes hosted probes and known failed-call usage.</p>
+          <p>Ready plans count validated drafts, not test runs. Missing usage leaves totals partial; deleting a connection does not delete historical ledger records.</p>
+          <figure class="feature-shot"><img src="images/ai-usage.png" alt="AI Usage dashboard showing illustrative local metadata totals for four offline generated plans" width="1100" height="760" loading="lazy"><figcaption>App-recorded consumption, not provider account billing.</figcaption></figure>
+        </section>
+        <section id="troubleshooting">
+          <h2>Troubleshooting</h2>
+          <table class="spec-table"><caption>Symptoms and next steps</caption><thead><tr><th scope="col">Symptom</th><th scope="col">Meaning / action</th></tr></thead><tbody>
+            <tr><td>Empty answer</td><td>The provider returned no final text. Check the finish reason, model compatibility and key. Sarvam probes disable reasoning and use a larger allowance than the old tiny probe.</td></tr>
+            <tr><td>Output token limit reached</td><td>Generation stopped at its ceiling, not a timeout. Ask for fewer cases or a smaller payload; choose a suitable model. The app blocks partial handoff and stops repeated repairs.</td></tr>
+            <tr><td><code>variable_in_assertion</code></td><td>Assertions compare literally. Use a literal expected value or another supported check; request variables can still be used in parameters and payloads.</td></tr>
+            <tr><td>Suite takes longer than one request</td><td>More endpoint context, a larger response, validation repairs or unseen-card refinement may require more work and calls. Inspect Activity rather than inferring the reason from elapsed time.</td></tr>
+            <tr><td>CSV headers changed</td><td>Choose the file again. Handoff requires the current headers to match the planning snapshot.</td></tr>
+            <tr><td>Unsupported load profile</td><td>Use one endpoint and supported closed-user stages; do not request arrival-rate or multi-target scenarios.</td></tr>
+            <tr><td>Open is disabled</td><td>The plan is invalid, incomplete, truncated or awaiting clarification. Resolve the displayed issue rather than attempting execution.</td></tr>
+          </tbody></table>
+          <p>The suite refinement crash caused by hashing endpoint objects with dictionary payloads has been corrected by deduplicating endpoint IDs. Builder action columns now fit their Seed/delete controls, and disabled split buttons no longer show the active blue divider.</p>
+        </section>
+        <section id="developer">
+          <h2>Developer reference and handbook</h2>
+          <p>The <a href="guides/AI-Implementation-Guide.pdf">40-page implementation handbook</a> adds beginner analogies, 13 diagrams/charts, code examples and a source-derived function/method index. Its index is a build-time snapshot; current source is authoritative.</p>
+          <table class="spec-table"><caption>Core source map</caption><thead><tr><th scope="col">Component</th><th scope="col">Role</th></tr></thead><tbody>
+            <tr><td><code>api_tester/ai/catalog_index.py</code></td><td>Local search and compact endpoint cards.</td></tr><tr><td><code>planner.py</code> / <code>workflow_plan.py</code></td><td>Model-call loops, repair/refinement, workflow validation.</td></tr>
+            <tr><td><code>request_plan.py</code> / <code>suite_plan.py</code></td><td>Structured drafts and native conversion.</td></tr><tr><td><code>providers/</code></td><td>Ollama/hosted adapters; fake provider for offline tests.</td></tr>
+            <tr><td><code>controller.py</code> / <code>ui.py</code></td><td>Background Qt jobs, composer, diagnostics and handoff.</td></tr><tr><td><code>usage_store.py</code></td><td>Metadata-only ledger, including failed-call counts when reported.</td></tr>
+          </tbody></table>
+<pre class="doc-code"><code># Parallel offline AI regressions
+python -m pytest tests/ai -n 4 --dist loadfile
+
+# Recreate the screenshots using isolated data and a fake provider
+python -m tools.capture_documentation
+
+# Rebuild the illustrated handbook locally (Edge or Chrome required)
+python roadmaps/ai-integration/build-implementation-guide.py</code></pre>
+          <p>On headless systems set <code>QT_QPA_PLATFORM=offscreen</code>. Keep tests in each file on the same worker because Qt state is process-wide. After rebuilding the handbook, refresh the published copy in <code>docs/guides/</code> too.</p>
+          <p>Provider references: <a href="https://docs.ollama.com/api">Ollama API</a>, <a href="https://platform.openai.com/docs/guides/reasoning">OpenAI reasoning</a>, <a href="https://learn.microsoft.com/en-us/azure/ai-services/openai/how-to/reasoning">Azure reasoning</a>, <a href="https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking">Claude thinking</a>, <a href="https://docs.sarvam.ai/api-reference-docs/chat/completions">Sarvam Chat Completions</a>. Check the documentation for the exact model you configure.</p>
+        </section>
+      </article>
+    </div>
+  </main>
+  <footer class="footer"><div class="shell footer-grid">
+    <div class="footer-brand"><a class="brand" href="./"><img src="assets/logo.png" alt="" width="28" height="28"><span>Rest<span>Tester</span></span></a><p>A desktop workbench for exploring, testing and load-testing REST APIs.</p></div>
+    <nav class="footer-col" aria-label="Product"><h2>Product</h2><a href="features.html">Features</a><a href="download.html">Get started</a><a href="about.html">About</a></nav>
+    <nav class="footer-col" aria-label="Documentation"><h2>Documentation</h2><a href="docs.html">Docs</a><a href="ai.html">AI guide</a><a href="docs.html#faq">FAQ</a></nav>
+    <nav class="footer-col" aria-label="Project"><h2>Project</h2><a href="https://github.com/priyankdalal/rest-tester">GitHub</a><a href="https://github.com/priyankdalal/rest-tester/issues">Issues</a><a href="about.html#license">License</a></nav>
+  </div><div class="shell footer-base"><span>&copy; 2026 Rest Tester contributors &middot; GPL-3.0-or-later</span><span class="footer-note">Rest Tester 2.1.0</span></div></footer>
+  <script src="script.js" defer></script>
+</body>
+</html>

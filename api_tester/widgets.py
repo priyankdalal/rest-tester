@@ -31,6 +31,7 @@ from PyQt6.QtGui import (
     QIntValidator,
     QPainter,
     QPainterPath,
+    QPen,
 )
 from PyQt6.QtWidgets import (
     QAbstractButton,
@@ -42,6 +43,7 @@ from PyQt6.QtWidgets import (
     QDialog,
     QFrame,
     QGraphicsDropShadowEffect,
+    QGraphicsOpacityEffect,
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
@@ -1291,6 +1293,72 @@ class _PulseDot(QWidget):
         painter.setBrush(color)
         painter.drawEllipse(core)
         painter.end()
+
+
+class HeaderAiButton(QToolButton):
+    """Stationary blue sparkles with a rotating activity arc during execution."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("headerIconButton")
+        self.setIconSize(QSize(18, 18))
+        self.setFixedSize(32, 32)
+        self.setAccessibleName("Ask AI")
+        self.available = False
+        self.busy = False
+        self._angle = 0.0
+        self._effect = QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(self._effect)
+        self._animation = QVariantAnimation(self)
+        self._animation.setDuration(1500)
+        self._animation.setLoopCount(-1)
+        self._animation.setStartValue(0.0)
+        self._animation.setEndValue(360.0)
+        self._animation.setEasingCurve(QEasingCurve.Type.Linear)
+        self._animation.valueChanged.connect(self._set_angle)
+        self.set_available(False, "No active AI connection. Configure one in Settings > AI Settings.")
+
+    def set_available(self, available: bool, detail: str) -> None:
+        self.available = available
+        self.setToolTip(f"Ask AI (Ctrl+K)\n{detail}")
+        self.refresh_theme()
+        self._refresh_animation()
+
+    def set_busy(self, busy: bool) -> None:
+        self.busy = busy
+        self.refresh_theme()
+        self._refresh_animation()
+
+    def _refresh_animation(self) -> None:
+        if self.busy:
+            self._effect.setOpacity(1.0)
+            if self._animation.state() != QAbstractAnimation.State.Running:
+                self._animation.start()
+        else:
+            self._animation.stop()
+            self._effect.setOpacity(1.0 if self.available else 0.4)
+        self.update()
+
+    def _set_angle(self, value) -> None:
+        self._angle = float(value)
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        super().paintEvent(event)
+        if not self.busy:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        pen = QPen(QColor(theme.PRIMARY), 1.6)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawArc(QRectF(self.rect()).adjusted(3, 3, -3, -3),
+                        int(-self._angle * 16), 120 * 16)
+        painter.end()
+
+    def refresh_theme(self) -> None:
+        self.setIcon(icon("sparkles", theme.PRIMARY if self.available or self.busy else theme.TEXT_MUTED, 18))
 
 
 class HeaderConnectionPill(QFrame):

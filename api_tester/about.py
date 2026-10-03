@@ -58,6 +58,7 @@ FEATURES: tuple[tuple[str, str], ...] = (
 SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("Ctrl+Enter", "Send and verify the current request (API Explorer)"),
     ("Ctrl+L", "Focus the endpoint search (API Explorer)"),
+    ("Ctrl+K", "Ask AI: describe a request in plain words"),
     ("Alt+Left / Alt+Right", "Back / forward (Catalog Builder)"),
     ("Enter", "Pick the first suggestion in a searchable selector"),
     ("Esc", "Restore a searchable selector to its current value"),
