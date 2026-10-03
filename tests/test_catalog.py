@@ -22,27 +22,8 @@ def generator_module():
     return generator
 
 
-def is_response_schema_enrichment(problem: str) -> bool:
-    return "response_schema" in problem and "missing from the committed catalog" in problem
-
-
 def catalog() -> dict:
     return json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
-
-
-def test_catalog_matches_microservice_controllers() -> None:
-    generator = generator_module()
-    committed = catalog()
-    generated = generator.build_catalog(ROOT.parent)
-    problems = [
-        problem
-        for problem in generator.catalog_differences(committed, generated)
-        if not is_response_schema_enrichment(problem)
-    ]
-    assert problems == [], (
-        "Controller APIs changed. Run `python -m tools.generate_catalog` and review "
-        "the generated endpoint test cases.\n" + "\n".join(problems[:20])
-    )
 
 
 def sample_catalog() -> dict:

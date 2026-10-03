@@ -31,6 +31,7 @@ REQUEST = "request"
 DATA_RUNNER = "data-runner"
 LOAD_TEST = "load-test"
 CATALOG = "catalog"
+AI = "ai"
 
 #: Glyph drawn beside each entry, keyed by kind.
 ICONS = {
@@ -38,6 +39,7 @@ ICONS = {
     DATA_RUNNER: "data-runner",
     LOAD_TEST: "load-testing",
     CATALOG: "renew",
+    AI: "sparkles",
 }
 
 

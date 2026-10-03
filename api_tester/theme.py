@@ -863,6 +863,11 @@ QToolButton#endpointSplitButton::menu-button {{
 QToolButton#endpointSplitButton::menu-button:hover {{
     background-color: {SURFACE_ALT};
 }}
+QToolButton#endpointSendButton::menu-button:disabled,
+QToolButton#endpointSplitButton::menu-button:disabled {{
+    border-left: 1px solid transparent;
+    background-color: transparent;
+}}
 QToolButton#endpointSplitButton::menu-indicator {{
     image: url({COMBO_ARROW});
     subcontrol-origin: padding;

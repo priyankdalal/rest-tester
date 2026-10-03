@@ -3,16 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Docs - Filter Grammar, Test Suites, Load Testing &amp; Catalog | Rest Tester</title>
-  <meta name="description" content="Rest Tester documentation: installation, quick start with the demo API, the filter and sort grammar, test suite assertions, the CSV Data Runner, Load Studio, the API catalog format, authentication, data storage and FAQ.">
-  <meta name="keywords" content="Rest Tester documentation, API filter grammar, API test assertions, CSV API runner guide, API load testing guide, API catalog JSON format">
+  <title>Docs - API Testing, Suites, Load Testing &amp; Catalog | Rest Tester</title>
+  <meta name="description" content="Rest Tester documentation: installation, quick start with the demo API, test suite assertions, the CSV Data Runner, Load Studio, Ask AI, the API catalog format, authentication, data storage and FAQ.">
+  <meta name="keywords" content="Rest Tester documentation, API test assertions, CSV API runner guide, API load testing guide, API catalog JSON format">
   <link rel="canonical" href="https://priyankdalal.github.io/rest-tester/docs.html">
   <meta name="robots" content="index, follow, max-image-preview:large">
   <meta name="theme-color" content="#0878f9">
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="Rest Tester">
   <meta property="og:title" content="Rest Tester documentation">
-  <meta property="og:description" content="Install, run the demo API, learn the filter grammar, write suites, run CSV batches and load tests, and describe your API catalog.">
+  <meta property="og:description" content="Install, run the demo API, write suites, run CSV batches and load tests, use Ask AI and describe your API catalog.">
   <meta property="og:url" content="https://priyankdalal.github.io/rest-tester/docs.html">
   <meta property="og:locale" content="en_US">
   <meta property="og:image" content="https://priyankdalal.github.io/rest-tester/assets/og-image.png">
@@ -21,7 +21,7 @@
   <meta property="og:image:alt" content="The Rest Tester API Explorer">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Rest Tester documentation">
-  <meta name="twitter:description" content="Install, filter grammar, suites, CSV runs, load tests and the catalog format.">
+  <meta name="twitter:description" content="Installation, suites, CSV runs, load tests, Ask AI and the catalog format.">
   <meta name="twitter:image" content="https://priyankdalal.github.io/rest-tester/assets/og-image.png">
   <link rel="icon" href="assets/favicon.ico" sizes="any">
   <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
@@ -38,7 +38,7 @@
       {
         "@type": "TechArticle",
         "headline": "Rest Tester documentation",
-        "description": "Installation, quick start, filter grammar, test suites, Data Runner, Load Studio, catalog format, authentication and storage for Rest Tester.",
+        "description": "Installation, quick start, test suites, Data Runner, Load Studio, Ask AI, catalog format, authentication and storage for Rest Tester.",
         "url": "https://priyankdalal.github.io/rest-tester/docs.html",
         "image": "https://priyankdalal.github.io/rest-tester/assets/og-image.png",
         "inLanguage": "en",
@@ -59,7 +59,7 @@
           {
             "@type": "Question",
             "name": "Is Rest Tester free?",
-            "acceptedAnswer": { "@type": "Answer", "text": "Yes. Rest Tester is free and open-source software licensed under the GNU General Public License v3.0 or later. There is no account, subscription or cloud service." }
+            "acceptedAnswer": { "@type": "Answer", "text": "Yes. Rest Tester is free and open-source under GPL v3.0 or later, with no workbench subscription or account. Optional hosted AI requires your own provider connection and may incur provider charges." }
           },
           {
             "@type": "Question",
@@ -99,6 +99,7 @@
       <div class="nav-links" id="site-menu">
         <a href="features.html">Features</a>
         <a href="docs.html" aria-current="page">Docs</a>
+        <a href="ai.html">AI guide</a>
         <a href="about.html">About</a>
         <a href="https://github.com/priyankdalal/rest-tester" rel="noopener">GitHub</a>
         <a class="nav-cta" href="download.html">Get started <span aria-hidden="true">-&gt;</span></a>
@@ -111,7 +112,7 @@
       <nav class="breadcrumb" aria-label="Breadcrumb"><ol><li><a href="./">Home</a></li><li aria-current="page">Documentation</li></ol></nav>
       <p class="eyebrow"><span class="eyebrow-dot"></span> Documentation</p>
       <h1>Learn the workbench,<br><em>then test fast.</em></h1>
-      <p class="page-lede">Everything you need to install Rest Tester, point it at an API and use each workspace - from the filter grammar to the catalog format.</p>
+      <p class="page-lede">Everything you need to install Rest Tester, point it at an API and use each workspace - from request drafts to regression suites and load tests.</p>
     </section>
 
     <div class="shell docs-layout">
@@ -120,13 +121,13 @@
         <a href="#install">Installation</a>
         <a href="#quick-start">Quick start</a>
         <a href="#explorer">API Explorer</a>
-        <a href="#grammar">Filter &amp; sort grammar</a>
         <a href="#suites">Test Suites</a>
         <a href="#data-runner">Data Runner</a>
         <a href="#load-studio">Load Studio</a>
         <a href="#catalog">Catalog Builder</a>
         <a href="#catalog-format">Catalog format</a>
         <a href="#environments">Environments &amp; auth</a>
+        <a href="#ai">Ask AI</a>
         <a href="#storage">Data storage</a>
         <a href="#shortcuts">Keyboard shortcuts</a>
         <a href="#build">Standalone build</a>
@@ -188,40 +189,9 @@ python examples/demo_store_server.py --port 9000 --quiet</code></pre>
           <p>Seeding fills payloads and filters with realistic, type-aware values: fresh UUIDs for GUID fields, ISO dates, real enum members only, two values for <code>bt</code>, several for <code>in</code> / <code>nin</code> and a substring fragment for <code>ct</code>, <code>sw</code> and <code>ew</code>.</p>
           <h3>Response viewer</h3>
           <p><strong>Body</strong>, <strong>Headers</strong>, <strong>Timeline</strong>, <strong>Request</strong> and <strong>Validation</strong> tabs. JSON is syntax-highlighted and searchable, images are previewed and downloads can be saved. The timeline breaks each call into a DNS, TCP connect, TLS and HTTP waterfall.</p>
-          <figure class="feature-shot"><img src="images/api-explorer-request.png" alt="API Explorer request workspace and response viewer" width="1800" height="1125" loading="lazy" decoding="async"><figcaption>The API Explorer request workspace.</figcaption></figure>
-        </section>
-
-        <section id="grammar">
-          <h2>Filter and sort grammar</h2>
-          <p>The filter builder writes a compact, URL-friendly grammar for you. You can also type it by hand; edits parse back into the builder grid.</p>
-<pre class="doc-code"><code>Filter = Name__op:=value          one condition
-         A;B                      A AND B
-         A|B                      A OR  B
-Sort   = Name,CreatedDate-        comma separated, trailing "-" = descending</code></pre>
-          <table class="spec-table">
-            <caption>Operators</caption>
-            <thead><tr><th scope="col">Operator</th><th scope="col">Meaning</th><th scope="col">Example</th></tr></thead>
-            <tbody>
-              <tr><td><code>eq</code> / <code>neq</code></td><td>equals / not equals</td><td><code>Status__eq:=Active</code></td></tr>
-              <tr><td><code>gt</code> / <code>gte</code> / <code>lt</code> / <code>lte</code></td><td>comparisons</td><td><code>Price__gte:=10</code></td></tr>
-              <tr><td><code>bt</code></td><td>between (two values)</td><td><code>Price__bt:=10,50</code></td></tr>
-              <tr><td><code>in</code> / <code>nin</code></td><td>in list / not in list</td><td><code>Name__in:=Desk,Lamp</code></td></tr>
-              <tr><td><code>ct</code> / <code>nct</code></td><td>contains / does not contain</td><td><code>Name__ct:=lamp</code></td></tr>
-              <tr><td><code>sw</code> / <code>ew</code></td><td>starts with / ends with</td><td><code>Sku__sw:=SKU-1</code></td></tr>
-            </tbody>
-          </table>
-          <table class="spec-table">
-            <caption>Operators offered per data type</caption>
-            <thead><tr><th scope="col">Data type</th><th scope="col">Operators</th></tr></thead>
-            <tbody>
-              <tr><td>Text</td><td><code>eq</code> <code>neq</code> <code>ct</code> <code>nct</code> <code>sw</code> <code>ew</code> <code>in</code> <code>nin</code></td></tr>
-              <tr><td>Number</td><td><code>eq</code> <code>neq</code> <code>gt</code> <code>lt</code> <code>gte</code> <code>lte</code> <code>in</code> <code>nin</code> <code>bt</code></td></tr>
-              <tr><td>Date</td><td><code>eq</code> <code>neq</code> <code>gt</code> <code>lt</code> <code>gte</code> <code>lte</code> <code>bt</code></td></tr>
-              <tr><td>Flag (boolean)</td><td><code>eq</code> <code>neq</code></td></tr>
-              <tr><td>LOV (enum)</td><td><code>eq</code> <code>neq</code>, values chosen from the real enum members</td></tr>
-            </tbody>
-          </table>
-          <p class="callout">Only fields the catalog marks as filterable or sortable appear in the builders, so a request can never ask for a field the endpoint does not support.</p>
+          <figure class="feature-shot"><img src="images/api-explorer-request.png" alt="API Explorer request workspace and response viewer" width="1440" height="1000" loading="lazy" decoding="async"><figcaption>The API Explorer request workspace.</figcaption></figure>
+          <p>Without a selected endpoint, request actions are disabled. Disabled split buttons use a neutral appearance without the active blue dropdown divider.</p>
+          <figure class="feature-shot"><img src="images/api-explorer-disabled.png" alt="Current API Explorer before endpoint selection with disabled request actions and no blue dropdown divider" width="1440" height="1000" loading="lazy" decoding="async"><figcaption>Disabled actions make the next step clear: select an endpoint first.</figcaption></figure>
         </section>
 
         <section id="suites">
@@ -334,6 +304,14 @@ Sort   = Name,CreatedDate-        comma separated, trailing "-" = descending</co
           <p class="callout warning"><strong>Keep secrets out of version control.</strong> Static credentials such as API keys, bearer tokens and custom headers are stored in plain text in <code>data/settings.json</code>.</p>
         </section>
 
+        <section id="ai">
+          <h2>Ask AI</h2>
+          <p>Use the header sparkles icon or <kbd>Ctrl</kbd>+<kbd>K</kbd> to draft a Single request, Test Suite, Data Runner mapping or Load Testing profile. Configure named Ollama, Azure OpenAI, OpenAI, Claude or Sarvam AI profiles in <strong>Settings &rarr; AI Settings</strong>.</p>
+          <p>Plans are validated against the catalog. Open transfers a draft; only the native Send or Run executes. CSV planning sends headers, not rows, and load handoff clears execution approvals.</p>
+          <p><a href="ai.html">Read the complete AI guide</a> for provider setup, examples, privacy, Activity, token caps, persistent usage and troubleshooting. A <a href="guides/AI-Implementation-Guide.pdf">40-page illustrated PDF</a> explains the implementation.</p>
+          <figure class="feature-shot"><img src="images/ai-request.png" alt="Current Ask AI composer and validated request preview" width="1000" height="900" loading="lazy"><figcaption>Offline demo plan in the current application UI.</figcaption></figure>
+        </section>
+
         <section id="storage">
           <h2>Local data storage</h2>
           <table class="spec-table">
@@ -343,6 +321,9 @@ Sort   = Name,CreatedDate-        comma separated, trailing "-" = descending</co
               <tr><td>History, saved requests, collections</td><td><code>data/workspace.db</code></td><td>SQLite; history older than 100 days is pruned automatically.</td></tr>
               <tr><td>Test suites</td><td><code>suites/*.json</code></td><td>Plain JSON, friendly to version control.</td></tr>
               <tr><td>Data Runner / Load Studio runs</td><td><code>*.db</code> files you choose</td><td>One portable SQLite file per run; never pruned.</td></tr>
+              <tr><td>AI profiles</td><td><code>data/ai_settings.json</code></td><td>Named connections and planning options; AI keys are stored separately.</td></tr>
+              <tr><td>AI credentials</td><td><code>data/ai_credentials/</code> or configured environment variable</td><td>Protected credential storage; never publish this directory.</td></tr>
+              <tr><td>AI usage</td><td><code>data/ai_usage.db</code></td><td>Metadata-only SQLite ledger, not prompts, raw replies or provider-wide billing.</td></tr>
             </tbody>
           </table>
           <p>In a packaged build these folders are created next to the executable, which keeps the app portable.</p>
@@ -381,7 +362,7 @@ python -m pytest                           # full suite, parallel via pytest-xdi
 
         <section id="faq" class="faq">
           <h2>FAQ</h2>
-          <details><summary>Is Rest Tester free?</summary><p>Yes. It is free and open-source software under the GNU General Public License v3.0 or later. There is no account, subscription or cloud service.</p></details>
+          <details><summary>Is Rest Tester free?</summary><p>Yes. It is free and open-source software under GPL v3.0 or later, with no workbench account or subscription. Optional hosted AI uses your own provider connection and may incur provider charges; local Ollama has no cloud API charge.</p></details>
           <details><summary>Which operating systems are supported?</summary><p>Rest Tester runs from source on Windows, macOS and Linux with Python 3.11 or newer. A standalone Windows executable can be built with PyInstaller.</p></details>
           <details><summary>Do I need a real API to try it?</summary><p>No. The repository ships a dependency-free demo Store API (<code>examples/demo_store_server.py</code>) and a matching catalog (<code>examples/store_catalog.json</code>).</p></details>
           <details><summary>Where is my data stored?</summary><p>Locally: settings in <code>data/settings.json</code>, history and saved requests in <code>data/workspace.db</code>, suites in <code>suites/*.json</code>, and each Data Runner or Load Studio run in its own SQLite file.</p></details>
@@ -398,7 +379,7 @@ python -m pytest                           # full suite, parallel via pytest-xdi
         <p>A desktop workbench for exploring, testing and load-testing REST APIs.</p>
       </div>
       <nav class="footer-col" aria-label="Product"><h2>Product</h2><a href="features.html">Features</a><a href="download.html">Get started</a><a href="about.html">About</a></nav>
-      <nav class="footer-col" aria-label="Documentation"><h2>Documentation</h2><a href="docs.html">Docs</a><a href="docs.html#grammar">Filter grammar</a><a href="docs.html#faq">FAQ</a></nav>
+      <nav class="footer-col" aria-label="Documentation"><h2>Documentation</h2><a href="docs.html">Docs</a><a href="ai.html">AI guide</a><a href="docs.html#faq">FAQ</a></nav>
       <nav class="footer-col" aria-label="Project"><h2>Project</h2><a href="https://github.com/priyankdalal/rest-tester" rel="noopener">GitHub</a><a href="https://github.com/priyankdalal/rest-tester/issues" rel="noopener">Issues</a><a href="about.html#license">License</a></nav>
     </div>
     <div class="shell footer-base"><span>&copy; 2026 Rest Tester contributors &middot; GPL-3.0-or-later</span><span class="footer-note">Rest Tester 2.1.0</span></div>
