@@ -81,6 +81,8 @@ from .client import (
     redact_headers,
 )
 from .environment import AppSettings
+from .headers import merge_headers, request_headers
+from .file_options import part_header_name, safe_file_values
 from .authentication import AuthError
 from .request_editor import RequestEditor
 from .request_auth import (
@@ -693,6 +695,7 @@ class MainWindow(QMainWindow):
         verification_row.addStretch()
         request_page_layout.addLayout(verification_row)
         self.request_editor = RequestEditor(self)
+        self.request_editor.headers_editor.changed.connect(self._request_headers_changed)
         self._alias_request_editor()
         request_page_layout.addWidget(self.request_editor, 1)
 
@@ -1386,7 +1389,7 @@ class MainWindow(QMainWindow):
             "verify_ssl": self.verify_ssl.isChecked(),
             "request_timeout": self.request_timeout.value(),
             "variables": dict(self.app_settings.active.variables),
-            "custom_headers": dict(self.app_settings.active.custom_headers),
+            "custom_headers": self._resolved_environment_headers(),
             "auth_context": AuthenticationContext.from_environment(self.app_settings.active),
         }
 
@@ -1702,7 +1705,7 @@ class MainWindow(QMainWindow):
             self.api_key.text(),
             values,
             payload,
-            self.app_settings.active.custom_headers,
+            self._resolved_environment_headers(),
             omitted_headers=context.secret_names if context.is_disabled(endpoint.service, mode) else frozenset(),
             provided_headers=context.managed_header_names(endpoint.service, mode),
             provided_query=context.managed_query_names(endpoint.service, mode),
@@ -1711,6 +1714,10 @@ class MainWindow(QMainWindow):
         return replace(
             prepared,
             headers=redact_headers(applied.headers, context.secret_names),
+            file_options={
+                name: replace(options, headers=redact_headers(options.headers, context.secret_names))
+                for name, options in prepared.file_options.items()
+            },
             query={**prepared.query, **dict(applied.query)},
         )
 
@@ -1723,6 +1730,14 @@ class MainWindow(QMainWindow):
             for key, item in apply_variables(values, variables).items()
         }
         return resolved_values, apply_variables(payload, variables)
+
+    def _resolved_environment_headers(self) -> dict[str, str]:
+        return {
+            name: str(value) for name, value in apply_variables(
+                self.app_settings.active.custom_headers,
+                self.app_settings.active.variables,
+            ).items()
+        }
 
     def _copy_url(self) -> None:
         try:
@@ -1764,7 +1779,7 @@ class MainWindow(QMainWindow):
         request = SavedRequest(
             endpoint_id=endpoint.id,
             name=name.strip(),
-            values=self._current_values(),
+            values=self._saved_request_values(),
             payload=payload,
             expected_status=self.expected_status.currentText(),
             authentication=self.request_authentication.currentData() or "inherit",
@@ -1798,6 +1813,13 @@ class MainWindow(QMainWindow):
         self.saved_request_store.mark_request_used(request_id)
         self.saved_requests_page.refresh()
         self.navigation.setCurrentRow(0)
+
+    def _saved_request_values(self) -> dict[str, str]:
+        secret_names = AuthenticationContext.from_environment(self.app_settings.active).secret_names
+        return safe_file_values({
+            key: value for key, value in self._current_values().items()
+            if not (key.startswith("header:") and key[7:].lower() in secret_names)
+        }, secret_names)
 
     def _send_saved_request(self, request_id: str, payload: object) -> None:
         """Runs one saved request for the Collections mini handler.
@@ -1837,7 +1859,7 @@ class MainWindow(QMainWindow):
             request.expected_status,
             self.request_timeout.value(),
             self.verify_ssl.isChecked(),
-            dict(self.app_settings.active.custom_headers),
+            self._resolved_environment_headers(),
         )
         self._mini_request_id = request_id
         self._mini_endpoint = endpoint
@@ -2084,7 +2106,7 @@ class MainWindow(QMainWindow):
         request = SavedRequest(
             endpoint_id=endpoint.id,
             name=f"{endpoint.method} {endpoint.action}",
-            values=self._current_values(),
+            values=self._saved_request_values(),
             payload=payload,
             expected_status=self.expected_status.currentText(),
             authentication=self.request_authentication.currentData() or "inherit",
@@ -2244,7 +2266,7 @@ class MainWindow(QMainWindow):
             expected_status,
             self.request_timeout.value(),
             self.verify_ssl.isChecked(),
-            dict(self.app_settings.active.custom_headers),
+            self._resolved_environment_headers(),
         )
         self._request_endpoint = endpoint
         self._request_environment = self.app_settings.active_environment
@@ -2410,6 +2432,7 @@ class MainWindow(QMainWindow):
             self.request_authentication.currentData() or "inherit",
         )
         self.suite_tab.refresh_authentication_choices()
+        self.load_testing_tab._refresh_header_context()
         self._refresh_connection_state()
 
     def _authentication_mode_changed(self) -> None:
@@ -2419,6 +2442,33 @@ class MainWindow(QMainWindow):
                 self.request_authentication.currentData() or "inherit"
             )
         self._refresh_connection_state()
+
+    def _request_headers_changed(self) -> None:
+        self._refresh_header_context()
+        if self.request_authentication.currentData() == "manual":
+            self._refresh_connection_state()
+
+    def _refresh_header_context(self) -> None:
+        endpoint = self.current_endpoint
+        editor = self.request_editor.headers_editor
+        context = AuthenticationContext.from_environment(self.app_settings.active)
+        self.request_editor.set_file_secret_names(context.secret_names)
+        mode = self.request_authentication.currentData() or "inherit"
+        managed = frozenset()
+        error = ""
+        if endpoint is not None:
+            try:
+                managed = context.managed_header_names(endpoint.service, mode)
+            except AuthError as exc:
+                error = str(exc)
+        editor.set_context(
+            self.app_settings.active.custom_headers,
+            self.app_settings.active.variables,
+            managed,
+            context.secret_names if endpoint and context.is_disabled(endpoint.service, mode) else frozenset(),
+            context.secret_names,
+            error,
+        )
 
     def _edit_environment(self) -> None:
         dialog = EnvironmentEditor(
@@ -2437,6 +2487,7 @@ class MainWindow(QMainWindow):
         stale reply is dropped by token, so rapid endpoint switching cannot
         leave the pill showing another endpoint's service.
         """
+        self._refresh_header_context()
         indicator = getattr(self, "connection_indicator", None)
         if indicator is None:
             return
@@ -2461,7 +2512,16 @@ class MainWindow(QMainWindow):
         )
         probe = ConnectionProbe(
             token, context, service, str(mode),
-            dict(self.app_settings.active.custom_headers), self,
+            {
+                name: str(value)
+                for name, value in apply_variables(
+                    merge_headers(
+                        self.app_settings.active.custom_headers,
+                        request_headers(self.current_endpoint, self._current_values()),
+                    ),
+                    self.app_settings.active.variables,
+                ).items()
+            }, self,
         )
         probe.resolved.connect(self._connection_resolved)
         probe.finished.connect(self._connection_probe_finished)
@@ -2847,6 +2907,12 @@ class MainWindow(QMainWindow):
         active = self.app_settings.active
         values = [self.access_token.text(), self.api_key.text()]
         values.extend(str(value) for value in active.variables.values())
+        secret_names = AuthenticationContext.from_environment(active).secret_names
+        values.extend(
+            value for key, value in self._current_values().items()
+            if (key.startswith("header:") and key[7:].lower() in secret_names)
+            or part_header_name(key) in secret_names
+        )
         values.extend(str(value) for value in active.custom_headers.values())
         for profile in active.auth_profiles.values():
             for name, value in vars(profile).items():
