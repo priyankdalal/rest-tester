@@ -53,6 +53,9 @@ from PyQt6.QtWidgets import (
 from api_tester import theme
 from api_tester.catalog import Catalog, Endpoint
 from api_tester.client import parameter_enabled_key
+from api_tester.authentication import AuthError
+from api_tester.headers_ui import HeadersEditor
+from api_tester.request_auth import SECRET_HEADER_NAMES
 from api_tester.data_runner.charts import MultiSeriesLineChart, OutcomeBreakdownChart, SparklineChart
 from api_tester.data_runner.dashboard_widgets import ContextCard, StatCard, WizardStepper
 from api_tester.execution.cancellation import CancellationController
@@ -62,7 +65,7 @@ from api_tester.execution.models import ExecutionEnvironmentSnapshot, RequestTem
 from api_tester.execution.persistence import RunStore, store_file_size
 from api_tester.icons import icon, solid_icon
 from api_tester.seeding import refresh_payload, seed_parameter
-from api_tester.viewers import JsonTextEdit
+from api_tester.viewers import FilePicker, JsonTextEdit
 from api_tester.widgets import (
     SEARCH_TEXT_ROLE,
     AccordionScrollArea,
@@ -387,8 +390,10 @@ class LoadTestingTab(QWidget):
             None,
         )
         self.current_endpoint = endpoint
+        self.headers_editor.load(endpoint, {})
         self._draft_expected_status = endpoint.expected_status if endpoint is not None else "200-299"
         self._render_parameters_table()
+        self._refresh_header_context()
         self._render_payload_editor()
         self._refresh_write_method_hint()
 
@@ -429,6 +434,8 @@ class LoadTestingTab(QWidget):
         else:
             self._endpoint_changed(endpoint_row)
         values = values or {}
+        self.headers_editor.load(endpoint, values)
+        self._refresh_header_context()
         for row in range(self.parameters_table.rowCount()):
             source_item = self.parameters_table.item(row, 0)
             name_item = self.parameters_table.item(row, 1)
@@ -443,6 +450,10 @@ class LoadTestingTab(QWidget):
             if values.get(parameter_enabled_key(source, name)) == "false":
                 value = ""
             self.parameters_table.setItem(row, 4, QTableWidgetItem(value))
+            picker = self.parameters_table.cellWidget(row, 4)
+            if isinstance(picker, FilePicker):
+                picker.setText(value)
+                picker.set_options(name, values)
         if payload is not None:
             self.payload_editor.setPlainText(json.dumps(payload, indent=2))
         self._refresh_scenario_section_summaries()
@@ -450,6 +461,26 @@ class LoadTestingTab(QWidget):
         return True
 
     # ------------------------------------------------------------------ 1. scenario page
+
+    def _refresh_header_context(self) -> None:
+        environment = self.environment_provider()
+        context = environment.auth_context
+        endpoint = self.current_endpoint
+        managed = frozenset()
+        omitted = frozenset()
+        error = ""
+        if context is not None and endpoint is not None:
+            try:
+                managed = context.managed_header_names(endpoint.service)
+                omitted = context.secret_names if context.is_disabled(endpoint.service, "inherit") else frozenset()
+            except AuthError as exc:
+                error = str(exc)
+        self.headers_editor.set_context(
+            environment.custom_headers, environment.variables, managed, omitted,
+            context.secret_names if context is not None else SECRET_HEADER_NAMES, error,
+        )
+        for picker in self.parameters_table.findChildren(FilePicker):
+            picker.secret_names = context.secret_names if context is not None else SECRET_HEADER_NAMES
 
     def load_ai_draft(
         self, endpoint: Endpoint, values: dict[str, str], payload: Any,
@@ -517,7 +548,7 @@ class LoadTestingTab(QWidget):
         params_layout = QVBoxLayout(params_content)
         params_layout.setContentsMargins(0, 0, 0, 0)
         header_row = QHBoxLayout()
-        header_row.addWidget(QLabel("Path, query, header, and form parameters for the target endpoint."))
+        header_row.addWidget(QLabel("Path, query and form parameters for the target endpoint."))
         header_row.addStretch()
         self.seed_parameters_button = QPushButton("Seed parameter values")
         self.seed_parameters_button.setIcon(icon("seed", theme.TEXT, 16))
@@ -541,6 +572,13 @@ class LoadTestingTab(QWidget):
             params_content,
             expanded=False,
             summary="No parameters",
+        )
+        self.headers_editor = HeadersEditor()
+        self.headers_editor.setMinimumHeight(420)
+        self.headers_editor.changed.connect(self._refresh_scenario_section_summaries)
+        self.headers_section = accordion.add_section(
+            "Request headers", self.headers_editor, expanded=False,
+            summary="Environment defaults",
         )
 
         payload_content = QWidget()
@@ -627,6 +665,8 @@ class LoadTestingTab(QWidget):
         if self.current_endpoint is None:
             return
         for parameter in self.current_endpoint.parameters:
+            if parameter.source == "header":
+                continue
             row = self.parameters_table.rowCount()
             self.parameters_table.insertRow(row)
             self.parameters_table.setItem(row, 0, QTableWidgetItem(parameter.source))
@@ -634,12 +674,20 @@ class LoadTestingTab(QWidget):
             self.parameters_table.setItem(row, 2, QTableWidgetItem(parameter.type))
             self.parameters_table.setItem(row, 3, QTableWidgetItem("Yes" if parameter.required else "No"))
             self.parameters_table.setItem(row, 4, QTableWidgetItem(seed_parameter(parameter) if parameter.required else ""))
+            if parameter.source == "form" and "file" in parameter.type.lower():
+                self.parameters_table.setItem(row, 4, QTableWidgetItem(""))
+                picker = FilePicker()
+                picker.changed.connect(self._refresh_scenario_section_summaries)
+                self.parameters_table.setCellWidget(row, 4, picker)
         self._refresh_scenario_section_summaries()
 
     def _seed_parameters(self) -> None:
         if self.current_endpoint is None:
             return
-        for row, parameter in enumerate(self.current_endpoint.parameters):
+        parameters = [p for p in self.current_endpoint.parameters if p.source != "header"]
+        for row, parameter in enumerate(parameters):
+            if parameter.source == "form" and "file" in parameter.type.lower():
+                continue
             self.parameters_table.setItem(row, 4, QTableWidgetItem(seed_parameter(parameter)))
 
     def _render_payload_editor(self) -> None:
@@ -695,6 +743,10 @@ class LoadTestingTab(QWidget):
             if parameter_count
             else "No parameters"
         )
+        if hasattr(self, "headers_section"):
+            self.headers_section.set_summary(
+                f"{self.headers_editor.table.rowCount()} request header(s)"
+            )
 
         payload_text = self.payload_editor.toPlainText().strip()
         if not payload_text:
@@ -1117,6 +1169,7 @@ class LoadTestingTab(QWidget):
         if self.current_endpoint is None:
             raise ValueError("Select a service and endpoint first.")
         environment = self.environment_provider()
+        self._refresh_header_context()
 
         values: dict[str, str] = {}
         for row in range(self.parameters_table.rowCount()):
@@ -1124,6 +1177,11 @@ class LoadTestingTab(QWidget):
             name = self.parameters_table.item(row, 1).text()
             value_item = self.parameters_table.item(row, 4)
             values[f"{source}:{name}"] = value_item.text() if value_item is not None else ""
+            picker = self.parameters_table.cellWidget(row, 4)
+            if isinstance(picker, FilePicker):
+                values[f"{source}:{name}"] = picker.text()
+                values.update(picker.option_values(name))
+        values.update(self.headers_editor.values())
 
         payload_text = self.payload_editor.toPlainText().strip()
         payload: Any = None

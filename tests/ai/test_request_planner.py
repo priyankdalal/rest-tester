@@ -255,11 +255,33 @@ def test_ollama_body_and_response_parsing():
 
 def test_settings_round_trip_and_clamping(tmp_path):
     path = tmp_path / "ai.json"
-    save_ai_settings(path, AiSettings(planner_model="llama3", max_repairs=99))
+    save_ai_settings(path, AiSettings(planner_model="llama3", max_repairs=50))
     loaded = load_ai_settings(path)
     assert loaded.planner_model == "llama3"
-    assert loaded.max_repairs <= 5
+    assert loaded.max_repairs == 50
+    save_ai_settings(path, AiSettings(max_repairs=99))
+    assert load_ai_settings(path).max_repairs == 50
+    save_ai_settings(path, AiSettings(max_repairs=-1))
+    assert load_ai_settings(path).max_repairs == 0
     assert load_ai_settings(tmp_path / "missing.json") == AiSettings()
+
+
+def test_ai_settings_ui_allows_fifty_repair_rounds(tmp_path):
+    from PyQt6.QtWidgets import QApplication, QWidget
+
+    from api_tester.settings_ui import SettingsDialog
+
+    app = QApplication.instance() or QApplication([])
+    dialog = SettingsDialog(QWidget(), tmp_path / "ai.json")
+    try:
+        assert dialog.repairs_input.minimum() == 0
+        assert dialog.repairs_input.maximum() == 50
+        dialog.repairs_input.setValue(50)
+        assert dialog.repairs_input.value() == 50
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
 
 
 def test_redaction_keeps_ordinary_identifiers():

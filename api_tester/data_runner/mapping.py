@@ -419,15 +419,20 @@ def template_request_values(values: dict[str, str] | None) -> dict[str, str]:
     """The sendable ``source:name`` values of a request template.
 
     API Explorer values carry ``enabled:source:name`` flags for optional
-    parameters; flags are dropped, as are switched-off and blank values.
+    parameters; flags are dropped, as are switched-off and blank non-header values.
     """
     values = values or {}
     result: dict[str, str] = {}
     for key, value in values.items():
         source, _, name = key.partition(":")
+        if source == "file" and name:
+            result[key] = str(value)
+            continue
         if source not in _TEMPLATE_SOURCES or not name:
             continue
-        if values.get(f"enabled:{key}") == "false" or value is None or str(value) == "":
+        if values.get(f"enabled:{key}") == "false" or value is None or (
+            str(value) == "" and source != "header"
+        ):
             continue
         result[key] = str(value)
     return result
@@ -509,6 +514,8 @@ class RowMapper:
         buckets: dict[str, dict[str, str]] = {source: {} for source in _TEMPLATE_SOURCES}
         for key, value in self.template_values.items():
             source, _, name = key.partition(":")
+            if source == "file":
+                continue
             buckets[source][name] = value
         resolved = ResolvedRow(
             row_number=row_number,
@@ -699,7 +706,9 @@ class RowMapper:
         return resolved
 
     def build_request_template(self, base: RequestTemplate, resolved: ResolvedRow) -> RequestTemplate:
-        values: dict[str, str] = {}
+        values: dict[str, str] = {
+            key: value for key, value in self.template_values.items() if key.startswith("file:")
+        }
         for source, bucket in (
             ("path", resolved.path_values),
             ("query", resolved.query_values),

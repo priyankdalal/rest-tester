@@ -1,6 +1,6 @@
 """The tabbed request editor shared by the API explorer and the suite editor.
 
-Path, Query, Form and Payload JSON tabs, with the Filter, Sort and Payload
+Path, Query, Headers, Form and Payload JSON tabs, with the Filter, Sort and Payload
 fields editors opened as modal dialogs. Keeping one implementation means a
 test case is authored with exactly the same controls used to explore it.
 """
@@ -32,6 +32,7 @@ from .builders import FormBuilder, PayloadForm, QueryBuilder, SortBuilder
 from .catalog import Catalog, Endpoint
 from .client import parameter_enabled_key, parameter_is_enabled
 from .icons import icon
+from .headers_ui import HeadersEditor
 from .seeding import refresh_payload, seed_parameter
 from .viewers import FilePicker, RequestBodyEditor, ValuePicker
 from .widgets import EditorDialog, attach_table_empty_state
@@ -53,7 +54,7 @@ def merge_payload(base: dict, fields: dict) -> dict:
 
 
 class RequestEditor(QWidget):
-    """Path / Query / Form / Payload JSON tabs for one endpoint request."""
+    """Parameter, header and payload tabs for one endpoint request."""
 
     #: Emitted after any user edit to a parameter, form field or the payload.
     changed = pyqtSignal()
@@ -69,6 +70,7 @@ class RequestEditor(QWidget):
         self._path_parameter_list: list = []
         self._query_parameter_list: list = []
         self._file_pickers: dict = {}
+        self._draft_file_values: dict[str, str] = {}
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -171,6 +173,11 @@ class RequestEditor(QWidget):
         self.payload.changed.connect(self._emit_changed)
         json_layout.addWidget(self.payload)
         self.json_tab_index = self.request_tabs.addTab(json_page, "Payload JSON")
+        self.headers_editor = HeadersEditor(self)
+        self.headers_editor.changed.connect(self._emit_changed)
+        self.headers_tab_index = self.request_tabs.addTab(self.headers_editor, "Headers")
+        self.headers_editor.setEnabled(False)
+        self.request_tabs.setTabEnabled(self.headers_tab_index, False)
 
         self.payload_form = PayloadForm()
         payload_buttons = QHBoxLayout()
@@ -223,6 +230,9 @@ class RequestEditor(QWidget):
         self.endpoint = endpoint
         has_draft = values is not None
         draft_values = values or {}
+        self._draft_file_values = draft_values
+        self.headers_editor.load(endpoint, draft_values)
+        self.request_tabs.setTabEnabled(self.headers_tab_index, endpoint is not None)
         filter_schema = catalog.endpoint_filter_schema(endpoint) if endpoint else None
         self.query_builder.set_schema(filter_schema)
         self.sort_builder.set_schema(filter_schema)
@@ -391,10 +401,19 @@ class RequestEditor(QWidget):
                     else "false"
                 )
         values.update(self.form_builder.values())
+        for row, parameter in enumerate(self._query_parameter_list):
+            picker = self.query_parameters.cellWidget(row, 3)
+            if isinstance(picker, FilePicker):
+                values.update(picker.option_values(parameter.name))
+        values.update(self.headers_editor.values())
         return values
 
     def payload_text(self) -> str:
         return self.payload.toPlainText()
+
+    def set_file_secret_names(self, names: frozenset[str]) -> None:
+        for picker in self.findChildren(FilePicker):
+            picker.secret_names = names
 
     @staticmethod
     def _parameter_value(table: QTableWidget, row: int, column: int) -> str:
@@ -544,6 +563,7 @@ class RequestEditor(QWidget):
         self.sort_builder.refresh_theme()
         self.path_parameters_empty_state.refresh_theme()
         self.query_parameters_empty_state.refresh_theme()
+        self.headers_editor.empty_state.refresh_theme()
 
     # -- construction helpers -------------------------------------------------
     def _emit_changed(self, *_args: Any) -> None:
@@ -582,8 +602,10 @@ class RequestEditor(QWidget):
             cell.setFlags(cell.flags() & ~Qt.ItemFlag.ItemIsEditable)
             picker = FilePicker()
             picker.setText(value)
+            picker.set_options(parameter.name, self._draft_file_values)
             # Mirror the chosen path into the cell so values() still reads it.
             picker.changed.connect(lambda text, item=cell: item.setText(text))
+            picker.changed.connect(self._emit_changed)
             table.setCellWidget(row, column, picker)
             self._file_pickers[(id(table), row)] = picker
         elif parameter.values:

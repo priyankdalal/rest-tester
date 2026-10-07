@@ -45,7 +45,8 @@ from .catalog import Catalog, Endpoint
 from .comparison import ResponseComparison
 from .icons import icon
 from .runner import CaseResult, SuiteResult, append_suite_history, export_report, run_suite
-from .request_auth import populate_auth_choices
+from .request_auth import SECRET_HEADER_NAMES, populate_auth_choices
+from .authentication import AuthError
 from .request_editor import RequestEditor
 from .seeding import seed_parameter
 from .suite import (
@@ -1057,6 +1058,7 @@ class SuiteTab(QWidget):
             dict(case.values),
             "" if case.payload is None else json.dumps(case.payload, indent=2),
         )
+        self._refresh_header_context()
 
         self.assertions.setRowCount(0)
         for assertion in case.assertions:
@@ -1135,17 +1137,44 @@ class SuiteTab(QWidget):
             self.case_authentication, context.profiles if context is not None else {},
             self.current_case.authentication if self.current_case is not None else "inherit",
         )
+        self._refresh_header_context()
 
     def _authentication_changed(self) -> None:
         if not self._loading and self.current_case is not None:
             self.current_case.authentication = self.case_authentication.currentData() or "inherit"
+        self._refresh_header_context()
+
+    def _refresh_header_context(self) -> None:
+        environment = self.environment()
+        context = environment.get("auth_context")
+        case = self.current_case
+        endpoint = self.endpoints.get(case.endpoint_id) if case else None
+        managed = frozenset()
+        omitted = frozenset()
+        error = ""
+        if context is not None and endpoint is not None and case is not None:
+            try:
+                managed = context.managed_header_names(endpoint.service, case.authentication)
+                omitted = context.secret_names if context.is_disabled(endpoint.service, case.authentication) else frozenset()
+            except AuthError as exc:
+                error = str(exc)
+        self.request_editor.headers_editor.set_context(
+            environment.get("custom_headers", {}),
+            {**environment.get("variables", {}), **self.suite.variables},
+            managed, omitted,
+            context.secret_names if context is not None else SECRET_HEADER_NAMES,
+            error,
+        )
+        self.request_editor.set_file_secret_names(
+            context.secret_names if context is not None else SECRET_HEADER_NAMES
+        )
 
     def _request_changed(self) -> None:
         if self._loading or self.current_case is None:
             return
         values = self.current_case.values
         # Replace every form key so cleared fields are dropped from the case.
-        for key in [k for k in values if k.startswith("form:")]:
+        for key in [k for k in values if k.startswith(("form:", "file:", "header:", "enabled:header:"))]:
             del values[key]
         values.update(self.request_editor.values())
         text = self.request_editor.payload_text().strip()

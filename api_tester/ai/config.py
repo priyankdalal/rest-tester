@@ -115,7 +115,7 @@ class AiSettings:
             if provider in PROVIDERS and isinstance(profile, dict)
         }
         settings.timeout_seconds = max(10, min(int(settings.timeout_seconds), 1800))
-        settings.max_repairs = max(0, min(int(settings.max_repairs), 5))
+        settings.max_repairs = max(0, min(int(settings.max_repairs), 50))
         settings.candidate_count = max(1, min(int(settings.candidate_count), 20))
         settings.detailed_candidates = max(1, min(int(settings.detailed_candidates), settings.candidate_count))
         settings.context_window = max(2048, min(int(settings.context_window), 262144))

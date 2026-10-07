@@ -167,6 +167,7 @@ def test_scenario_sections_use_accordion_layout_with_schedule_expanded(app: QApp
 
     assert tab.scenario_details_section.is_expanded() is False
     assert tab.request_values_section.is_expanded() is False
+    assert tab.headers_section.is_expanded() is False
     assert tab.payload_section.is_expanded() is False
     assert tab.load_schedule_section.is_expanded() is True
     assert tab.stages_table.minimumHeight() >= 330
@@ -201,6 +202,7 @@ def test_collapsed_scenario_accordions_stay_top_aligned(app: QApplication) -> No
     sections = (
         tab.scenario_details_section,
         tab.request_values_section,
+        tab.headers_section,
         tab.payload_section,
         tab.load_schedule_section,
     )
@@ -217,7 +219,7 @@ def test_collapsed_scenario_accordions_stay_top_aligned(app: QApplication) -> No
 def test_scenario_page_scrolls_instead_of_overlapping_when_cramped(app: QApplication) -> None:
     """Regression: all sections expanded in a short viewport must scroll, not overlap.
 
-    Stacking the four accordions directly in a plain QVBoxLayout (no scroll
+    Stacking the accordions directly in a plain QVBoxLayout (no scroll
     area) let Qt compress widgets below their minimum size once the summed
     content height exceeded the visible tab area, producing overlapping text
     and clipped/missing borders. The scenario page must be a QScrollArea so
@@ -232,6 +234,7 @@ def test_scenario_page_scrolls_instead_of_overlapping_when_cramped(app: QApplica
     tab.resize(1200, 420)
     tab.scenario_details_section.set_expanded(True)
     tab.request_values_section.set_expanded(True)
+    tab.headers_section.set_expanded(True)
     tab.payload_section.set_expanded(True)
     tab.load_schedule_section.set_expanded(True)
     tab.show()
@@ -240,6 +243,7 @@ def test_scenario_page_scrolls_instead_of_overlapping_when_cramped(app: QApplica
     sections = (
         tab.scenario_details_section,
         tab.request_values_section,
+        tab.headers_section,
         tab.payload_section,
         tab.load_schedule_section,
     )
