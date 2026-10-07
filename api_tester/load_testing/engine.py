@@ -321,6 +321,7 @@ class LoadEngine:
                 key: value
                 for key, value in scenario.template.values.items()
                 if not key.startswith("header:")
+                and not (key.startswith("file:") and ":header:" in key)
             },
             "payload": scenario.template.payload,
             "expected_status": scenario.template.expected_status,

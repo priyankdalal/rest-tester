@@ -4,6 +4,7 @@ import json
 import re
 import socket
 import ssl
+import shlex
 from contextlib import ExitStack
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -17,7 +18,9 @@ import requests
 from . import content as content_module
 from .auth_strategies import RequestContext
 from .catalog import Endpoint
-from .request_auth import AuthenticationContext, SECRET_HEADER_NAMES
+from .headers import merge_headers, request_headers, validate_headers
+from .file_options import FileOptions, resolve_file_options
+from .request_auth import AppliedAuthentication, AuthenticationContext, SECRET_HEADER_NAMES
 from .workspace_store import WorkspaceStore, as_store
 
 
@@ -64,6 +67,7 @@ class PreparedEndpointRequest:
     form: dict[str, str]
     files: dict[str, str]
     json_body: Any
+    file_options: dict[str, FileOptions] = field(default_factory=dict)
 
     @property
     def resolved_url(self) -> str:
@@ -112,7 +116,13 @@ def prepare_endpoint_request(
         )
     if api_key.strip():
         headers["x-api-key"] = api_key.strip()
-    headers.update(custom_headers or {})
+    headers = merge_headers(headers, custom_headers or {}, request_headers(endpoint, values))
+    headers = {
+        name: value for name, value in headers.items()
+        if name.lower() not in omitted_headers
+    }
+    validate_headers(headers)
+    supplied_headers = {name.lower() for name, value in headers.items() if value}
 
     for parameter in endpoint.parameters:
         if parameter.source == "header" and parameter.name.lower() in omitted_headers:
@@ -121,7 +131,9 @@ def prepare_endpoint_request(
             continue
         value = values.get(f"{parameter.source}:{parameter.name}", "").strip()
         if not value:
-            if parameter.source == "header" and parameter.name.lower() in provided_headers:
+            if parameter.source == "header" and parameter.name.lower() in (
+                provided_headers | supplied_headers
+            ):
                 continue
             if parameter.source == "query" and parameter.name in provided_query:
                 continue
@@ -140,7 +152,7 @@ def prepare_endpoint_request(
         elif parameter.source == "query":
             query[parameter.name] = value
         elif parameter.source == "header":
-            headers[parameter.name] = value
+            continue  # All header values were merged case-insensitively above.
         elif parameter.source == "form":
             target = files if "file" in parameter.type.lower() else form
             target[parameter.name] = value
@@ -150,6 +162,15 @@ def prepare_endpoint_request(
     ]
     if missing_files:
         raise ValueError("Form file does not exist: " + ", ".join(missing_files))
+    file_options = {
+        name: resolve_file_options(name, path, values, omitted_headers)
+        for name, path in files.items()
+    }
+    if files and any(name.lower() == "content-type" for name in headers):
+        raise ValueError(
+            "Remove the request Content-Type header for multipart uploads. "
+            "The HTTP client generates the boundary; set per-file content type under File options."
+        )
 
     unresolved = re.findall(r"\{([^}:]+)(?::[^}]+)?\}", path)
     if unresolved:
@@ -170,6 +191,7 @@ def prepare_endpoint_request(
         form=form,
         files=files,
         json_body=json_body,
+        file_options=file_options,
     )
 
 
@@ -183,6 +205,9 @@ def redact_headers(
 
 
 def generate_curl(request: PreparedEndpointRequest, redact_secrets: bool = True) -> str:
+    def quote_form(value: str) -> str:
+        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
     headers = redact_headers(request.headers) if redact_secrets else request.headers
     parts = ["curl", "-X", request.method, f'"{request.resolved_url}"']
     for name, value in headers.items():
@@ -190,7 +215,15 @@ def generate_curl(request: PreparedEndpointRequest, redact_secrets: bool = True)
     for name, value in request.form.items():
         parts.extend(["-F", f'"{name}={value}"'])
     for name, path in request.files.items():
-        parts.extend(["-F", f'"{name}=@{path}"'])
+        options = request.file_options.get(name) or resolve_file_options(name, path, {})
+        form_value = (
+            f"{name}=@{quote_form(str(Path(path).expanduser()))};filename={quote_form(options.filename)}"
+            f";headers={quote_form('Content-Type: ' + options.content_type)}"
+        )
+        part_headers = redact_headers(options.headers) if redact_secrets else options.headers
+        for header, value in part_headers.items():
+            form_value += f";headers={quote_form(f'{header}: {value}')}"
+        parts.extend(["-F", shlex.quote(form_value)])
     if request.json_body is not None:
         parts.extend(
             [
@@ -219,11 +252,29 @@ def generate_python(request: PreparedEndpointRequest) -> str:
         lines.append(f"payload = {request.json_body!r}")
         arguments.append("json=payload")
     if request.files:
+        lines.insert(1, "from contextlib import ExitStack")
+        lines.insert(2, "from pathlib import Path")
         lines.append(f"file_paths = {request.files!r}")
-        lines.append(
-            "files = {name: open(path, 'rb') for name, path in file_paths.items()}"
-        )
+        options = {
+            name: request.file_options.get(name) or resolve_file_options(name, path, {})
+            for name, path in request.files.items()
+        }
+        lines.append("file_options = " + repr({
+            name: (option.filename, option.content_type, redact_headers(option.headers))
+            for name, option in options.items()
+        }))
         arguments.append("files=files")
+        lines.extend([
+            "",
+            "with ExitStack() as stack:",
+            "    files = {name: (file_options[name][0],",
+            "                    stack.enter_context(Path(path).expanduser().open('rb')),",
+            "                    file_options[name][1], file_options[name][2])",
+            "             for name, path in file_paths.items()}",
+            f"    response = requests.request({', '.join(arguments)})",
+            "    response.raise_for_status()",
+        ])
+        return "\n".join(lines)
     lines.extend(
         [
             "",
@@ -356,6 +407,12 @@ def execute_endpoint(
         provided_headers=auth_context.managed_header_names(endpoint.service, auth_mode) if auth_context else frozenset(),
         provided_query=auth_context.managed_query_names(endpoint.service, auth_mode) if auth_context else frozenset(),
     )
+    part_secrets = tuple(
+        value for options in prepared.file_options.values()
+        for name, value in options.headers.items()
+        if name.lower() in (auth_context.secret_names if auth_context else SECRET_HEADER_NAMES)
+        and value
+    )
     auth_ms = 0.0
     first_attempt_ms = 0
     secrets_seen: tuple[str, ...] = ()
@@ -367,8 +424,12 @@ def execute_endpoint(
                                context=_request_context(prepared))
             if auth_context is not None else None
         )
+        if applied is None and part_secrets:
+            applied = AppliedAuthentication(dict(prepared.headers))
         auth_ms += (perf_counter() - started) * 1000 if applied and applied.managed else 0
         if applied:
+            if part_secrets:
+                applied = replace(applied, secrets=applied.secrets + part_secrets)
             secrets_seen += applied.secrets
             applied = replace(applied, secrets=secrets_seen)
         outgoing = (
@@ -388,7 +449,7 @@ def execute_endpoint(
                 request_auth=applied.request_auth if applied else None,
             )
         except (requests.RequestException, RuntimeError, ValueError) as exc:
-            if applied and applied.managed:
+            if applied and (applied.managed or part_secrets):
                 raise RuntimeError(applied.redact(str(exc))) from None
             raise
         challenge = next(
@@ -507,10 +568,15 @@ def _execute_endpoint(
     if execution_started is not None:
         timings["request_offset_ms"] = (started - execution_started) * 1000
     with ExitStack() as stack:
-        files = {
-            name: stack.enter_context(Path(file_path).expanduser().open("rb"))
-            for name, file_path in file_values.items()
-        }
+        files = {}
+        for name, file_path in file_values.items():
+            options = prepared.file_options.get(name) or resolve_file_options(name, file_path, {})
+            files[name] = (
+                options.filename,
+                stack.enter_context(Path(file_path).expanduser().open("rb")),
+                options.content_type,
+                options.headers,
+            )
         try:
             requester = session.request if session is not None else requests.request
             response = requester(

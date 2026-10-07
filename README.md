@@ -193,14 +193,68 @@ illustrate the existing workspaces.
 The explorer is the home workspace. On the left is the **endpoint tree**, grouped by service.
 It supports search (`Ctrl+L`), method and scope filters, favourites and recently used endpoints.
 On the right, each endpoint has **Request**, **Documentation**, **Examples** and **Test History**
-tabs. The request itself is edited in four sub-tabs:
+tabs. The request itself is edited in five sub-tabs:
 
 | Request tab | Purpose |
 |---|---|
 | **Path** | Path parameters with typed editors and catalog defaults. |
 | **Query** | Query parameters. `Filter` and `Sort` rows open their schema-driven builders. |
-| **Form** | `multipart/form-data` fields. File fields get a **Browse…** button. |
+| **Form** | `multipart/form-data` fields. File fields get **Browse…** and **File options** controls. |
 | **Payload JSON** | The raw body. **Payload fields** opens a schema-driven form that writes back to the JSON. |
+| **Headers** | Catalog header fields and request-specific custom headers, with inclusion toggles and a masked effective-header preview showing their source. |
+
+#### Request headers
+
+Use **Request > Headers > Add header** to enter a name and value for this request.
+Environment **Custom Headers** remain shared defaults; request rows override them
+case-insensitively. If a name appears more than once, the last row wins. Unticking
+a row disables that override, leaving any environment default intact.
+Values support `{{variables}}`, including when a request becomes a suite case.
+Required catalog headers can also be supplied by environment defaults or managed
+authentication. Invalid names and values are rejected before sending.
+
+The preview shows **Default**, **Environment**, **Request**, and **Managed authentication**
+sources without acquiring credentials. Known credential values are masked, and conflicting
+manual/managed headers are flagged and blocked. Select **Manual headers only** intentionally
+to send a manual credential; **No authentication** omits known credential headers.
+The HTTP client adds body and transport headers at send time.
+
+Headers follow endpoint drafts, saved requests, collections and suite handoff.
+**Open in Data Runner** retains them in the request template; **Open in Load Studio**
+opens them in a matching **Request headers** section. Header variables are resolved
+against the frozen execution environment. Load-run artifacts deliberately omit header values.
+Saved Requests omit known credential headers (including configured managed header names).
+Suite files can store header values in plain text, so use variable placeholders rather
+than literal credentials; arbitrary custom header names are not automatically classified
+as secrets.
+
+#### Multipart file options
+
+For an upload, select a file on **Form**, then click its **File options** button.
+Each file has independent settings:
+
+| Option | Behaviour |
+|---|---|
+| **Upload filename** | Overrides the filename sent to the API without renaming the local file. Blank uses the local filename. |
+| **Content type** | For example, `image/png`, `application/pdf`, or `application/octet-stream`. Blank detects the type from the upload filename's extension, falling back to `application/octet-stream`; it does not inspect file contents. |
+| **Part headers** | Optional name/value headers sent inside that file's multipart section, not as request-wide headers. |
+
+**OK** applies changes; **Cancel** keeps the previous options. The `*` on **File options**
+indicates saved overrides. Clear an override to return to automatic values. File metadata
+supports `{{variables}}` and follows drafts, saved requests, suites, collections, Data Runner
+templates, and Load Studio. cURL and Python exports include the multipart options.
+
+Leave the outer request **Content-Type** unset for uploads: the HTTP client generates
+`multipart/form-data` with the correct boundary. An explicit request-wide content type is
+rejected for file uploads. Part `Content-Type`, `Content-Disposition`, and `Content-Length`
+are reserved; use the filename/content-type fields instead of adding these as custom headers.
+Invalid names, media types and control characters are rejected before sending.
+
+Known credential part headers are masked in the editor, exported examples and recorded
+request bodies, omitted by **No authentication**, and stripped from Saved Requests.
+Load-run artifacts omit part-header values. Suite files can contain literal part headers;
+prefer variables for sensitive data. Arbitrary header names are not automatically treated
+as credentials. Existing file-list fields still accept one file per request.
 
 The header actions are:
 
@@ -438,8 +492,10 @@ non-empty, not the raw content; unavailable finish reasons are not guessed.
 
 **Token controls are not spending limits.** Per-call output ceilings are 2,000 tokens
 for requests, 4,000 for Data Runner/Load Testing, and 6,000 for suites. The default
-allows two repairs after the initial call. Each attempt can consume input and output
-tokens again. Ollama's default context window is 16,384; there is no exact local
+allows two repairs after the initial call; AI Settings permits up to 50 repair rounds
+(51 total model calls including the initial plan). Each attempt can consume input and
+output tokens again and may incur hosted-provider charges. Ollama's default context
+window is 16,384; there is no exact local
 provider-tokenizer preflight. There is no daily quota or hard monetary budget: use
 your provider's spending controls for financial limits.
 

@@ -328,8 +328,12 @@ class SettingsDialog(QDialog):
         self.timeout_input.setValue(self.settings.timeout_seconds)
         form.addRow("Request timeout", self.timeout_input)
         self.repairs_input = QSpinBox()
-        self.repairs_input.setRange(0, 5)
+        self.repairs_input.setRange(0, 50)
         self.repairs_input.setValue(self.settings.max_repairs)
+        self.repairs_input.setToolTip(
+            "Additional repair/refinement model calls after the initial plan. "
+            "Each call can consume tokens or incur provider charges."
+        )
         form.addRow("Maximum repair rounds", self.repairs_input)
         layout.addLayout(form)
         self.hosted_input = QCheckBox("Allow prompts and selected API catalog metadata to be sent to hosted AI")

@@ -45,6 +45,7 @@ from .widgets import (
     tint_toolbar as _tint_toolbar,
 )
 from .workspace_store import WorkspaceStore, as_store
+from .file_options import safe_file_values
 
 
 def _timestamp() -> str:
@@ -100,14 +101,14 @@ def _safe_values(values: dict[str, Any]) -> dict[str, str]:
         "authorization", "x-api-key", "api-key", "proxy-authorization",
         "x-functions-key", "ocp-apim-subscription-key", "cookie", "set-cookie",
     }
-    return {
+    return safe_file_values({
         str(name): str(item)
         for name, item in values.items()
         if not (
             str(name).lower().startswith("header:")
             and str(name).split(":", 1)[1].lower() in secret_headers
         )
-    }
+    })
 
 
 @dataclass

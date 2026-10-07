@@ -48,6 +48,7 @@ from . import theme
 from .comparison import ResponseComparison
 from .icons import icon
 from .widgets import attach_table_empty_state
+from .request_auth import SECRET_HEADER_NAMES
 
 _KEY_PATTERN = QRegularExpression(r'"(?:[^"\\]|\\.)*"(?=\s*:)')
 _STRING_PATTERN = QRegularExpression(r'"(?:[^"\\]|\\.)*"')
@@ -875,6 +876,8 @@ class FilePicker(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._file_options: dict[str, str] = {}
+        self.secret_names = SECRET_HEADER_NAMES
         layout = QHBoxLayout(self)
         layout.setContentsMargins(2, 0, 2, 0)
         layout.setSpacing(4)
@@ -887,6 +890,11 @@ class FilePicker(QWidget):
         self.browse_button.setAccessibleName("Browse for a file to upload")
         self.browse_button.clicked.connect(self.browse)
         layout.addWidget(self.browse_button)
+        self.options_button = QPushButton("File options")
+        self.options_button.setToolTip("Upload filename, content type and per-file headers")
+        self.options_button.setAccessibleName("Configure multipart file options")
+        self.options_button.clicked.connect(self.open_options)
+        layout.addWidget(self.options_button)
         self.refresh_theme()
 
     def refresh_theme(self) -> None:
@@ -897,6 +905,29 @@ class FilePicker(QWidget):
 
     def setText(self, value: str) -> None:
         self.path_edit.setText(value or "")
+
+    def set_options(self, name: str, values: dict[str, str]) -> None:
+        prefix = f"file:{name}:"
+        self._file_options = {
+            key[len(prefix):]: value for key, value in values.items()
+            if key.startswith(prefix)
+        }
+        self._refresh_options_hint()
+
+    def option_values(self, name: str) -> dict[str, str]:
+        return {f"file:{name}:{key}": value for key, value in self._file_options.items()}
+
+    def _refresh_options_hint(self) -> None:
+        self.options_button.setText("File options *" if self._file_options else "File options")
+
+    def open_options(self) -> None:
+        from .file_options_ui import FileOptionsDialog
+
+        dialog = FileOptionsDialog(self, self.text(), self._file_options, self.secret_names)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._file_options = dialog.values()
+            self._refresh_options_hint()
+            self.changed.emit(self.text())
 
     def browse(self) -> str:
         path, _ = QFileDialog.getOpenFileName(self, "Choose a file to upload")

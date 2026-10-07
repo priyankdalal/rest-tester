@@ -240,7 +240,10 @@ def run_case(
             case.expected_status,
             timeout=timeout,
             verify_ssl=verify_ssl,
-            custom_headers=custom_headers,
+            custom_headers=(
+                {key: str(value) for key, value in apply_variables(custom_headers, variables).items()}
+                if custom_headers is not None else None
+            ),
             **(
                 {"auth_context": auth_context, "auth_mode": case.authentication}
                 if auth_context is not None or case.authentication != "inherit" else {}

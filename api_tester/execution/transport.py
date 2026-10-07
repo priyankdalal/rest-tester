@@ -10,6 +10,8 @@ import requests
 
 from api_tester.catalog import Endpoint
 from api_tester.client import ApiResult, execute_endpoint
+from api_tester.headers import merge_headers
+from api_tester.suite import apply_variables
 
 from .errors import ClassifiedError, classify_exception, classify_status
 from .models import ExecutionEnvironmentSnapshot, RequestSample, RequestTemplate
@@ -63,6 +65,11 @@ class WorkerTransport:
         values = dict(template.values)
         if extra_values:
             values.update(extra_values)
+        values = {
+            key: str(apply_variables(value, self._environment.variables))
+            if key.startswith(("header:", "file:")) else value
+            for key, value in values.items()
+        }
         payload = template.payload if payload_override is None else payload_override
         try:
             result = execute_endpoint(
@@ -76,8 +83,10 @@ class WorkerTransport:
                 timeout=self._environment.timeout,
                 verify_ssl=self._environment.verify_ssl,
                 custom_headers={
-                    **self._environment.custom_headers,
-                    **template.custom_headers,
+                    name: str(value) for name, value in apply_variables(
+                        merge_headers(self._environment.custom_headers, template.custom_headers),
+                        self._environment.variables,
+                    ).items()
                 },
                 auth_context=self._environment.auth_context,
                 auth_mode=template.auth_mode,

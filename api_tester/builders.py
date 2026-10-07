@@ -667,6 +667,8 @@ class FormBuilder(QWidget):
         return [name for name, _, _ in self._editors]
 
     def set_schema(self, schema: dict[str, Any] | None, values: dict[str, str] | None = None) -> None:
+        from .viewers import FilePicker
+
         self.schema = schema
         self._editors = []
         self.container.deleteLater()
@@ -687,6 +689,8 @@ class FormBuilder(QWidget):
             name = field["name"]
             editor = self._create_editor(field)
             self._set_editor_value(editor, field, current.get(f"form:{name}", ""))
+            if isinstance(editor, FilePicker):
+                editor.set_options(name, current)
             row = QWidget()
             row_layout = QHBoxLayout(row)
             row_layout.setContentsMargins(0, 0, 0, 0)
@@ -794,16 +798,24 @@ class FormBuilder(QWidget):
 
     def values(self) -> dict[str, str]:
         """Returns ``{"form:Name": "value"}`` for non-empty fields."""
+        from .viewers import FilePicker
+
         result: dict[str, str] = {}
         for name, editor, field in self._editors:
             text = self._editor_text(editor)
             if text:
                 result[f"form:{name}"] = text
+            if isinstance(editor, FilePicker):
+                result.update(editor.option_values(name))
         return result
 
     def set_values(self, values: dict[str, str]) -> None:
+        from .viewers import FilePicker
+
         for name, editor, field in self._editors:
             self._set_editor_value(editor, field, values.get(f"form:{name}", ""))
+            if isinstance(editor, FilePicker):
+                editor.set_options(name, values)
 
     def _editor_text(self, editor: QWidget) -> str:
         from .viewers import FilePicker
