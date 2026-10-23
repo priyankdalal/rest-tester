@@ -300,16 +300,18 @@ class EmptyStateWidget(QWidget):
 class TableEmptyState(EmptyStateWidget):
     """An empty state overlaid on an item view, shown whenever it has no rows.
 
-    While the view is empty its headers are hidden, so every empty table in
+    By default, while the view is empty its headers are hidden, so empty tables in
     the app reads as one centred placeholder card instead of a column strip
     above a blank area. The headers come back as soon as rows arrive. Works
     for any ``QAbstractItemView`` - tables and trees alike - because it only
-    needs the viewport and the model's top-level row count.
+    needs the viewport and the model's top-level row count. ``keep_headers`` is
+    available for report tables that retain their column context when empty.
     """
 
-    def __init__(self, table: QAbstractItemView) -> None:
+    def __init__(self, table: QAbstractItemView, *, keep_headers: bool = False) -> None:
         super().__init__(table.viewport())
         self._table = table
+        self._keep_headers = keep_headers
         self._headers = [
             header
             for header in (
@@ -354,7 +356,7 @@ class TableEmptyState(EmptyStateWidget):
         """
         for header in self._restorable:
             if not sip.isdeleted(header):
-                header.setVisible(not visible)
+                header.setVisible(self._keep_headers or not visible)
         if visible:
             self.setGeometry(self._table.viewport().rect())
             self.raise_()
@@ -404,9 +406,10 @@ def attach_table_empty_state(
     guidance: str,
     action_text: str | None = None,
     action_callback: Callable[[], None] | None = None,
+    keep_headers: bool = False,
 ) -> TableEmptyState:
     """Gives ``table`` a themed placeholder for when it holds no rows."""
-    overlay = TableEmptyState(table)
+    overlay = TableEmptyState(table, keep_headers=keep_headers)
     overlay.set_content(
         icon_name=icon_name,
         title=title,

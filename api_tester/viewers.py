@@ -9,7 +9,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
+import threading
+
+from .security import SecurityReport
+from .workspace_store import WorkspaceStore
 
 from PyQt6.QtCore import QRectF, QRegularExpression, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import (
@@ -467,6 +471,8 @@ class ResponseViewer(QWidget):
         self.status_label.setObjectName("responseStatus")
         self.status_label.setTextFormat(Qt.TextFormat.RichText)
         status_row.addWidget(self.status_label)
+        self._security_scan: Callable[[threading.Event], SecurityReport] | None = None
+        self._security_store: WorkspaceStore | None = None
         self.url_label = QLabel("")
         self.url_label.setProperty("muted", True)
         self.url_label.setTextFormat(Qt.TextFormat.PlainText)
@@ -591,6 +597,13 @@ class ResponseViewer(QWidget):
         self.validation.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.validation.setWordWrap(True)
         self.tabs.addTab(self.validation, "Validation")
+        from .security_ui import SecurityReportPanel
+        self.security_panel = SecurityReportPanel(self)
+        self.security_tab_index = self.tabs.addTab(self.security_panel, "Security")
+        self.tabs.setTabEnabled(self.security_tab_index, False)
+        self.tabs.setTabToolTip(
+            self.security_tab_index, "Send a request to review its captured response security evidence."
+        )
 
     def refresh_theme(self) -> None:
         for button, icon_name, _tooltip in self._response_actions:
@@ -602,7 +615,14 @@ class ResponseViewer(QWidget):
         for inspector in getattr(self, "_inspectors", []):
             inspector.refresh_theme()
 
+    def clear_security_review(self) -> None:
+        self._security_scan = None
+        self._security_store = None
+        self.tabs.setTabEnabled(self.security_tab_index, False)
+        self.security_panel.clear()
+
     def clear(self) -> None:
+        self.clear_security_review()
         self._payload = b""
         self._info = None
         self._raw_text = ""
@@ -633,8 +653,20 @@ class ResponseViewer(QWidget):
             "Request could not be validated because no HTTP response was received."
         )
 
+    def set_security_review(
+        self, scan: Callable[[threading.Event], SecurityReport], store: WorkspaceStore,
+        *, current_fingerprint: Callable[[], str] | None = None, auto: bool = False,
+    ) -> None:
+        self._security_scan = scan
+        self._security_store = store
+        self.security_panel.configure(
+            scan, store=store, current_fingerprint=current_fingerprint, auto=auto,
+        )
+        self.tabs.setTabEnabled(self.security_tab_index, True)
+
     def show_result(self, result: Any) -> None:
         """Renders an ``ApiResult`` or a runner ``CaseResult``."""
+        self.clear_security_review()
         self._previous_text = (
             self._raw_text if self._info is not None and not self._info.is_binary else None
         )

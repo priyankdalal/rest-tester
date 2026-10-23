@@ -1063,6 +1063,25 @@ def render_markdown(document: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def preserve_security_metadata(document: dict[str, Any], previous: dict[str, Any]) -> None:
+    """Keep authored review expectations on services/routes that still exist."""
+    from copy import deepcopy
+
+    services = {service["name"]: service for service in previous.get("services", [])}
+    for service in document.get("services", []):
+        old = services.get(service["name"], {})
+        if old.get("security_metadata"):
+            service["security_metadata"] = deepcopy(old["security_metadata"])
+        endpoints = {
+            (endpoint["method"], endpoint["path"]): endpoint
+            for endpoint in old.get("endpoints", [])
+        }
+        for endpoint in service.get("endpoints", []):
+            prior = endpoints.get((endpoint["method"], endpoint["path"]), {})
+            if prior.get("security_metadata"):
+                endpoint["security_metadata"] = deepcopy(prior["security_metadata"])
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate API test cases from C# controllers.")
     parser.add_argument("--workspace-root", type=Path, default=WORKSPACE_ROOT)
@@ -1079,6 +1098,8 @@ def main() -> int:
         except (OSError, ValueError):
             existing_name = ""
     document = build_catalog(args.workspace_root.resolve(), existing_name)
+    if catalog_path.exists():
+        preserve_security_metadata(document, json.loads(catalog_path.read_text(encoding="utf-8")))
     if args.check:
         if not catalog_path.exists():
             print("API catalog is missing. Run: python -m tools.generate_catalog")

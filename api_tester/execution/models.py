@@ -50,6 +50,8 @@ class ExecutionEnvironmentSnapshot:
     auth_context: Any = None  # AuthenticationContext | None, kept untyped to avoid a Qt-adjacent import cycle.
     catalog_fingerprint: str = ""
     captured_at: str = field(default_factory=_now_iso)
+    security_document: dict[str, Any] = field(default_factory=dict)
+    security_capture: bool = False
 
     def __post_init__(self) -> None:
         # Deep-copy mutable inputs so a caller mutating its own dict afterward
@@ -57,6 +59,7 @@ class ExecutionEnvironmentSnapshot:
         object.__setattr__(self, "base_urls", dict(self.base_urls))
         object.__setattr__(self, "variables", dict(self.variables))
         object.__setattr__(self, "custom_headers", dict(self.custom_headers))
+        object.__setattr__(self, "security_document", copy.deepcopy(self.security_document))
 
     def base_url(self, service: str) -> str:
         return self.base_urls.get(service, "")
@@ -71,6 +74,7 @@ class ExecutionEnvironmentSnapshot:
             "variables": dict(self.variables),
             "custom_headers": dict(self.custom_headers),
             "catalog_fingerprint": self.catalog_fingerprint,
+            "security_capture": self.security_capture,
             "captured_at": self.captured_at,
         }
 

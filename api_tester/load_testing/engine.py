@@ -193,6 +193,7 @@ class LoadEngine:
 
         self._lock = threading.Lock()
         self._pending_samples: list[RequestSample] = []
+        self.security_reports: list[dict[str, Any]] = []
         self._passed = 0
         self._failed = 0
         self._errored = 0
@@ -286,6 +287,13 @@ class LoadEngine:
                 stage = stage_at(scenario, elapsed)
                 self._publish("request_started", {"worker_id": vu_index})
                 result, sample, classified = transport.execute(scenario.endpoint, scenario.template)
+                if result is not None and result.security_report:
+                    with self._lock:
+                        retain = len(self.security_reports) < 200
+                        if retain:
+                            self.security_reports.append(result.security_report)
+                    if retain and self.store is not None:
+                        self.store.record_security_review(self.run_id, result.security_report)
                 offset_ms = (time.monotonic() - run_started) * 1000.0
                 sample = replace(sample, offset_ms=offset_ms, worker_id=vu_index)
                 self._record_result(sample, classified)

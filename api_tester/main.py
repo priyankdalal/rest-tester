@@ -460,6 +460,27 @@ class MainWindow(QMainWindow):
         explorer_title.setProperty("workspaceTitle", True)
         explorer_header.addWidget(explorer_title)
         explorer_header.addStretch()
+        self.security_review_button = QToolButton()
+        self.security_review_button.setObjectName("headerIconButton")
+        self.security_review_button.setText("Security Review")
+        self.security_review_button.setIcon(icon("security-shield", theme.TEXT_MUTED, 18))
+        self.security_review_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.security_review_button.setFixedSize(32, 32)
+        self.security_review_button.setAccessibleName("Security review options")
+        self.security_review_button.setToolTip(
+            "Security review: catalog checks and explicitly approved verification"
+        )
+        self.security_review_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        security_menu = QMenu(self.security_review_button)
+        for label, scope in (
+            ("Selected endpoint", "endpoint"), ("Selected endpoint's module", "module"),
+            ("Selected endpoint's service", "service"), ("Entire catalog", "catalog"),
+        ):
+            security_menu.addAction(label, lambda _checked=False, selected=scope: self._review_catalog_security(selected))
+        self.security_review_button.setMenu(security_menu)
+        security_menu.addSeparator()
+        security_menu.addAction("Controlled verification...", self._open_security_verification)
+        explorer_header.addWidget(self.security_review_button)
         explorer_layout.addLayout(explorer_header)
         explorer_description = ElidingLabel(
             "Browse services, controllers, and endpoints from the active API catalog."
@@ -715,6 +736,9 @@ class MainWindow(QMainWindow):
             4, QHeaderView.ResizeMode.Stretch
         )
         self.endpoint_content_tabs.addTab(self.endpoint_history, "Test History")
+        from .security_ui import SecurityReportPanel
+        self.endpoint_security = SecurityReportPanel(self)
+        self.endpoint_content_tabs.addTab(self.endpoint_security, "Security")
         self.endpoint_history.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows
         )
@@ -871,6 +895,23 @@ class MainWindow(QMainWindow):
         catalog_buttons.addStretch()
         catalog_layout.addLayout(catalog_buttons)
         settings_layout.addWidget(catalog_box)
+        security_box = QFrame()
+        security_box.setObjectName("settingsCard")
+        security_layout = QVBoxLayout(security_box)
+        security_layout.addWidget(QLabel("API security review"))
+        for name, caption in (
+            ("security_auto_catalog", "Automatically review imported/reloaded catalogs"),
+            ("security_auto_response", "Automatically analyze completed responses (passive only)"),
+            ("security_execution_capture", "Capture sampled Data Runner/Load Studio security reports (up to 20 exchanges per worker)"),
+        ):
+            checkbox = QCheckBox(caption)
+            checkbox.setChecked(getattr(self.app_settings, name))
+            checkbox.toggled.connect(lambda checked, key=name: self._set_security_option(key, checked))
+            security_layout.addWidget(checkbox)
+        hint = QLabel("Automation never sends extra requests. Controlled verification requires separate explicit approval.")
+        hint.setWordWrap(True)
+        security_layout.addWidget(hint)
+        settings_layout.addWidget(security_box)
 
         settings_layout.addStretch()
         self.settings_page = settings_page
@@ -1331,6 +1372,7 @@ class MainWindow(QMainWindow):
         self.catalog = catalog
         self.services = catalog.services
         self.current_endpoint = None
+        self.endpoint_security.clear()
         self._request_drafts.clear()
         self._request_auth_modes.clear()
         self.app_settings.catalog_path = "" if bundled else str(path)
@@ -1375,6 +1417,14 @@ class MainWindow(QMainWindow):
             f"{len(self.services)} services · {len(known)} endpoints",
             route={},
         )
+        if self.app_settings.security_auto_catalog:
+            from .security import catalog_document, scan_catalog
+            snapshot = catalog_document(self.catalog)
+            self.endpoint_security.configure(
+                lambda cancel: scan_catalog(snapshot, cancel),
+                store=self.workspace_store,
+                current_fingerprint=self._security_fingerprint, auto=True,
+            )
         return True
 
     def _environment(self) -> dict[str, Any]:
@@ -1391,11 +1441,15 @@ class MainWindow(QMainWindow):
             "variables": dict(self.app_settings.active.variables),
             "custom_headers": self._resolved_environment_headers(),
             "auth_context": AuthenticationContext.from_environment(self.app_settings.active),
+            "environment_name": self.app_settings.active_environment,
+            "security_auto_response": self.app_settings.security_auto_response,
         }
 
     def _execution_environment_snapshot(self) -> ExecutionEnvironmentSnapshot:
         """Builds the Data Runner's frozen environment context from live UI state."""
         env = self._environment()
+        from .security import catalog_document, fingerprint
+        security_document = catalog_document(self.catalog)
         return ExecutionEnvironmentSnapshot(
             environment_id=self.app_settings.active_environment,
             environment_name=self.app_settings.active_environment,
@@ -1407,6 +1461,9 @@ class MainWindow(QMainWindow):
             access_token=env["access_token"],
             api_key=env["api_key"],
             auth_context=env["auth_context"],
+            security_document=security_document,
+            security_capture=self.app_settings.security_execution_capture,
+            catalog_fingerprint=fingerprint(security_document),
         )
 
     def _add_to_suite(self) -> None:
@@ -1622,6 +1679,7 @@ class MainWindow(QMainWindow):
                     self.payload.toPlainText(),
                 )
                 self.current_endpoint = None
+                self.endpoint_security.clear()
             self._set_endpoint_actions_enabled(False)
             self._refresh_connection_state()
             return
@@ -1664,6 +1722,12 @@ class MainWindow(QMainWindow):
         self._show_endpoint_documentation(endpoint)
         self._show_endpoint_examples(endpoint)
         self._load_endpoint_history(endpoint.id)
+        from .security import catalog_document, scan_catalog
+        snapshot = catalog_document(self.catalog)
+        self.endpoint_security.configure(
+            lambda cancel: scan_catalog(snapshot, cancel, scope=f"endpoint: {endpoint.service} {endpoint.path}", endpoint_ids={endpoint.id}),
+            store=self.workspace_store, current_fingerprint=self._security_fingerprint,
+        )
         self.response.clear()
         self.response_section.clear_outcome()
         self._refresh_connection_state()
@@ -1864,6 +1928,8 @@ class MainWindow(QMainWindow):
         self._mini_request_id = request_id
         self._mini_endpoint = endpoint
         self._mini_environment = self.app_settings.active_environment
+        from .security import catalog_document
+        self._mini_catalog_snapshot = catalog_document(self.catalog)
         self._mini_thread = QThread()
         self._mini_worker = RequestWorker(
             arguments,
@@ -1901,6 +1967,19 @@ class MainWindow(QMainWindow):
                 route={"page": "Collections", "request_id": request_id},
             )
         self.collections_page.show_handler_result(result)
+        if endpoint is not None:
+            from copy import deepcopy
+            from .security import catalog_document, scan_response
+            snapshot = deepcopy(getattr(self, "_mini_catalog_snapshot", catalog_document(self.catalog)))
+            response_snapshot = deepcopy(result)
+            endpoint_snapshot = deepcopy(endpoint)
+            environment = getattr(self, "_mini_environment", "")
+            self.collections_page.handler.security_panel.configure(
+                lambda cancel: scan_response(snapshot, endpoint_snapshot, response_snapshot, cancel, environment=environment),
+                store=self.workspace_store,
+                current_fingerprint=self._security_fingerprint,
+                auto=self.app_settings.security_auto_response,
+            )
         self.saved_requests_page.refresh()
 
     def _mini_failed(self, message: str) -> None:
@@ -2254,6 +2333,7 @@ class MainWindow(QMainWindow):
 
         self._save_settings()
         self.send_button.setEnabled(False)
+        self.response.clear_security_review()
         self.response.status_label.setText("Running...")
         self.response_section.clear_outcome()
         arguments = (
@@ -2270,6 +2350,8 @@ class MainWindow(QMainWindow):
         )
         self._request_endpoint = endpoint
         self._request_environment = self.app_settings.active_environment
+        from .security import catalog_document
+        self._request_catalog_snapshot = catalog_document(self.catalog)
         self._request_thread = QThread()
         self._request_worker = RequestWorker(
             arguments, AuthenticationContext.from_environment(self.app_settings.active),
@@ -2313,6 +2395,20 @@ class MainWindow(QMainWindow):
             return
         self._load_endpoint_history(endpoint.id)
         self.response.show_result(result)
+        from .security import catalog_document, scan_response
+        from copy import deepcopy
+        snapshot = deepcopy(getattr(self, "_request_catalog_snapshot", catalog_document(self.catalog)))
+        review_endpoint = deepcopy(endpoint)
+        review_result = deepcopy(result)
+        environment = getattr(self, "_request_environment", self.app_settings.active_environment)
+        self.response.set_security_review(
+            lambda cancel: scan_response(
+                snapshot, review_endpoint, review_result, cancel, environment=environment,
+            ),
+            self.workspace_store,
+            current_fingerprint=self._security_fingerprint,
+            auto=self.app_settings.security_auto_response,
+        )
         self._flag_response_outcome(result)
         item = self.endpoint_items[endpoint.id]
         item.setForeground(0, QColor(theme.PASS if result.passed else theme.FAIL))
@@ -2326,6 +2422,44 @@ class MainWindow(QMainWindow):
         else:
             text, color = "No response", theme.FAIL
         self.response_section.show_outcome(text, color)
+
+    def _review_catalog_security(self, scope: str = "catalog") -> None:
+        from .security import catalog_document, scan_catalog
+        from .security_ui import SecurityReviewDialog
+
+        endpoint = self.current_endpoint
+        if scope != "catalog" and endpoint is None:
+            QMessageBox.information(self, "Select endpoint", "Select an endpoint to choose this review scope.")
+            return
+        selected = None
+        label = "Entire catalog"
+        if endpoint is not None and scope != "catalog":
+            selected = {
+                item.id for item in self.endpoints_by_id.values()
+                if (scope == "endpoint" and item.id == endpoint.id)
+                or (scope == "service" and item.service == endpoint.service)
+                or (scope == "module" and item.service == endpoint.service and item.controller == endpoint.controller)
+            }
+            label = f"{scope}: {endpoint.service} {endpoint.controller if scope == 'module' else endpoint.path if scope == 'endpoint' else ''}"
+        snapshot = catalog_document(self.catalog)
+        dialog = SecurityReviewDialog(
+            lambda cancel: scan_catalog(snapshot, cancel, scope=label, endpoint_ids=selected),
+            self, store=self.workspace_store,
+            current_fingerprint=self._security_fingerprint,
+        )
+        dialog.exec()
+
+    def _security_fingerprint(self) -> str:
+        from .security import catalog_document, fingerprint
+        return fingerprint(catalog_document(self.catalog))
+
+    def _set_security_option(self, name: str, checked: bool) -> None:
+        setattr(self.app_settings, name, checked)
+        self._save_settings()
+
+    def _open_security_verification(self) -> None:
+        from .security_verification_ui import SecurityVerificationDialog
+        SecurityVerificationDialog(self, store=self.workspace_store).exec()
 
     @staticmethod
     def _endpoint_label(endpoint: Endpoint) -> str:
@@ -2688,6 +2822,8 @@ class MainWindow(QMainWindow):
         self.theme_toggle_button.setToolTip(f"Turn the lights {'on' if dark else 'off'}")
         self.theme_toggle_button.setAccessibleName(f"Switch to {target} theme")
         self.settings_button.setIcon(icon("settings", theme.TEXT_MUTED, 18))
+        if hasattr(self, "security_review_button"):
+            self.security_review_button.setIcon(icon("security-shield", theme.TEXT_MUTED, 18))
         if hasattr(self, "ask_ai_button"):
             self.ask_ai_button.refresh_theme()
         unread = self.notifications.unread_count()
@@ -3088,6 +3224,12 @@ class MainWindow(QMainWindow):
         return f"{name} · {len(catalog.services)} services · {endpoints} endpoints"
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt signature
+        from .security_ui import SecurityReportPanel
+        for panel in self.findChildren(SecurityReportPanel):
+            if not panel.shutdown():
+                event.ignore()
+                QTimer.singleShot(100, self.close)
+                return
         self._closing = True
         self._save_settings()
         # A token method may still be consulting its session; let each probe

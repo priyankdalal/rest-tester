@@ -284,6 +284,7 @@ class EndpointDraft:
     #: The id as loaded from disk. Saved requests and suite cases reference
     #: endpoints by id, so a load/save cycle must never renumber them.
     identity: str = ""
+    security_metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def id(self) -> str:
@@ -322,6 +323,7 @@ class EndpointDraft:
             source_file=value.get("source_file", ""),
             source_line=value.get("source_line", 0),
             identity=value.get("id", ""),
+            security_metadata=dict(value.get("security_metadata") or {}),
         )
 
     @classmethod
@@ -356,6 +358,7 @@ class EndpointDraft:
             "expected_status": self.expected_status,
             "source_file": self.source_file,
             "source_line": self.source_line,
+            **({"security_metadata": self.security_metadata} if self.security_metadata else {}),
         }
 
     def validate(self) -> list[str]:
@@ -413,6 +416,7 @@ class ServiceDraft:
     endpoints: list[EndpointDraft] = field(default_factory=list)
     # Opt-in: the Filter/Sort builders assume the structured filter grammar.
     filter_sort_builders: bool = False
+    security_metadata: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "ServiceDraft":
@@ -425,6 +429,7 @@ class ServiceDraft:
                 EndpointDraft.from_dict(item) for item in value.get("endpoints", [])
             ],
             filter_sort_builders=bool(value.get("filter_sort_builders", False)),
+            security_metadata=dict(value.get("security_metadata") or {}),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -438,6 +443,8 @@ class ServiceDraft:
             document["framework"] = self.framework
         if self.filter_sort_builders:
             document["filter_sort_builders"] = True
+        if self.security_metadata:
+            document["security_metadata"] = self.security_metadata
         return document
 
     def sort_endpoints(self) -> None:
@@ -685,9 +692,21 @@ class CatalogDocument:
         drafts = [
             EndpointDraft.from_discovered(endpoint) for endpoint in result.endpoints
         ]
+        if result.security_metadata:
+            service.security_metadata = {
+                **service.security_metadata, **result.security_metadata,
+            }
+        existing_metadata = {
+            (endpoint.method, endpoint.path): endpoint.security_metadata
+            for endpoint in service.endpoints
+        }
         for draft in drafts:
             draft.service = service_name
             draft.refresh_identity()
+            draft.security_metadata = {
+                **existing_metadata.get((draft.method, draft.path), {}),
+                **draft.security_metadata,
+            }
         if replace:
             service.endpoints = drafts
         else:

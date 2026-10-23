@@ -76,6 +76,7 @@ class DiscoveredEndpoint:
     expected_status: str = "200-299"
     source_file: str = ""
     source_line: int = 0
+    security_metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -97,6 +98,7 @@ class DiscoveredEndpoint:
             "expected_status": self.expected_status,
             "source_file": self.source_file,
             "source_line": self.source_line,
+            **({"security_metadata": self.security_metadata} if self.security_metadata else {}),
         }
 
 
@@ -113,6 +115,7 @@ class ScanResult:
     response_schemas: dict[str, Any] = field(default_factory=dict)
     enums: dict[str, list[str]] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
+    security_metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def count(self) -> int:

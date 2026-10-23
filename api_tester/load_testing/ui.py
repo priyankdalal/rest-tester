@@ -1540,6 +1540,9 @@ class LoadTestingTab(QWidget):
         self.results_tabs.addTab(self._build_errors_tab(), "Errors")
         self.results_tabs.addTab(self._build_warnings_tab(), "Warnings")
         self.results_tabs.addTab(self._build_report_tab(), "Final report")
+        from api_tester.security_ui import SecurityReportPanel
+        self.run_security_panel = SecurityReportPanel(self)
+        self.results_tabs.addTab(self.run_security_panel, "Security")
         self._refresh_live_icons()
         workspace_layout.addWidget(self.results_tabs, 1)
         body.addWidget(workspace, 1)
@@ -1785,6 +1788,7 @@ class LoadTestingTab(QWidget):
         self._refresh_export_enabled()
 
     def _start_run(self) -> None:
+        self.run_security_panel.clear()
         plan = self._build_and_render_plan()
         if plan is None:
             return
@@ -2009,6 +2013,18 @@ class LoadTestingTab(QWidget):
             findings=self._report_findings,
         )
         self._apply_completed_cards(data.stats)
+        from api_tester.security import catalog_document, execution_report, fingerprint
+        from copy import deepcopy
+        captured = []
+        if self._run_store is not None and data.run_id:
+            captured = self._run_store.security_reviews(data.run_id, limit=200)
+        elif self.engine is not None and self.engine.run_id == data.run_id:
+            captured = list(self.engine.security_reports)
+        frozen = deepcopy(captured)
+        self.run_security_panel.configure(
+            lambda cancel: execution_report(frozen, f"Load run {data.run_id}"),
+            current_fingerprint=lambda: fingerprint(catalog_document(self.catalog)),
+        )
         self._refresh_export_enabled()
 
     def _report_data(self, summary: LoadRunSummary | None = None) -> LoadReportData:

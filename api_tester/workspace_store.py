@@ -98,6 +98,14 @@ CREATE TABLE IF NOT EXISTS collection_items(
     request_id TEXT NOT NULL,
     PRIMARY KEY (collection_id, position)
 );
+
+CREATE TABLE IF NOT EXISTS security_reports(
+    id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    report_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_security_reports_created
+    ON security_reports(created_at);
 """
 
 
@@ -136,6 +144,77 @@ class WorkspaceStore:
             self._connection.commit()
         self._add_missing_columns()
 
+    def save_security_report(self, report: dict[str, Any]) -> None:
+        serialized = json.dumps(report, ensure_ascii=True)
+        with self._lock:
+            self._connection.execute(
+                "INSERT INTO security_reports(id,created_at,report_json) VALUES(?,?,?) "
+                "ON CONFLICT(id) DO UPDATE SET report_json=excluded.report_json",
+                (report["id"], report["created_at"], serialized),
+            )
+            self._connection.commit()
+
+    def security_reports(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT report_json FROM security_reports ORDER BY created_at DESC LIMIT ?",
+                (max(1, min(limit, 500)),),
+            ).fetchall()
+        return [json.loads(row["report_json"]) for row in rows]
+
+    def security_report(self, report_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT report_json FROM security_reports WHERE id=?", (report_id,),
+            ).fetchone()
+        return json.loads(row["report_json"]) if row is not None else None
+
+    def inherit_security_dispositions(self, report: dict[str, Any]) -> dict[str, Any]:
+        from copy import deepcopy
+        from datetime import date
+        from .security import Finding, finding_identity
+
+        inherited = deepcopy(report)
+        if self.security_report(str(report.get("id", ""))) is not None:
+            return inherited
+        for finding in inherited.get("findings", []):
+            finding.update(disposition="open", reason="", expires_at="")
+        matching = [
+            item for item in self.security_reports(limit=500)
+            if item.get("mode") == report.get("mode")
+            and item.get("scope") == report.get("scope")
+            and item.get("environment") == report.get("environment")
+            and item.get("rule_version") == report.get("rule_version")
+            and item.get("id") != report.get("id")
+        ]
+        decisions: dict[str, dict[str, Any]] = {}
+        for previous in matching:
+            for value in previous.get("findings", []):
+                decisions.setdefault(finding_identity(Finding(**value)), value)
+        for value in inherited.get("findings", []):
+            prior = decisions.get(finding_identity(Finding(**value)))
+            if prior is None or prior.get("disposition", "open") == "open":
+                continue
+            evidence_keys = ("evidence", "severity", "explanation", "remediation", "limitation", "confidence")
+            if any(value.get(key) != prior.get(key) for key in evidence_keys):
+                inherited.setdefault("diagnostics", []).append(
+                    "Changed finding evidence was reopened rather than inheriting an earlier disposition."
+                )
+                continue
+            expiry = str(prior.get("expires_at", ""))
+            if expiry:
+                try:
+                    expired = date.fromisoformat(expiry) < date.today()
+                except ValueError:
+                    inherited.setdefault("diagnostics", []).append("Invalid disposition expiry; review decision was not reapplied.")
+                    continue
+                if expired:
+                    inherited.setdefault("diagnostics", []).append("Expired disposition was reopened on the new scan.")
+                    continue
+            for key in ("disposition", "reason", "expires_at"):
+                value[key] = prior.get(key, "")
+        return inherited
+
     #: Columns introduced after the first release. ``CREATE TABLE IF NOT
     #: EXISTS`` leaves an existing table untouched, so a database created by
     #: an older build would keep the old shape and every read of these
@@ -172,7 +251,7 @@ class WorkspaceStore:
     def apply_retention(self, *, days: Optional[int] = None) -> int:
         """Deletes history older than the retention window.
 
-        Only the two history tables are swept. Saved requests and
+        Run, suite, and security review history are swept. Saved requests and
         collections are user-authored and never expire, and per-execution
         run databases live in their own files this never opens.
         """
@@ -187,6 +266,10 @@ class WorkspaceStore:
             removed = cursor.rowcount or 0
             cursor = self._connection.execute(
                 "DELETE FROM suite_history WHERE recorded_at < ?", (cutoff,)
+            )
+            removed += cursor.rowcount or 0
+            cursor = self._connection.execute(
+                "DELETE FROM security_reports WHERE created_at < ?", (cutoff,),
             )
             removed += cursor.rowcount or 0
             self._connection.commit()

@@ -190,6 +190,127 @@ illustrate the existing workspaces.
 
 ### API Explorer
 
+#### API Security Review
+
+Security review is generic and works with any catalog; it has no service-specific
+roles, routes, tenant assumptions, or gateway rules. It is deterministic, runs locally,
+and does not call an AI provider. Catalog/passive reviews never send additional API
+requests; the separately approved **Controlled verification** workflow does.
+
+Use these three entry points:
+
+- **Catalog Builder > Security Review** checks the current draft, including imported
+  OpenAPI evidence. Apply endpoint/schema edits before reviewing. Review warnings do
+  not block saving.
+- **API Explorer > Security Review** selects one endpoint, its module, its service,
+  or the entire catalog.
+- The permanent response **Security** tab becomes enabled after a completed Explorer
+  request and reviews that frozen exchange
+  and its related contract findings. Subsequent editor/environment changes do not change
+  the captured evidence. An error or a new endpoint clears the response action.
+
+Importing an **OpenAPI 3.0/3.1** document preserves a security-review contract under
+the service's optional `security_metadata.document`. Old catalogs still load, but
+missing or unsupported contracts are reported as unavailable, not as anonymous APIs.
+Swagger 2 and other versions require a supported contract before these checks can run.
+Contracts are limited to 20 MiB at import, 50,000 traversed nodes and nesting depth 80.
+External references are never fetched; unresolved references produce partial reports.
+The retained contract is an import snapshot: reimport changed source documents before
+rescanning. Request-form/schema edits do not rewrite the original OpenAPI contract.
+
+The initial contract rules cover undocumented/invalid security requirements, undefined
+or incomplete schemes, OAuth scope references, API keys/query credentials, authentication
+error documentation, HTTP server/authentication URLs, input bounds, URL-input review
+candidates, upload-size documentation, sanitized credential-sample review candidates,
+duplicate operations and deprecated endpoints.
+Global inheritance, AND/OR requirements, `security: []`, and anonymous `{}` alternatives
+are respected. Loopback HTTP contract URLs are treated as local development exceptions.
+`x-max-file-size` is an optional documentation extension in bytes, not a verified
+server limit.
+
+Passive response checks cover disabled certificate verification, credentials over HTTP,
+internal exception signatures, known credential reflection before redaction,
+missing/mismatched content types, incompatible credentialed
+CORS settings, explicitly annotated sensitive fields, and their caching policy.
+Only the first 256 KiB of response text is analyzed; truncation is visible in the report.
+Credential detection uses known credential names and configured authentication metadata,
+not arbitrary unknown custom headers.
+
+**Catalog Builder > Security Metadata** provides a guided editor for generic expectations on the selected
+endpoint or service. For an endpoint, for example:
+
+```json
+{
+  "require_authentication": true,
+  "sensitive_response_fields": ["privateData"],
+  "security": [{"bearerAuth": []}]
+}
+```
+
+`security` is an optional authored requirement override; referenced schemes must exist
+in the service contract. `require_authentication` flags an anonymous-contract conflict,
+not a runtime bypass. `sensitive_response_fields` contains explicitly reviewed JSON field
+names; values are not copied into reports. A service can contain a complete OpenAPI
+contract in `document`; the service editor imports a bounded local OpenAPI file.
+Imported evidence and endpoint annotations survive save/reload
+and rescans; regeneration retains annotations for surviving services/routes.
+
+The shared viewer includes filters, finding evidence/explanation/remediation/limitations,
+an icon-led header, evidence freshness card, compact metadata and summary cards,
+severity/category/service search filters with a reset action, an empty-findings
+placeholder, and a full-diagnostics shortcut. The redesigned layout uses the
+application's light/dark palettes and preserves review and export behavior.
+Cards and controls reflow at compact window widths; shorter windows scroll
+the report content while keeping history, export, cancel and close actions visible.
+The viewer also includes
+confidence, OWASP API Security Top 10 **2023** coverage, cancellation, and **JSON/HTML/CSV/PDF**
+exports. Freshness indicators compare catalog fingerprints and retained source files.
+Compatible complete reports can be compared for new, changed, unchanged and absent
+findings; absence is not independently verified remediation. Partial reports cannot
+resolve findings. Findings can be acknowledged, accepted as risk, or marked false
+positive with a required reason and optional expiry. Decisions carry forward only for
+matching rule/scope/environment and unchanged evidence; expired or changed findings
+reopen. The original evidence is retained.
+The main application's workspace database stores report history under its existing
+100-day retention policy. Standalone Catalog Builder reports can be exported but have
+no main-application history store.
+
+Reports contain bounded, sanitized evidence rather than complete bodies or credential
+values. Known credential examples/defaults are sanitized in retained contracts. Do not
+paste secrets or personal data into free-text annotations or disposition reasons.
+
+**This is not an OWASP compliance certification or a penetration test.** Contract gaps,
+review candidates and observed issues are distinct. Object/function/property authorization,
+business-flow abuse, rate-limit enforcement, actual upload limits, SSRF exploitation, and
+unsafe downstream consumption require separate authorized verification. All ten OWASP
+categories appear with honest partial/not-assessed coverage; no clean scan is labelled
+"secure". Functional request pass/fail results remain independent of security findings.
+
+Security tabs are available in endpoint and response inspection, Suites, Collections,
+Data Runner row inspection and Load Studio results. **Settings > Security review**
+has three opt-in switches (all off by default): review catalog imports/reloads,
+review completed displayed responses, and capture sampled execution evidence.
+Data Runner and Load Studio capture at most 20 exchanges per worker; Load Studio retains
+at most 200 reviews per run. Persisted row/run evidence can be reviewed later without
+additional requests; uncaptured/older runs explicitly lack evidence. Sampling has
+additional CPU overhead outside HTTP timing and can change achieved load throughput;
+leave capture off for performance baselines. Suite reviews use the run-start catalog
+and environment. Standalone Builder has manual review; automatic review uses the main
+application's setting when opened from it.
+
+**API Explorer > Security Review > Controlled verification...** opens an explicit,
+bounded plan for authored status/header/forbidden-field assertions. Provide the exact
+approved origin, memory-only identities and known fixtures; authorize the plan before
+execution. Limits cap requests, repeat counts, timeouts and pacing. Mutation/upload
+checks require additional risk acknowledgement, fixtures and cleanup. Cleanup is
+budgeted and attempted on cancellation/failure; failures remain visible. Credentials
+are not saved in plans/reports. Redirects, proxy inheritance and netrc authentication
+are disabled; remote origins require HTTPS. No automatic payload generation, host
+discovery, SSRF probes or production scans occur. These authored checks support
+authorization, rate/upload, business-flow and downstream-control scenarios only when
+the user supplies suitable fixtures/assertions; they do not discover or prove every
+OWASP vulnerability. Implementation tests use synthetic loopback APIs only.
+
 The explorer is the home workspace. On the left is the **endpoint tree**, grouped by service.
 It supports search (`Ctrl+L`), method and scope filters, favourites and recently used endpoints.
 On the right, each endpoint has **Request**, **Documentation**, **Examples** and **Test History**

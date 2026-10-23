@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from PyQt6.QtCore import QEvent, QObject, Qt, QThread, pyqtSignal
+from PyQt6.QtCore import QEvent, QObject, Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -704,6 +704,10 @@ class CatalogBuilderWindow(QMainWindow):
                           tooltip="Create a filter, payload, form schema, or enum"),
             ToolbarAction("Validate", "verify", self.validate, group=2,
                           tooltip="Check the catalog before saving"),
+            ToolbarAction("Security Review", "verify", self.security_review, group=2,
+                          tooltip="Offline contract review; no API requests are sent"),
+            ToolbarAction("Security Metadata", "fields", self.edit_security_metadata, group=2,
+                          tooltip="Edit generic security expectations for the selected endpoint or service"),
         )
         toolbar, self._toolbar_buttons = build_page_toolbar(self._toolbar_actions)
         tint_toolbar(self._toolbar_actions, self._toolbar_buttons)
@@ -2074,6 +2078,7 @@ class CatalogBuilderWindow(QMainWindow):
         )
         for warning in result.warnings:
             self._note(f"  {warning}")
+        self._auto_security_review()
 
     def _delete_service(self) -> None:
         name = getattr(self, "_active_service", "")
@@ -2321,6 +2326,38 @@ class CatalogBuilderWindow(QMainWindow):
             + ("\n..." if len(problems) > 15 else ""),
         )
 
+    def security_review(self) -> None:
+        from copy import deepcopy
+        from .security import scan_catalog, fingerprint
+        from .security_ui import SecurityReviewDialog
+
+        snapshot = deepcopy(self.document.to_dict())
+        owner = self.parent()
+        store = getattr(owner, "workspace_store", None)
+        dialog = SecurityReviewDialog(
+            lambda cancel: scan_catalog(snapshot, cancel, scope="Catalog Builder draft"),
+            self, store=store,
+            current_fingerprint=lambda: fingerprint(self.document.to_dict()),
+        )
+        dialog.exec()
+
+    def edit_security_metadata(self) -> None:
+        from .security_metadata_ui import SecurityMetadataDialog
+
+        kind, reference = self._current()
+        endpoint = self._endpoint(*reference) if kind == "endpoint" else None
+        service = self._service(str(reference)) if kind == "service" else None
+        target = endpoint or service
+        if target is None:
+            QMessageBox.information(self, "Select item", "Select an endpoint or service first.")
+            return
+        dialog = SecurityMetadataDialog(target.security_metadata, self, service=service is not None)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        target.security_metadata = dialog.result_metadata()
+        self._mark_dirty()
+        self._note("Updated security metadata; previous security reports are historical snapshots.")
+
     # -------------------------------------------------------------- services
 
     def add_scanned_service(self) -> None:
@@ -2346,6 +2383,25 @@ class CatalogBuilderWindow(QMainWindow):
         )
         for warning in dialog.result_scan.warnings:
             self._note(f"  {warning}")
+        self._auto_security_review()
+
+    def _auto_security_review(self) -> None:
+        owner = self.parent()
+        settings = getattr(owner, "app_settings", None)
+        if settings is None or not settings.security_auto_catalog:
+            return
+        from copy import deepcopy
+        from .security import scan_catalog, fingerprint
+        from .security_ui import SecurityReportPanel
+        if not hasattr(self, "_automatic_security_panel"):
+            self._automatic_security_panel = SecurityReportPanel(self)
+            self.statusBar().addPermanentWidget(self._automatic_security_panel, 1)
+        snapshot = deepcopy(self.document.to_dict())
+        self._automatic_security_panel.configure(
+            lambda cancel: scan_catalog(snapshot, cancel, scope="Catalog Builder draft"),
+            store=getattr(owner, "workspace_store", None),
+            current_fingerprint=lambda: fingerprint(self.document.to_dict()), auto=True,
+        )
 
     def add_manual_service(self) -> None:
         name, accepted = QInputDialog.getText(self, "Add service", "Service name")
@@ -2362,6 +2418,11 @@ class CatalogBuilderWindow(QMainWindow):
         self._note(f"Added empty service '{name}'. Add a module to start.")
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        if hasattr(self, "_automatic_security_panel"):
+            if not self._automatic_security_panel.shutdown():
+                event.ignore()
+                QTimer.singleShot(100, self.close)
+                return
         if self._confirm_discard():
             event.accept()
         else:

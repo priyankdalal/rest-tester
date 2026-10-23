@@ -175,6 +175,9 @@ class AppSettings:
     expanded_nodes: list[str] = field(default_factory=list)
     favorites: list[str] = field(default_factory=list)
     recent_endpoints: list[str] = field(default_factory=list)
+    security_auto_catalog: bool = False
+    security_auto_response: bool = False
+    security_execution_capture: bool = False
 
     @classmethod
     def from_dict(
@@ -223,6 +226,9 @@ class AppSettings:
         return cls(
             environments=environments,
             active_environment=active,
+            security_auto_catalog=bool(value.get("security_auto_catalog", False)),
+            security_auto_response=bool(value.get("security_auto_response", False)),
+            security_execution_capture=bool(value.get("security_execution_capture", False)),
             active_service=str(value.get("active_service", "")),
             theme=str(value.get("theme", "Light")),
             catalog_path=str(value.get("catalog_path", "")),
@@ -260,6 +266,9 @@ class AppSettings:
 
     def to_dict(self) -> dict[str, Any]:
         document = {
+            "security_auto_catalog": self.security_auto_catalog,
+            "security_auto_response": self.security_auto_response,
+            "security_execution_capture": self.security_execution_capture,
             "active_environment": self.active_environment,
             "active_service": self.active_service,
             "theme": self.theme,

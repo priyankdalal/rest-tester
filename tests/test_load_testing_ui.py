@@ -403,6 +403,7 @@ def test_live_workspace_matches_operational_dashboard_hierarchy(app: QApplicatio
         "Errors",
         "Warnings",
         "Final report",
+        "Security",
     ]
 
 

@@ -52,6 +52,8 @@ class ApiResult:
     request_body: str = ""
     reason: str = ""
     timings: dict[str, float | str] = field(default_factory=dict)
+    security_context: dict[str, Any] = field(default_factory=dict)
+    security_report: dict[str, Any] = field(default_factory=dict)
 
     @property
     def size(self) -> int:
@@ -424,8 +426,23 @@ def execute_endpoint(
                                context=_request_context(prepared))
             if auth_context is not None else None
         )
-        if applied is None and part_secrets:
+        credential_names = applied.secret_names if applied else SECRET_HEADER_NAMES
+        credential_values = tuple(
+            value for name, value in (applied.headers if applied else prepared.headers).items()
+            if name.lower() in credential_names and value
+        ) + tuple(
+            value for name, value in prepared.query.items()
+            if name.lower() in {"access_token", "refresh_token", "api_key", "apikey", "token", "password"}
+            and value
+        )
+        token_values = tuple(
+            value.split(None, 1)[1] for value in credential_values
+            if re.match(r"(?i)^(Bearer|Basic)\s+\S", value)
+        )
+        if applied is None and (credential_values or part_secrets):
             applied = AppliedAuthentication(dict(prepared.headers))
+        if applied:
+            applied = replace(applied, secrets=applied.secrets + credential_values + token_values)
         auth_ms += (perf_counter() - started) * 1000 if applied and applied.managed else 0
         if applied:
             if part_secrets:
@@ -449,7 +466,7 @@ def execute_endpoint(
                 request_auth=applied.request_auth if applied else None,
             )
         except (requests.RequestException, RuntimeError, ValueError) as exc:
-            if applied and (applied.managed or part_secrets):
+            if applied and applied.secrets:
                 raise RuntimeError(applied.redact(str(exc))) from None
             raise
         challenge = next(
@@ -467,6 +484,29 @@ def execute_endpoint(
             first_attempt_ms = result.elapsed_ms
             continue
         if applied:
+            reflection_values = tuple(set(
+                applied.secrets + tuple(
+                    value for name, value in outgoing.headers.items()
+                    if name.lower() in applied.secret_names and value
+                ) + tuple(value for _, value in applied.query if value)
+            ))
+            reflected = any(
+                len(value) >= 8 and value not in {"******", "[REDACTED]"}
+                and (
+                    value in result.response_body
+                    or any(value in header for header in result.response_headers.values())
+                ) for value in reflection_values
+            )
+            result = replace(result, security_context={
+                **result.security_context,
+                "credential_present": bool(
+                    result.security_context.get("credential_present")
+                    or applied.managed or applied.query or part_secrets
+                    or any(name.lower() in applied.secret_names and value
+                           for name, value in outgoing.headers.items())
+                ),
+                "secret_reflected": reflected,
+            })
             response_headers = redact_headers(result.response_headers, applied.secret_names)
             body = applied.redact(result.response_body)
             result = replace(
@@ -631,6 +671,15 @@ def _execute_endpoint(
         content=raw,
         content_type=content_type,
         content_disposition=response.headers.get("content-disposition", ""),
+        security_context={
+            "verify_ssl": verify_ssl,
+            "credential_present": bool(request_auth) or any(
+                name.lower() in SECRET_HEADER_NAMES
+                and bool(value) for name, value in response.request.headers.items()
+            ) or any(name.lower() in {"access_token", "api_key", "token"} and bool(value)
+                     for name, value in query.items()),
+            "authentication_disabled": no_auth,
+        },
         request_headers=redact_headers(dict(response.request.headers)),
         request_body=_request_body_text(response.request.body),
         reason=response.reason or "",

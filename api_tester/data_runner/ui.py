@@ -1740,6 +1740,9 @@ class DataRunnerTab(QWidget):
         self.row_inspector_tabs.addTab(self.row_inspector_request, "Resolved request")
         self.row_inspector_tabs.addTab(self.row_inspector_input_row, "Input row")
         self.row_inspector_tabs.addTab(self.row_inspector_assertions, "Assertions")
+        from api_tester.security_ui import SecurityReportPanel
+        self.row_security_panel = SecurityReportPanel(self)
+        self.row_inspector_tabs.addTab(self.row_security_panel, "Security")
         content_layout.addWidget(self.row_inspector_tabs, 1)
         self.row_inspector_stack.addWidget(content)
 
@@ -2489,6 +2492,7 @@ class DataRunnerTab(QWidget):
             self.errors_filter_summary_label.setText(f"{total} errors" if total else "")
 
     def _clear_row_inspector(self) -> None:
+        self.row_security_panel.clear()
         self.row_inspector_empty.set_content(
             icon_name="eye",
             title="Nothing to inspect",
@@ -2517,6 +2521,7 @@ class DataRunnerTab(QWidget):
         return detail
 
     def _on_result_row_selected(self) -> None:
+        self.row_security_panel.clear()
         selected = self.results_table.selectedItems()
         if not selected:
             self._clear_row_inspector()
@@ -2551,6 +2556,14 @@ class DataRunnerTab(QWidget):
                 editor.setPlainText("")
             return
         self.row_inspector_stack.setCurrentIndex(1)
+        if detail.get("security_report"):
+            from copy import deepcopy
+            from api_tester.security import SecurityReport, catalog_document, fingerprint
+            report = deepcopy(detail["security_report"])
+            self.row_security_panel.configure(
+                lambda cancel: SecurityReport.from_dict(report),
+                current_fingerprint=lambda: fingerprint(catalog_document(self.catalog)),
+            )
         self.row_inspector_hint.setText(f"Row {row_number}")
         response = detail.get("response")
         if response is None:

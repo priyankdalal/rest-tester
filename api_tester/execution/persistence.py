@@ -139,9 +139,33 @@ class RunStore:
                     run_id TEXT PRIMARY KEY,
                     report_json TEXT
                 );
+                CREATE TABLE IF NOT EXISTS security_reviews(
+                    run_id TEXT,
+                    review_id TEXT,
+                    report_json TEXT,
+                    PRIMARY KEY (run_id, review_id)
+                );
                 """
             )
             self._connection.commit()
+
+    def record_security_review(self, run_id: str, report: dict) -> None:
+        with self._lock:
+            self._connection.execute(
+                "INSERT OR REPLACE INTO security_reviews(run_id,review_id,report_json) "
+                "SELECT ?,?,? WHERE (SELECT COUNT(*) FROM security_reviews WHERE run_id=?) < 200 "
+                "OR EXISTS(SELECT 1 FROM security_reviews WHERE run_id=? AND review_id=?)",
+                (run_id, report["id"], json.dumps(report), run_id, run_id, report["id"]),
+            )
+            self._connection.commit()
+
+    def security_reviews(self, run_id: str, limit: int = 500) -> list[dict]:
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT report_json FROM security_reviews WHERE run_id=? ORDER BY rowid LIMIT ?",
+                (run_id, max(1, min(limit, 500))),
+            ).fetchall()
+        return [json.loads(row[0]) for row in rows]
 
     def start_run(
         self,

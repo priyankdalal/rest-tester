@@ -83,6 +83,30 @@ def test_worker_transport_success_returns_passed_sample(monkeypatch: pytest.Monk
     assert calls[0]["headers"]["X-Environment"] == "qa"
 
 
+def test_sampled_security_capture_is_opt_in_and_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    from dataclasses import replace
+
+    calls = _install_fake_request(monkeypatch)
+    environment = replace(
+        _environment(), security_capture=True,
+        security_document={"services": [{"name": "Test", "endpoints": []}]},
+    )
+    template = RequestTemplate(endpoint_id="test.endpoint", service="Test", method="GET", path="/Test")
+    with WorkerTransport(environment, worker_id=2, run_id="DR-security") as transport:
+        reports = []
+        for _ in range(22):
+            result, sample, error = transport.execute(_endpoint(), template)
+            assert result is not None and result.passed and error is None
+            if result.security_report:
+                reports.append(result.security_report)
+    assert len(calls) == 22
+    assert len(reports) == 20
+    assert all("sampling" in " ".join(report["diagnostics"]).lower() for report in reports)
+    with WorkerTransport(_environment(), worker_id=3, run_id="DR-disabled") as transport:
+        result, _, _ = transport.execute(_endpoint(), template)
+    assert result is not None and result.security_report == {}
+
+
 def test_worker_transport_failed_status_is_classified(monkeypatch: pytest.MonkeyPatch) -> None:
     _install_fake_request(monkeypatch, status_code=404)
     transport = WorkerTransport(_environment(), worker_id=1, run_id="DR-2")

@@ -216,7 +216,62 @@ def icon(name: str, color: str = "#65758B", size: int = 18) -> QIcon:
     pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
     painter.setPen(pen)
 
-    if name == "search":
+    if name == "security-shield":
+        path = QPainterPath()
+        path.moveTo(9, 1)
+        path.lineTo(16, 4)
+        path.lineTo(15, 11)
+        path.cubicTo(14, 14, 11, 16, 9, 17)
+        path.cubicTo(7, 16, 4, 14, 3, 11)
+        path.lineTo(2, 4)
+        path.closeSubpath()
+        painter.drawPath(path)
+        painter.drawLine(QPointF(9, 4), QPointF(9, 13))
+    elif name == "calendar":
+        painter.drawRoundedRect(QRectF(2, 4, 14, 12), 1.5, 1.5)
+        painter.drawLine(QPointF(2, 8), QPointF(16, 8))
+        for x in (5, 13):
+            painter.drawLine(QPointF(x, 2), QPointF(x, 6))
+        for x, y in ((5, 11), (9, 11), (13, 11), (5, 14), (9, 14)):
+            painter.drawPoint(QPointF(x, y))
+    elif name == "fingerprint":
+        for inset in (0, 2.5, 5):
+            path = QPainterPath()
+            path.moveTo(2 + inset / 2, 12)
+            path.cubicTo(0 + inset, 0 + inset, 18 - inset, 0 + inset, 16 - inset / 2, 12)
+            painter.drawPath(path)
+        painter.drawLine(QPointF(7, 10), QPointF(6, 16))
+        painter.drawLine(QPointF(10, 9), QPointF(9, 17))
+        painter.drawLine(QPointF(13, 11), QPointF(12, 16))
+    elif name == "security-scope":
+        for x, y in ((2, 2), (11, 2), (2, 11), (11, 11)):
+            painter.drawRoundedRect(QRectF(x, y, 5, 5), 1, 1)
+        painter.drawLine(QPointF(7, 9), QPointF(11, 9))
+    elif name == "security-environment":
+        path = QPainterPath()
+        path.moveTo(3, 16)
+        path.lineTo(3, 6)
+        path.lineTo(9, 1)
+        path.lineTo(15, 6)
+        path.lineTo(15, 16)
+        path.closeSubpath()
+        painter.drawPath(path)
+        painter.drawEllipse(QRectF(7, 6, 4, 4))
+        painter.drawLine(QPointF(9, 10), QPointF(9, 13))
+    elif name in {"security-report", "security-search"}:
+        painter.drawRoundedRect(QRectF(3, 1.5, 11, 15), 1.5, 1.5)
+        for y in (5, 8, 11):
+            painter.drawLine(QPointF(6, y), QPointF(11 if name == "security-report" else 9, y))
+        if name == "security-search":
+            painter.drawEllipse(QRectF(9, 9, 6, 6))
+            painter.drawLine(QPointF(14, 14), QPointF(17, 17))
+    elif name == "history":
+        painter.drawArc(QRectF(3, 2, 13, 13), 35 * 16, 300 * 16)
+        painter.drawLine(QPointF(2, 2), QPointF(2, 7))
+        painter.drawLine(QPointF(2, 7), QPointF(6, 7))
+        painter.drawLine(QPointF(9, 5), QPointF(9, 9))
+        painter.drawLine(QPointF(9, 9), QPointF(12, 10))
+    elif name == "search":
         painter.drawEllipse(QRectF(2.5, 2.5, 9.5, 9.5))
         painter.drawLine(QPointF(11, 11), QPointF(16, 16))
     elif name == "info-circle":

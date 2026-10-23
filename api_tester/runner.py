@@ -67,6 +67,7 @@ class CaseResult:
     baseline_differences: list[BaselineDifference] = field(default_factory=list)
     baseline_expected: str = ""
     baseline_actual: str = ""
+    security_context: dict[str, Any] = field(default_factory=dict)
 
     @property
     def baseline_expected_text(self) -> str:
@@ -268,6 +269,7 @@ def run_case(
     result.request_headers = dict(api_result.request_headers)
     result.request_body = api_result.request_body
     result.timings = dict(api_result.timings)
+    result.security_context = dict(api_result.security_context)
     result.request_offset_ms += float(api_result.timings.get("request_offset_ms", 0))
     document = _decode(api_result.response_body)
 

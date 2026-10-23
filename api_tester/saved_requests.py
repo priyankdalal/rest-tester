@@ -604,6 +604,9 @@ class MiniRequestHandler(QWidget):
         self.response.setReadOnly(True)
         self.response.setPlaceholderText("Send the request to see the response.")
         layout.addWidget(self.response, 1)
+        from .security_ui import SecurityReportPanel
+        self.security_panel = SecurityReportPanel(self)
+        layout.addWidget(self.security_panel)
 
         outer.addWidget(body, 1)
         self.refresh_theme()
@@ -651,6 +654,7 @@ class MiniRequestHandler(QWidget):
 
     def clear_response(self) -> None:
         self.response.setPlainText("")
+        self.security_panel.clear()
         for chip in (self.status_chip, self.elapsed_chip, self.size_chip):
             chip.setVisible(False)
 
@@ -700,6 +704,7 @@ class MiniRequestHandler(QWidget):
         self._repolish(self.status_chip)
 
     def show_error(self, message: str) -> None:
+        self.security_panel.clear()
         self.set_busy(False)
         self.status_chip.setText("Error")
         self.status_chip.setProperty("state", "fail")

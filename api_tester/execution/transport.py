@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from dataclasses import replace
 from time import perf_counter
 from typing import Any
 
@@ -42,6 +43,7 @@ class WorkerTransport:
         self._run_id = run_id
         self._probe_connection = probe_connection
         self._session = requests.Session()
+        self._security_reviews = 0
 
     def __enter__(self) -> "WorkerTransport":
         return self
@@ -116,6 +118,17 @@ class WorkerTransport:
             )
             return None, sample, classified
 
+        if self._environment.security_capture and self._security_reviews < 20:
+            from api_tester.security import scan_response
+            self._security_reviews += 1
+            report = scan_response(
+                self._environment.security_document, endpoint, result,
+                environment=self._environment.environment_name,
+            )
+            report.diagnostics.append(
+                "Execution sampling: at most 20 exchanges per worker; not every request was reviewed."
+            )
+            result = replace(result, security_report=report.to_dict())
         timings = result.timings if isinstance(result.timings, dict) else {}
         http_ms = _timing(timings.get("http_ms"))
         sample = RequestSample(

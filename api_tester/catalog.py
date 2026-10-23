@@ -54,6 +54,7 @@ class Endpoint:
     expected_status: str = "200-299"
     source_file: str = ""
     source_line: int = 0
+    security_metadata: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(
@@ -78,6 +79,7 @@ class Endpoint:
             expected_status=value.get("expected_status", "200-299"),
             source_file=value.get("source_file", ""),
             source_line=value.get("source_line", 0),
+            security_metadata=dict(value.get("security_metadata") or {}),
         )
 
 
@@ -90,6 +92,7 @@ class Service:
     # The Filter/Sort builders speak the structured filter grammar (Name__op:=value),
     # so they are opt-in per service rather than offered for every API.
     filter_sort_builders: bool = False
+    security_metadata: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(
@@ -103,6 +106,7 @@ class Service:
                 Endpoint.from_dict(item, enums) for item in value["endpoints"]
             ),
             filter_sort_builders=bool(value.get("filter_sort_builders", False)),
+            security_metadata=dict(value.get("security_metadata") or {}),
         )
 
 

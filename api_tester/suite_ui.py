@@ -1591,6 +1591,11 @@ class SuiteTab(QWidget):
             )
             return
 
+        from .security import catalog_document
+        self._security_catalog_snapshot = catalog_document(self.catalog)
+        self._security_endpoints = deepcopy(self.endpoints)
+        self._security_environment = str(environment.get("environment_name", ""))
+        self._security_auto_response = bool(environment.get("security_auto_response", False))
         self.results.clear()
         self._refresh_cases()
         self.progress.setRange(0, len(self.suite.cases))
@@ -1749,6 +1754,26 @@ class SuiteTab(QWidget):
             f"{len(result.captured)} captured" if result.captured else "None captured"
         )
         self.case_response.show_result(result)
+        if result.status_code:
+            from .client import ApiResult
+            from .security import catalog_document, fingerprint, scan_response
+            endpoint = getattr(self, "_security_endpoints", self.endpoints).get(result.endpoint_id)
+            if endpoint is not None:
+                snapshot = deepcopy(getattr(self, "_security_catalog_snapshot", catalog_document(self.catalog)))
+                exchange = ApiResult(
+                    result.passed, result.status_code, result.elapsed_ms, result.url,
+                    dict(result.response_headers), result.response_body,
+                    content=result.content, content_type=result.content_type,
+                    security_context=dict(result.security_context),
+                )
+                frozen_endpoint = deepcopy(endpoint)
+                environment = getattr(self, "_security_environment", "")
+                self.case_response.set_security_review(
+                    lambda cancel: scan_response(snapshot, frozen_endpoint, exchange, cancel, environment=environment),
+                    self.history_store,
+                    current_fingerprint=lambda: fingerprint(catalog_document(self.catalog)),
+                    auto=getattr(self, "_security_auto_response", False),
+                )
         location, fragment_separator, fragment = result.url.partition("#")
         path, query_separator, query = location.partition("?")
         self.case_response.url_label.setText(

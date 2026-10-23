@@ -167,6 +167,7 @@ class DataRunner:
                     "passed": sample.outcome == "passed",
                 }
             ],
+            "security_report": dict(result.security_report) if result is not None else {},
         }
 
     @staticmethod
@@ -280,6 +281,8 @@ class DataRunner:
                     {"row_number": row_number, "correlation_key": resolved.correlation_key},
                 )
                 result, sample, classified = transport.execute(plan.endpoint, template)
+                if result is not None and result.security_report and self.store is not None:
+                    self.store.record_security_review(self.run_id, result.security_report)
                 sample = replace(
                     sample,
                     row_number=row_number,

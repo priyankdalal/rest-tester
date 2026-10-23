@@ -55,6 +55,10 @@ def find_documents(root: Path) -> list[Path]:
 
 
 def load_document(path: Path) -> dict[str, Any]:
+    from ..security import MAX_DOCUMENT_BYTES
+
+    if path.stat().st_size > MAX_DOCUMENT_BYTES:
+        raise ValueError("OpenAPI document exceeds the 20 MiB import limit.")
     text = path.read_text(encoding="utf-8")
     if path.suffix.lower() in {".yaml", ".yml"}:
         try:
@@ -80,14 +84,16 @@ def _resolve(document: dict[str, Any], node: Any) -> dict[str, Any]:
     seen: set[str] = set()
     while isinstance(node, dict) and "$ref" in node:
         reference = str(node["$ref"])
+        if not reference.startswith("#/"):
+            return {}
         if reference in seen:
             return {}
         seen.add(reference)
         target: Any = document
-        for piece in reference.lstrip("#/").split("/"):
+        for piece in reference[2:].split("/"):
             if not isinstance(target, dict):
                 return {}
-            target = target.get(piece, {})
+            target = target.get(piece.replace("~1", "/").replace("~0", "~"), {})
         node = target
     return node if isinstance(node, dict) else {}
 
@@ -293,6 +299,19 @@ def scan(root: Path, service_name: str, document_path: Path | None = None) -> Sc
             f"{len(candidates)} documents found; imported {relative_to(path, root)}."
         )
     document = load_document(path)
+    from ..security import fingerprint, sanitize_contract
+
+    source_fingerprint = fingerprint(document)
+    document = sanitize_contract(document)
+    result.security_metadata = {
+        "document": document,
+        "source_file": path.name if root.is_file() else relative_to(path, root),
+        "source_fingerprint": source_fingerprint,
+    }
+    if not str(document.get("openapi", "")).startswith(("3.0.", "3.1.")):
+        result.warnings.append(
+            "Security review supports OpenAPI 3.0/3.1 only; this contract will be marked unsupported."
+        )
     source_file = relative_to(path, root)
     paths = document.get("paths")
     if not isinstance(paths, dict):
@@ -302,6 +321,7 @@ def scan(root: Path, service_name: str, document_path: Path | None = None) -> Sc
     for route, operations in sorted(paths.items()):
         if not isinstance(operations, dict):
             continue
+        operations = _resolve(document, operations)
         shared = operations.get("parameters") or []
         for verb, operation in operations.items():
             method = verb.upper()
