@@ -1,20 +1,16 @@
-"""Sequential Data Runner execution engine.
-
-Wires the CSV/mapping plan (:mod:`api_tester.data_runner.planner`) to the
-shared execution layer (transport, events, metrics, persistence,
-cancellation). MVP execution is sequential per
-``platform architecture guide: load-testing-and-data-runner.md``
-section 10 — bounded parallel execution is a later, separate change once
-sequential behavior is proven deterministic.
-"""
+"""Bounded sequential, parallel and batch Data Runner execution."""
 
 from __future__ import annotations
 
 import csv
 import time
+import threading
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from contextlib import ExitStack
+from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, TypeAlias
 
 from api_tester.client import ApiResult, redact_headers
 from api_tester.execution.cancellation import CancellationController
@@ -47,6 +43,11 @@ _OUTPUT_COLUMNS = (
 #: the live UI shows a placeholder for passed rows instead (see
 #: ``platform architecture guide: load-testing-and-data-runner.md``).
 _RETAINED_BODY_MAX_CHARS = 8000
+_RowInput: TypeAlias = tuple[int, dict[str, str], ResolvedRow, str]
+_RowExchange: TypeAlias = tuple[
+    int, dict[str, str], ResolvedRow, str,
+    ApiResult | None, RequestSample | None, ClassifiedError | None,
+]
 
 
 def _now_iso() -> str:
@@ -59,12 +60,25 @@ class DataRunnerOptions:
 
     ``batch_size`` controls how many :class:`RequestSample` rows are written
     to the :class:`RunStore` in a single transaction; it is purely a
-    persistence-efficiency knob, not a concurrency setting (execution itself
-    is sequential in this version).
+    persistence-efficiency knob, not a concurrency setting. ``workers`` bounds
+    simultaneous requests and ``batch_rows`` sets the execution group size.
     """
 
     think_time_ms: int = 0
     batch_size: int = 50
+    execution_mode: str = "sequential"
+    workers: int = 4
+    batch_rows: int = 50
+
+    def __post_init__(self) -> None:
+        if self.execution_mode not in {"sequential", "parallel", "batch"}:
+            raise ValueError("Execution mode must be sequential, parallel or batch.")
+        if not 1 <= self.workers <= 32:
+            raise ValueError("Workers must be between 1 and 32.")
+        if not 1 <= self.batch_rows <= 1000:
+            raise ValueError("Batch rows must be between 1 and 1000.")
+        if self.batch_size < 1 or self.think_time_ms < 0:
+            raise ValueError("Persistence batch size must be positive and think time nonnegative.")
 
 
 @dataclass
@@ -121,12 +135,89 @@ class DataRunner:
         self.event_bus = event_bus
         self.cancellation = cancellation or CancellationController()
         self.metrics = metrics or MetricsAggregator()
-        self.options = options or DataRunnerOptions()
+        self.options = replace(options) if options is not None else DataRunnerOptions()
         self.row_outcomes: list[RowOutcome] = []
 
     def _publish(self, kind: str, payload: dict[str, Any]) -> None:
         if self.event_bus is not None:
             self.event_bus.publish(ExecutionEvent(kind=kind, run_id=self.run_id, payload=payload))
+
+    def _exchanges(self, base_template: RequestTemplate) -> Iterator[_RowExchange]:
+        plan = self.plan
+        mapper = plan.mapper
+        assert mapper is not None
+        rows = iter(plan.csv_source.iter_rows())
+        local = threading.local()
+        transports: list[WorkerTransport] = []
+        transport_lock = threading.Lock()
+
+        def execute(item: _RowInput) -> _RowExchange | None:
+            row_number, row, resolved, started = item
+            self.cancellation.wait_if_paused()
+            if self.cancellation.should_stop():
+                return None
+            if resolved.skip or not resolved.is_valid:
+                return (*item, None, None, None)
+            if not hasattr(local, "transport"):
+                with transport_lock:
+                    local.transport = WorkerTransport(
+                        plan.environment, worker_id=len(transports), run_id=self.run_id,
+                    )
+                    transports.append(local.transport)
+            template = mapper.build_request_template(base_template, resolved)
+            self._publish("request_started", {
+                "row_number": row_number, "correlation_key": resolved.correlation_key,
+            })
+            result, sample, classified = local.transport.execute(plan.endpoint, template)
+            if self.options.think_time_ms:
+                deadline = time.monotonic() + self.options.think_time_ms / 1000
+                while not self.cancellation.should_stop() and time.monotonic() < deadline:
+                    time.sleep(min(0.05, max(0, deadline - time.monotonic())))
+            return (*item, result, sample, classified)
+
+        def next_item() -> _RowInput | None:
+            self.cancellation.wait_if_paused()
+            if self.cancellation.should_stop():
+                return None
+            try:
+                row_number, row = next(rows)
+            except StopIteration:
+                return None
+            resolved = mapper.resolve(row_number, row)
+            self._publish("row_started", {
+                "row_number": row_number, "correlation_key": resolved.correlation_key,
+            })
+            return row_number, row, resolved, _now_iso()
+
+        try:
+            if self.options.execution_mode == "sequential":
+                while (item := next_item()) is not None:
+                    exchange = execute(item)
+                    if exchange is not None:
+                        yield exchange
+                return
+            with ThreadPoolExecutor(max_workers=self.options.workers, thread_name_prefix="data-runner") as pool:
+                pending = set()
+                exhausted = False
+                limit = self.options.batch_rows if self.options.execution_mode == "batch" else self.options.workers
+                while pending or not exhausted:
+                    if self.options.execution_mode == "parallel" or not pending:
+                        while not exhausted and len(pending) < limit:
+                            item = next_item()
+                            if item is None:
+                                exhausted = True
+                                break
+                            pending.add(pool.submit(execute, item))
+                    if not pending:
+                        break
+                    completed, pending = wait(pending, return_when=FIRST_COMPLETED)
+                    for future in completed:
+                        exchange = future.result()
+                        if exchange is not None:
+                            yield exchange
+        finally:
+            for transport in transports:
+                transport.close()
 
     @staticmethod
     def _build_executed_row_detail(
@@ -203,6 +294,9 @@ class DataRunner:
                         {"column": m.column, "target_key": m.target_key} for m in plan.mappings
                     ],
                     **self._request_template_definition(plan),
+                    "execution_mode": self.options.execution_mode,
+                    "workers": 1 if self.options.execution_mode == "sequential" else self.options.workers,
+                    "batch_rows": self.options.batch_rows if self.options.execution_mode == "batch" else None,
                 },
             )
 
@@ -244,23 +338,10 @@ class DataRunner:
         pending_details: list[tuple[int, dict[str, Any]]] = []
         stopped = False
 
-        with WorkerTransport(plan.environment, worker_id=0, run_id=self.run_id) as transport:
-            for row_number, row in plan.csv_source.iter_rows():
-                if self.cancellation.should_stop():
-                    stopped = True
-                    break
-                self.cancellation.wait_if_paused()
-                if self.cancellation.should_stop():
-                    stopped = True
-                    break
-
-                row_started_at = _now_iso()
-                assert plan.mapper is not None  # guarded by plan.is_executable above
-                resolved = plan.mapper.resolve(row_number, row)
-                self._publish(
-                    "row_started",
-                    {"row_number": row_number, "correlation_key": resolved.correlation_key},
-                )
+        with ExitStack() as stack:
+            exchanges = self._exchanges(base_template)
+            stack.callback(exchanges.close)
+            for row_number, row, resolved, row_started_at, result, sample, classified in exchanges:
 
                 if resolved.skip:
                     skipped += 1
@@ -275,12 +356,7 @@ class DataRunner:
                     )
                     continue
 
-                template = plan.mapper.build_request_template(base_template, resolved)
-                self._publish(
-                    "request_started",
-                    {"row_number": row_number, "correlation_key": resolved.correlation_key},
-                )
-                result, sample, classified = transport.execute(plan.endpoint, template)
+                assert sample is not None
                 if result is not None and result.security_report and self.store is not None:
                     self.store.record_security_review(self.run_id, result.security_report)
                 sample = replace(
@@ -334,9 +410,8 @@ class DataRunner:
                     },
                 )
 
-                if self.options.think_time_ms and not self.cancellation.should_stop():
-                    time.sleep(self.options.think_time_ms / 1000.0)
-
+        stopped = self.cancellation.should_stop()
+        self.row_outcomes.sort(key=lambda item: item.row_number)
         if pending_samples:
             self._flush_samples(pending_samples)
         if pending_details and self.store is not None:

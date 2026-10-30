@@ -1561,6 +1561,20 @@ class DataRunnerTab(QWidget):
 
     # ------------------------------------------------------------------ run & results
 
+    def _execution_settings_changed(self) -> None:
+        mode = self.execution_mode.currentData()
+        self.execution_workers.setEnabled(mode != "sequential")
+        self.execution_batch_rows.setEnabled(mode == "batch")
+        self.execution_hint.setText(
+            "One request at a time, in CSV row order."
+            if mode == "sequential" else
+            "Independent rows only: requests may finish out of order. "
+            + ("A bounded worker pool continuously processes rows." if mode == "parallel" else
+               "Each group finishes before the next batch starts; workers cap simultaneous requests.")
+        )
+        if hasattr(self, "run_button"):
+            self._refresh_run_context_panel()
+
     def _build_run_page(self) -> QWidget:
         page = QWidget()
         page_layout = QHBoxLayout(page)
@@ -1573,6 +1587,32 @@ class DataRunnerTab(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         page_layout.addLayout(layout, 1)
 
+        execution_group = QGroupBox("Execution")
+        execution_form = QFormLayout(execution_group)
+        self.execution_mode = QComboBox()
+        for label, value in (("Sequential", "sequential"), ("Parallel", "parallel"), ("Batch", "batch")):
+            self.execution_mode.addItem(label, value)
+        self.execution_workers = QSpinBox()
+        self.execution_workers.setRange(1, 32)
+        self.execution_workers.setValue(4)
+        self.execution_workers.setToolTip("Maximum simultaneous requests. Each worker uses its own HTTP session.")
+        self.execution_batch_rows = QSpinBox()
+        self.execution_batch_rows.setRange(1, 1000)
+        self.execution_batch_rows.setValue(50)
+        self.execution_batch_rows.setToolTip("Rows per group. The next group starts only after this group finishes.")
+        self.execution_hint = QLabel()
+        self.execution_hint.setWordWrap(True)
+        self.execution_hint.setObjectName("dataRunnerStatCardSubtitle")
+        execution_form.addRow("Execution mode", self.execution_mode)
+        execution_form.addRow("Workers", self.execution_workers)
+        execution_form.addRow("Rows per batch", self.execution_batch_rows)
+        execution_form.addRow(self.execution_hint)
+        layout.addWidget(execution_group)
+        self.execution_mode.currentIndexChanged.connect(self._execution_settings_changed)
+        self.execution_workers.valueChanged.connect(self._execution_settings_changed)
+        self.execution_batch_rows.valueChanged.connect(self._execution_settings_changed)
+        self._execution_settings_changed()
+
         actions_row = QHBoxLayout()
         self.run_button = _icon_button("play", "Run the Data Runner against every valid row")
         self.run_button.setProperty("accent", True)
@@ -1580,7 +1620,7 @@ class DataRunnerTab(QWidget):
         self.run_button.setEnabled(False)
         self.run_button.clicked.connect(self._start_run)
         actions_row.addWidget(self.run_button)
-        self.pause_button = _icon_button("pause", "Pause after the current row")
+        self.pause_button = _icon_button("pause", "Pause new requests; in-flight requests finish normally")
         self.pause_button.setEnabled(False)
         self.pause_button.clicked.connect(self._toggle_pause)
         actions_row.addWidget(self.pause_button)
@@ -2054,9 +2094,13 @@ class DataRunnerTab(QWidget):
 
         self.context_card_settings.clear_body()
         settings_rows = [
-            ("Execution mode", "Sequential"),
+            ("Execution mode", self.execution_mode.currentText()),
             ("Default expected status", self.default_expected_status.text().strip() or "200-299"),
         ]
+        if self.execution_mode.currentData() != "sequential":
+            settings_rows.append(("Workers", str(self.execution_workers.value())))
+        if self.execution_mode.currentData() == "batch":
+            settings_rows.append(("Rows per batch", str(self.execution_batch_rows.value())))
         for caption, value in settings_rows:
             row = QHBoxLayout()
             caption_label = QLabel(caption)
@@ -2179,7 +2223,11 @@ class DataRunnerTab(QWidget):
             store=store,
             event_bus=self._event_bus,
             cancellation=cancellation,
-            options=DataRunnerOptions(),
+            options=DataRunnerOptions(
+                execution_mode=self.execution_mode.currentData(),
+                workers=self.execution_workers.value(),
+                batch_rows=self.execution_batch_rows.value(),
+            ),
         )
         self._paused = False
 
@@ -2195,6 +2243,8 @@ class DataRunnerTab(QWidget):
         self._thread.start()
 
         self.run_button.setEnabled(False)
+        for control in (self.execution_mode, self.execution_workers, self.execution_batch_rows):
+            control.setEnabled(False)
         self.pause_button.setEnabled(True)
         self.stop_button.setEnabled(True)
         self.export_button.setEnabled(False)
@@ -2337,7 +2387,19 @@ class DataRunnerTab(QWidget):
             "error_category": payload.get("error_category", ""),
             "error_message": payload.get("error_message", ""),
         }
-        self._result_rows.append(summary)
+        out_of_order = bool(
+            self._result_rows
+            and int(self._result_rows[-1]["row_number"] or 0) > int(row_number or 0)
+        )
+        if out_of_order:
+            from bisect import bisect_right
+            index = bisect_right(
+                self._result_rows, int(row_number or 0),
+                key=lambda item: int(item["row_number"] or 0),
+            )
+            self._result_rows.insert(index, summary)
+        else:
+            self._result_rows.append(summary)
 
         detail = payload.get("detail")
         if row_number is not None and detail is not None:
@@ -2352,7 +2414,7 @@ class DataRunnerTab(QWidget):
 
         new_last_page = self._total_results_pages() - 1
         if self._follow_latest_page:
-            if self._current_results_page != new_last_page:
+            if self._current_results_page != new_last_page or out_of_order:
                 self._current_results_page = new_last_page
                 self._render_current_page()
             else:
@@ -2621,6 +2683,8 @@ class DataRunnerTab(QWidget):
             self._thread.deleteLater()
         self._worker = None
         self._thread = None
+        self.execution_mode.setEnabled(True)
+        self._execution_settings_changed()
 
     def _export_results(self) -> None:
         if self.runner is None or not self.runner.row_outcomes:

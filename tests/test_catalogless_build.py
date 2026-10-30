@@ -1,6 +1,6 @@
 """The shell must survive a build that ships without an API catalog.
 
-``RestTester.spec`` deliberately omits ``data/api_catalog.json``. Loading it
+``RestTester.spec`` omits ``data/api_catalog.json`` by default. Loading it
 at construction time used to be unguarded, so a catalog-less executable died
 with ``FileNotFoundError`` before the window existed - leaving the user no way
 to reach Settings or the Catalog Builder to supply one.
@@ -186,14 +186,29 @@ def test_a_filtered_out_catalog_says_so_instead(
         window.close()
 
 
-def test_the_spec_does_not_bundle_the_catalog() -> None:
-    """Guards the intent of this build: the catalog is supplied by the user."""
-    spec = (
-        Path(__file__).resolve().parent.parent / "RestTester.spec"
-    ).read_text(encoding="utf-8")
-    active = [
-        line
-        for line in spec.splitlines()
-        if "api_catalog.json" in line and not line.strip().startswith("#")
-    ]
-    assert not active, f"spec bundles the catalog again: {active}"
+@pytest.mark.parametrize("include_catalog", [False, True])
+def test_spec_catalog_is_opt_in(monkeypatch, include_catalog) -> None:
+    import runpy
+    from types import SimpleNamespace
+
+    root = Path(__file__).resolve().parent.parent
+    if include_catalog:
+        monkeypatch.setenv("RESTTESTER_INCLUDE_CATALOG", "1")
+    else:
+        monkeypatch.delenv("RESTTESTER_INCLUDE_CATALOG", raising=False)
+    monkeypatch.setattr("subprocess.run", lambda *args, **kwargs: None)
+    captured = {}
+
+    def analysis(*args, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(pure=[], scripts=[], binaries=[], datas=[])
+
+    runpy.run_path(str(root / "RestTester.spec"), init_globals={
+        "SPECPATH": str(root), "Analysis": analysis,
+        "PYZ": lambda *args, **kwargs: None,
+        "EXE": lambda *args, **kwargs: None,
+        "COLLECT": lambda *args, **kwargs: None,
+    })
+    catalog = (str(root / "data" / "api_catalog.json"), "data")
+    assert (catalog in captured["datas"]) is include_catalog
+    assert len(captured["datas"]) == (2 if include_catalog else 1)

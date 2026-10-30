@@ -107,6 +107,187 @@ def _build_plan(tmp_path, rows, header=("Id", "Status")):
     return build_plan(endpoint, catalog, csv_source, mappings, _environment())
 
 
+@pytest.mark.parametrize("mode", ["sequential", "parallel", "batch"])
+def test_execution_modes_bound_concurrency_and_batch_boundaries(tmp_path, monkeypatch, mode):
+    import threading
+    import time
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from dataclasses import replace
+
+    lock = threading.Lock()
+    active = maximum = 0
+    started = []
+    completed = set()
+    crossed_batch = []
+    overlap = threading.Barrier(2)
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_PATCH(self):
+            nonlocal active, maximum
+            row_id = int(self.path.split("?")[0].rsplit("/", 1)[1])
+            with lock:
+                active += 1
+                maximum = max(maximum, active)
+                started.append(row_id)
+                if mode == "batch" and row_id > 3 and not {1, 2, 3} <= completed:
+                    crossed_batch.append(row_id)
+            if mode != "sequential" and row_id <= 2:
+                overlap.wait(timeout=5)
+            time.sleep(0.02)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b"{}")
+            with lock:
+                active -= 1
+                completed.add(row_id)
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    plan = _build_plan(tmp_path, [{"Id": str(n), "Status": "Active"} for n in range(1, 7)])
+    plan = replace(plan, environment=replace(
+        plan.environment, base_urls={"TrialAuth": f"http://127.0.0.1:{server.server_port}"},
+    ))
+    try:
+        runner = DataRunner(plan, options=DataRunnerOptions(execution_mode=mode, workers=2, batch_rows=3))
+        summary = runner.run()
+        assert summary.executed == summary.passed == 6
+        assert maximum == (1 if mode == "sequential" else 2)
+        assert not crossed_batch
+        assert [outcome.row_number for outcome in runner.row_outcomes] == sorted(
+            outcome.row_number for outcome in runner.row_outcomes
+        )
+        if mode == "sequential":
+            assert started == [1, 2, 3, 4, 5, 6]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+
+
+@pytest.mark.parametrize("mode", ["parallel", "batch"])
+def test_concurrent_stop_drains_inflight_without_starting_queued_rows(tmp_path, monkeypatch, mode):
+    import threading
+    from api_tester.execution.cancellation import CancellationController
+
+    calls = _install_fake_request(monkeypatch)
+    request = __import__("api_tester.client", fromlist=["requests"]).requests.request
+    cancellation = CancellationController()
+    barrier = threading.Barrier(2)
+    sessions = []
+
+    class Session(_FakeSession):
+        def __init__(self):
+            super().__init__()
+            sessions.append(self)
+
+    def stop_request(*args, **kwargs):
+        barrier.wait(timeout=5)
+        cancellation.stop()
+        return request(*args, **kwargs)
+
+    monkeypatch.setattr("api_tester.client.requests.request", stop_request)
+    monkeypatch.setattr("api_tester.execution.transport.requests.Session", Session)
+    plan = _build_plan(tmp_path, [{"Id": str(n), "Status": "Active"} for n in range(1, 9)])
+    runner = DataRunner(plan, cancellation=cancellation,
+                        options=DataRunnerOptions(execution_mode=mode, workers=2, batch_rows=8))
+    summary = runner.run()
+    assert summary.stopped and summary.outcome == "STOPPED"
+    assert summary.executed == 2 and len(calls) == 2
+    assert len(sessions) == 2 and all(session.closed for session in sessions)
+
+
+@pytest.mark.parametrize("options", [
+    {"execution_mode": "unknown"}, {"workers": 0}, {"workers": 33},
+    {"batch_rows": 0}, {"batch_rows": 1001}, {"batch_size": 0}, {"think_time_ms": -1},
+])
+def test_invalid_execution_options_are_rejected(options):
+    with pytest.raises(ValueError):
+        DataRunnerOptions(**options)
+
+
+@pytest.mark.parametrize("mode", ["parallel", "batch"])
+def test_pause_prevents_dispatch_until_resume(tmp_path, monkeypatch, mode):
+    import threading
+    from api_tester.execution.cancellation import CancellationController
+
+    calls = _install_fake_request(monkeypatch)
+    cancellation = CancellationController()
+    cancellation.pause()
+    reached_pause = threading.Event()
+    original = cancellation.wait_if_paused
+
+    def wait_for_resume(*args, **kwargs):
+        reached_pause.set()
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(cancellation, "wait_if_paused", wait_for_resume)
+    plan = _build_plan(tmp_path, [{"Id": "1", "Status": "Active"}, {"Id": "", "Status": "Active"}])
+    runner = DataRunner(plan, cancellation=cancellation,
+                        options=DataRunnerOptions(execution_mode=mode, workers=2, batch_rows=2))
+    summaries = []
+    thread = threading.Thread(target=lambda: summaries.append(runner.run()))
+    thread.start()
+    try:
+        assert reached_pause.wait(timeout=3)
+        assert calls == []
+        cancellation.resume()
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+        assert summaries[0].executed == 1
+        assert summaries[0].invalid == 1
+    finally:
+        cancellation.stop()
+        thread.join(timeout=5)
+
+
+def test_parallel_refills_workers_without_waiting_for_slow_row(tmp_path, monkeypatch):
+    import threading
+
+    _install_fake_request(monkeypatch)
+    from api_tester import client
+    original = client.requests.request
+    third_started = threading.Event()
+    slow_wait_success = []
+
+    def request(method, url, **kwargs):
+        row_id = url.split("?")[0].rsplit("/", 1)[1]
+        if row_id == "1":
+            slow_wait_success.append(third_started.wait(timeout=3))
+        elif row_id == "3":
+            third_started.set()
+        return original(method, url, **kwargs)
+
+    monkeypatch.setattr(client.requests, "request", request)
+    plan = _build_plan(tmp_path, [{"Id": str(n), "Status": "Active"} for n in range(1, 4)])
+    runner = DataRunner(plan, options=DataRunnerOptions(execution_mode="parallel", workers=2))
+    assert runner.run().passed == 3
+    assert slow_wait_success == [True]
+
+
+@pytest.mark.parametrize("mode", ["sequential", "parallel", "batch"])
+def test_execution_settings_are_snapshotted_and_persisted(tmp_path, monkeypatch, mode):
+    _install_fake_request(monkeypatch)
+    plan = _build_plan(tmp_path, [{"Id": "1", "Status": "Active"}])
+    options = DataRunnerOptions(execution_mode=mode, workers=2, batch_rows=3)
+    store = RunStore(tmp_path / "run.db")
+    try:
+        runner = DataRunner(plan, store=store, options=options)
+        options.execution_mode = "sequential"
+        assert runner.options.execution_mode == mode
+        runner.run()
+        stored = store.get_run(runner.run_id)
+        assert stored is not None
+        assert stored["definition"]["execution_mode"] == mode
+        assert stored["definition"]["workers"] == (1 if mode == "sequential" else 2)
+        assert stored["definition"]["batch_rows"] == (3 if mode == "batch" else None)
+    finally:
+        store.close()
+
 def test_runner_executes_all_valid_rows_and_reports_pass(tmp_path, monkeypatch) -> None:
     calls = _install_fake_request(monkeypatch)
     plan = _build_plan(

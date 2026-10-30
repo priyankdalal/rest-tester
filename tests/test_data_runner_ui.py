@@ -275,6 +275,33 @@ def _run_to_completion(tab: DataRunnerTab, app: QApplication, *, timeout_ms: int
     app.processEvents()
 
 
+@pytest.mark.parametrize("mode,index", [("sequential", 0), ("parallel", 1), ("batch", 2)])
+def test_selected_mode_reaches_runner_and_unlocks_after_run(app, tmp_path, monkeypatch, mode, index):
+    _install_fake_transport(monkeypatch)
+    tab = _prepare_validated_tab(app, tmp_path)
+    tab.execution_mode.setCurrentIndex(index)
+    tab.execution_workers.setValue(2)
+    tab.execution_batch_rows.setValue(3)
+    _run_to_completion(tab, app)
+    assert tab._thread is None
+    assert tab.runner.options.execution_mode == mode
+    assert tab.runner.options.workers == 2
+    assert tab.runner.options.batch_rows == 3
+    assert tab.execution_mode.isEnabled()
+    assert tab.execution_workers.isEnabled() is (mode != "sequential")
+    assert tab.execution_batch_rows.isEnabled() is (mode == "batch")
+    tab.close()
+
+
+def test_parallel_results_remain_in_csv_order(app):
+    tab = _make_tab(app)
+    for row in (4, 2, 1, 3):
+        tab._append_result_row({"row_number": row, "outcome": "passed", "status_code": 200})
+    assert [row["row_number"] for row in tab._result_rows] == [1, 2, 3, 4]
+    assert [tab.results_table.item(index, 0).text() for index in range(4)] == ["1", "2", "3", "4"]
+    tab.close()
+
+
 def _prepare_validated_tab(app: QApplication, tmp_path: Path) -> DataRunnerTab:
     tab = _make_tab(app)
     csv_path = _write_csv(tmp_path, [{"Id": "1", "Status": "Active"}], ["Id", "Status"])
@@ -285,6 +312,25 @@ def _prepare_validated_tab(app: QApplication, tmp_path: Path) -> DataRunnerTab:
     tab._validate()
     assert tab.plan is not None and tab.plan.is_executable
     return tab
+
+
+def test_execution_mode_controls_and_context_follow_selection(app):
+    tab = _make_tab(app)
+    assert [tab.execution_mode.itemText(n) for n in range(3)] == ["Sequential", "Parallel", "Batch"]
+    assert not tab.execution_workers.isEnabled()
+    assert not tab.execution_batch_rows.isEnabled()
+    tab.execution_mode.setCurrentIndex(1)
+    assert tab.execution_workers.isEnabled()
+    assert not tab.execution_batch_rows.isEnabled()
+    assert "Independent rows only" in tab.execution_hint.text()
+    tab.execution_mode.setCurrentIndex(2)
+    assert tab.execution_workers.isEnabled() and tab.execution_batch_rows.isEnabled()
+    tab.execution_workers.setValue(3)
+    tab.execution_batch_rows.setValue(12)
+    assert tab.execution_workers.value() == 3 and tab.execution_batch_rows.value() == 12
+    tab.execution_mode.setCurrentIndex(0)
+    assert not tab.execution_workers.isEnabled() and not tab.execution_batch_rows.isEnabled()
+    tab.close()
 
 
 def test_run_end_to_end_updates_results_table(app: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
